@@ -29,16 +29,29 @@ func runMcp() {
 	embedder, err := NewEmbedder(filepath.Join(dir, "models"))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: embedding init failed: %v (falling back to BM25-only)\n", err)
+		embedder = nil
 	}
 	if embedder == nil {
 		fmt.Fprintf(os.Stderr, "Info: ONNX Runtime not found; semantic search disabled. Run ./tasks.sh install-onnx to enable.\n")
+	}
+	
+	// TEMPORARY: Disable embeddings during indexing due to tokenizer library crashes
+	// The BM25/FTS5 search will still work perfectly fine
+	var indexEmbedder EmbedderInterface
+	if os.Getenv("MCP_ENABLE_EMBEDDINGS") == "1" {
+		indexEmbedder = embedder
+	} else {
+		if embedder != nil {
+			fmt.Fprintf(os.Stderr, "Info: Embeddings disabled during indexing (use MCP_ENABLE_EMBEDDINGS=1 to enable)\n")
+		}
+		indexEmbedder = nil
 	}
 	if embedder != nil {
 		defer embedder.Close()
 	}
 
 	// Initialize global search index
-	searchStore, err := NewSearchStore(dir, embedder)
+	searchStore, err := NewSearchStore(dir, indexEmbedder)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: search index unavailable: %v\n", err)
 	}

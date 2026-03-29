@@ -333,7 +333,12 @@ func runInfo() {
 	fmt.Println("└──────────────────────────────────────────┘")
 	fmt.Println()
 
-	fmt.Println("📁 Data")
+	fmt.Println("� Build")
+	fmt.Printf("   Version:    %s\n", BuildVersion)
+	fmt.Printf("   Built:      %s\n", BuildTime)
+	fmt.Println()
+
+	fmt.Println("�📁 Data")
 	fmt.Printf("   Directory:  %s\n", dDir)
 	if info, err := os.Stat(dDir); err == nil && info.IsDir() {
 		fmt.Println("   Status:     initialized")

@@ -29,6 +29,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Build-time variables set via -ldflags
+var (
+	BuildTime    = "unknown"
+	BuildVersion = "dev"
+)
+
 // extractTextContent returns the human-readable text content of a message.
 // For non-text message types (stickers, contacts, locations, etc.) it returns
 // a bracketed placeholder so the message is not silently dropped.

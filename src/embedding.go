@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	fastembed "github.com/anush008/fastembed-go"
 )
@@ -63,16 +64,71 @@ func NewEmbedder(cacheDir string) (emb *Embedder, err error) {
 }
 
 // EmbedTexts generates embeddings for a batch of texts using passage mode.
-func (e *Embedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
+// Filters out empty/whitespace-only strings to prevent tokenizer crashes.
+// Recovers from panics in the underlying library and returns partial results.
+func (e *Embedder) EmbedTexts(texts []string, batchSize int) (embeddings [][]float32, err error) {
 	if batchSize <= 0 {
 		batchSize = 64
 	}
-	return e.model.PassageEmbed(texts, batchSize)
+	
+	// Recover from panics in the tokenizer library
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("embedding panic: %v", r)
+			embeddings = make([][]float32, len(texts))
+		}
+	}()
+	
+	// Filter out empty texts and track original indices
+	var validTexts []string
+	var validIndices []int
+	for i, text := range texts {
+		trimmed := strings.TrimSpace(text)
+		if trimmed != "" && len(trimmed) > 0 {
+			validTexts = append(validTexts, trimmed)
+			validIndices = append(validIndices, i)
+		}
+	}
+	
+	// If no valid texts, return empty embeddings for all inputs
+	if len(validTexts) == 0 {
+		result := make([][]float32, len(texts))
+		return result, nil
+	}
+	
+	// Embed only valid texts
+	validEmbeddings, embErr := e.model.PassageEmbed(validTexts, batchSize)
+	if embErr != nil {
+		return nil, embErr
+	}
+	
+	// Reconstruct result array with embeddings in original positions
+	result := make([][]float32, len(texts))
+	for i, validIdx := range validIndices {
+		if i < len(validEmbeddings) {
+			result[validIdx] = validEmbeddings[i]
+		}
+	}
+	
+	return result, nil
 }
 
 // EmbedQuery generates a single embedding for a search query.
-func (e *Embedder) EmbedQuery(query string) ([]float32, error) {
-	return e.model.QueryEmbed(query)
+// Returns error if query is empty or whitespace-only.
+// Recovers from panics in the underlying library.
+func (e *Embedder) EmbedQuery(query string) (embedding []float32, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("embedding panic: %v", r)
+			embedding = nil
+		}
+	}()
+	
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return nil, fmt.Errorf("query cannot be empty")
+	}
+	return e.model.QueryEmbed(trimmed)
 }
 
 // Close releases the underlying model resources.

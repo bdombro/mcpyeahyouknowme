@@ -25,7 +25,11 @@ EOF
 }
 
 cmd_build() {
-	(cd "$CLI_DIR" && go build -tags "sqlite_fts5" -o mcpyeahyouknowme.bin .)
+	local build_time
+	build_time="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+	(cd "$CLI_DIR" && go build -tags "sqlite_fts5" \
+		-ldflags "-X 'main.BuildTime=$build_time' -X 'main.BuildVersion=1.0.0'" \
+		-o mcpyeahyouknowme.bin .)
 }
 
 cmd_update() {

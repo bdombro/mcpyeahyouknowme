@@ -229,6 +229,10 @@ func (s *SearchStore) computeEmbeddings() error {
 			}
 			text += content
 		}
+		// Skip empty texts to avoid tokenizer crashes
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
 		batch = append(batch, pending{id: id, text: text})
 	}
 
@@ -259,6 +263,10 @@ func (s *SearchStore) computeEmbeddings() error {
 	defer stmt.Close()
 
 	for i, emb := range embeddings {
+		// Skip entries that had empty text (nil embedding)
+		if emb == nil || len(emb) == 0 {
+			continue
+		}
 		blob := float32sToBytes(emb)
 		if _, err := stmt.Exec(batch[i].id, blob); err != nil {
 			return err
