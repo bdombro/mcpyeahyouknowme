@@ -3,8 +3,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLI_DIR="$ROOT/whatsapp-cli"
-DATA_DIR="$HOME/.local/share/whatsapp-cli"
+CLI_DIR="$ROOT/src"
+DATA_DIR="$HOME/.local/share/mcpyeahyouknowme"
 ONNX_VERSION="1.17.0"
 
 usage() {
@@ -13,29 +13,29 @@ usage() {
 Usage: ./tasks.sh <command>
 
 Commands:
-  build         Build whatsapp-cli (FTS5) into whatsapp-cli/whatsapp-cli.bin
+  build         Build mcpyeahyouknowme (FTS5) into src/mcpyeahyouknowme.bin
   update        build + install binary to /usr/local/bin + restart daemon if running
   install       update + install-onnx + login + install-daemon + zsh completions
   install-onnx  Download ONNX Runtime to app-local lib (for semantic search)
   test          Run tests with coverage summary (fuzzy, mcp packages)
   test-cover    Run tests and open HTML coverage report
-  reset         whatsapp-cli reset && whatsapp-cli login
+  reset         mcpyeahyouknowme reset && mcpyeahyouknowme login
 EOF
 	exit "$code"
 }
 
 cmd_build() {
-	(cd "$CLI_DIR" && go build -tags "sqlite_fts5" -o whatsapp-cli.bin .)
+	(cd "$CLI_DIR" && go build -tags "sqlite_fts5" -o mcpyeahyouknowme.bin .)
 }
 
 cmd_update() {
 	cmd_build
-	sudo cp "$CLI_DIR/whatsapp-cli.bin" /usr/local/bin/whatsapp-cli
-	sudo chmod +x /usr/local/bin/whatsapp-cli
-	echo "Installed /usr/local/bin/whatsapp-cli"
+	sudo cp "$CLI_DIR/mcpyeahyouknowme.bin" /usr/local/bin/mcpyeahyouknowme
+	sudo chmod +x /usr/local/bin/mcpyeahyouknowme
+	echo "Installed /usr/local/bin/mcpyeahyouknowme"
 
-	if whatsapp-cli info 2>/dev/null | grep -q "Status:     running"; then
-		whatsapp-cli restart
+	if mcpyeahyouknowme info 2>/dev/null | grep -q "Status:     running"; then
+		mcpyeahyouknowme restart
 		echo "Restarted core daemon"
 	fi
 }
@@ -95,10 +95,10 @@ cmd_install_onnx() {
 cmd_install() {
 	cmd_update
 	cmd_install_onnx
-	whatsapp-cli login
-	whatsapp-cli install-daemon
+	mcpyeahyouknowme login
+	mcpyeahyouknowme install-daemon
 
-	local comp_line='eval "$(whatsapp-cli completions zsh)"'
+	local comp_line='eval "$(mcpyeahyouknowme completions zsh)"'
 	if ! grep -qF "$comp_line" ~/.zshrc 2>/dev/null; then
 		echo "" >> ~/.zshrc
 		echo "$comp_line" >> ~/.zshrc
@@ -114,7 +114,7 @@ cmd_test() {
 		go test -tags "sqlite_fts5" -coverprofile=coverage.out -count=1 ./...
 		echo ""
 		echo "=== Coverage summary ==="
-		go tool cover -func=coverage.out | grep -E "^(whatsapp-client/(fuzzy|mcp)|total)"
+		go tool cover -func=coverage.out | grep -E "^(mcpyeahyouknowme/(fuzzy|mcp)|total)"
 	)
 }
 
@@ -127,8 +127,8 @@ cmd_test_cover() {
 }
 
 cmd_reset() {
-	whatsapp-cli reset
-	whatsapp-cli login
+	mcpyeahyouknowme reset
+	mcpyeahyouknowme login
 }
 
 case "${1:-}" in

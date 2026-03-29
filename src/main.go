@@ -680,7 +680,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 }
 
 func printUsage() {
-	fmt.Fprintln(os.Stderr, "Usage: whatsapp-cli <command> [flags]")
+	fmt.Fprintln(os.Stderr, "Usage: mcpyeahyouknowme <command> [flags]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Commands:")
 	fmt.Fprintln(os.Stderr, "  login [--relogin]   Log in to WhatsApp (scan QR code)")

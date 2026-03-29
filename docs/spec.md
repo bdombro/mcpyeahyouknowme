@@ -5,8 +5,8 @@ A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.
 ## Building
 
 ```
-cd whatsapp-cli
-go build -tags "sqlite_fts5" -o whatsapp-cli .
+cd src
+go build -tags "sqlite_fts5" -o mcpyeahyouknowme .
 ```
 
 CGO must be enabled (default on macOS/Linux) since `go-sqlite3` requires it. On Windows, install a C compiler via [MSYS2](https://www.msys2.org/) and run `go env -w CGO_ENABLED=1` first.
@@ -16,8 +16,8 @@ CGO must be enabled (default on macOS/Linux) since `go-sqlite3` requires it. On 
 ### Login
 
 ```
-whatsapp-cli login
-whatsapp-cli login --relogin
+mcpyeahyouknowme login
+mcpyeahyouknowme login --relogin
 ```
 
 Authenticates with WhatsApp by displaying a QR code. Scan it with your phone (Settings > Linked Devices). If already logged in, shows account info. Required before running `core` or `install-daemon`.
@@ -29,7 +29,7 @@ The `--relogin` flag clears the existing session and message databases, re-displ
 ### Core — WhatsApp Connection
 
 ```
-whatsapp-cli core
+mcpyeahyouknowme core
 ```
 
 Connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on port 8080. Requires login. Re-authentication may be required after ~20 days.
@@ -37,7 +37,7 @@ Connects to WhatsApp, listens for messages, syncs history, and starts the REST A
 ### MCP — Model Context Protocol Server
 
 ```
-whatsapp-cli mcp
+mcpyeahyouknowme mcp
 ```
 
 Starts the built-in MCP server over stdio transport. This is what Claude Desktop and Cursor invoke to interact with WhatsApp. It reads directly from the local SQLite databases for queries and proxies write operations (send, download) through the core daemon's REST API at `localhost:8080`. The core daemon must be running for write operations.
@@ -48,7 +48,7 @@ Configure in your AI client:
 {
   "mcpServers": {
     "whatsapp": {
-      "command": "whatsapp-cli",
+      "command": "mcpyeahyouknowme",
       "args": ["mcp"]
     }
   }
@@ -87,15 +87,15 @@ Current sources:
 ### Daemon Management
 
 ```
-whatsapp-cli install-daemon
-whatsapp-cli start
-whatsapp-cli stop
-whatsapp-cli restart
+mcpyeahyouknowme install-daemon
+mcpyeahyouknowme start
+mcpyeahyouknowme stop
+mcpyeahyouknowme restart
 ```
 
 | Command | Description |
 |---------|-------------|
-| `install-daemon` | Installs and starts the core daemon as a macOS LaunchAgent (`com.whatsapp-cli.core`). Runs on login and auto-restarts on crash. Logs to `~/.local/share/whatsapp-cli/core.log`. |
+| `install-daemon` | Installs and starts the core daemon as a macOS LaunchAgent (`com.mcpyeahyouknowme.core`). Runs on login and auto-restarts on crash. Logs to `~/.local/share/mcpyeahyouknowme/core.log`. |
 | `start` | Starts the core daemon. |
 | `stop` | Stops the core daemon. |
 | `restart` | Restarts the core daemon (stop + start). |
@@ -103,9 +103,9 @@ whatsapp-cli restart
 ### Maintenance
 
 ```
-whatsapp-cli info
-whatsapp-cli reset
-whatsapp-cli uninstall
+mcpyeahyouknowme info
+mcpyeahyouknowme reset
+mcpyeahyouknowme uninstall
 ```
 
 | Command | Description |
@@ -117,14 +117,14 @@ whatsapp-cli uninstall
 ### Shell Completions
 
 ```
-whatsapp-cli completions bash
-whatsapp-cli completions zsh
+mcpyeahyouknowme completions bash
+mcpyeahyouknowme completions zsh
 ```
 
 Add to your shell profile:
 
 ```bash
-eval "$(whatsapp-cli completions zsh)"
+eval "$(mcpyeahyouknowme completions zsh)"
 ```
 
 ---
@@ -183,7 +183,7 @@ WhatsApp's servers and the multidevice protocol have several known limitations t
 
 **Sending media** — the CLI reads the local file, determines MIME type from extension, uploads to WhatsApp servers, and sends the appropriate message type (ImageMessage, AudioMessage, VideoMessage, DocumentMessage). Audio files in ogg/opus format are sent as voice messages with duration and waveform metadata.
 
-**Downloading media** — reconstructs download parameters from stored metadata, downloads via whatsmeow, and saves to `~/.local/share/whatsapp-cli/{chat_jid}/`. Returns the absolute file path. Files are cached so repeated downloads are a no-op.
+**Downloading media** — reconstructs download parameters from stored metadata, downloads via whatsmeow, and saves to `~/.local/share/mcpyeahyouknowme/{chat_jid}/`. Returns the absolute file path. Files are cached so repeated downloads are a no-op.
 
 ---
 
@@ -325,7 +325,7 @@ For queries shorter than 3 characters, only exact substring matching is used (fu
 
 ### Embedding Infrastructure
 
-Semantic vector search uses [fastembed-go](https://github.com/Anush008/fastembed-go) with the BGE-Small-EN-v1.5 ONNX model. The ONNX Runtime shared library is auto-downloaded during `./tasks.sh install` to `~/.local/share/whatsapp-cli/lib/` (app-local, not exposed to system paths). The embedding model is auto-cached in `~/.local/share/whatsapp-cli/models/` on first use.
+Semantic vector search uses [fastembed-go](https://github.com/Anush008/fastembed-go) with the BGE-Small-EN-v1.5 ONNX model. The ONNX Runtime shared library is auto-downloaded during `./tasks.sh install` to `~/.local/share/mcpyeahyouknowme/lib/` (app-local, not exposed to system paths). The embedding model is auto-cached in `~/.local/share/mcpyeahyouknowme/models/` on first use.
 
 Embeddings are pre-computed during MCP server startup for all indexed content and stored in the `search_embeddings` table. Only new/changed entries are embedded on subsequent starts.
 
@@ -347,7 +347,7 @@ At each step, results that look like phone numbers (all digits, optional leading
 
 ## Data Storage
 
-All data is stored in `~/.local/share/whatsapp-cli/`.
+All data is stored in `~/.local/share/mcpyeahyouknowme/`.
 
 | Path | Purpose |
 |------|---------|
@@ -391,9 +391,9 @@ No environment variables. Paths and API URL are hardcoded:
 
 | Setting | Value |
 |---------|-------|
-| Data directory | `~/.local/share/whatsapp-cli/` |
-| Messages database | `~/.local/share/whatsapp-cli/messages.db` |
-| Contacts database | `~/.local/share/whatsapp-cli/whatsapp.db` |
+| Data directory | `~/.local/share/mcpyeahyouknowme/` |
+| Messages database | `~/.local/share/mcpyeahyouknowme/messages.db` |
+| Contacts database | `~/.local/share/mcpyeahyouknowme/whatsapp.db` |
 | Core daemon REST API | `http://localhost:8080/api` |
 
 ## Dependencies
@@ -403,5 +403,5 @@ No environment variables. Paths and API URL are hardcoded:
 - [mcp-go](https://github.com/mark3labs/mcp-go) — Model Context Protocol server framework
 - [qrterminal](https://github.com/mdp/qrterminal) — QR code rendering in terminal
 - [fastembed-go](https://github.com/Anush008/fastembed-go) — ONNX-based text embeddings (BGE-Small-EN-v1.5)
-- **ONNX Runtime** (optional, auto-downloaded) — native shared library for embedding inference, downloaded by `./tasks.sh install` to `~/.local/share/whatsapp-cli/lib/`
+- **ONNX Runtime** (optional, auto-downloaded) — native shared library for embedding inference, downloaded by `./tasks.sh install` to `~/.local/share/mcpyeahyouknowme/lib/`
 - **ffmpeg** (optional) — required only for automatic audio format conversion in `send_audio_message`

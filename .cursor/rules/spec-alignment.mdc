@@ -1,6 +1,6 @@
 ---
 description: Keep docs/spec.md aligned with code changes
-globs: whatsapp-cli/**/*.go
+globs: src/**/*.go
 alwaysApply: false
 ---
 

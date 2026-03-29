@@ -8,14 +8,14 @@ Data is stored locally in SQLite and only sent to an LLM when accessed through M
 
 ## Architecture
 
-A single Go binary (`whatsapp-cli`) with a pluggable `DataSource` interface. Each source owns its tools, storage, and lifecycle.
+A single Go binary (`mcpyeahyouknowme`) with a pluggable `DataSource` interface. Each source owns its tools, storage, and lifecycle.
 
 | Mode | Command | Description |
 |------|---------|-------------|
-| Core | `whatsapp-cli core` | WhatsApp connection daemon: stores messages in SQLite, exposes a REST API |
-| MCP  | `whatsapp-cli mcp`  | MCP server over stdio. Loads all enabled sources and registers their tools |
+| Core | `mcpyeahyouknowme core` | WhatsApp connection daemon: stores messages in SQLite, exposes a REST API |
+| MCP  | `mcpyeahyouknowme mcp`  | MCP server over stdio. Loads all enabled sources and registers their tools |
 
-Data flows: Claude/Cursor talks MCP (stdio) to `whatsapp-cli mcp`, which loads each data source. Read tools query local SQLite directly; write tools proxy through the source's backend (e.g. WhatsApp core daemon REST API).
+Data flows: Claude/Cursor talks MCP (stdio) to `mcpyeahyouknowme mcp`, which loads each data source. Read tools query local SQLite directly; write tools proxy through the source's backend (e.g. WhatsApp core daemon REST API).
 
 See the [product spec](docs/spec.md) for full details.
 
@@ -41,12 +41,12 @@ See the [product spec](docs/spec.md) for full details.
    ./tasks.sh install
    ```
 
-   This builds the Go binary, copies it to `/usr/local/bin/whatsapp-cli`, downloads the ONNX Runtime for semantic search, sets up the core daemon, and adds shell completions. Run `./tasks.sh install-onnx` separately to install ONNX Runtime without the full install flow.
+   This builds the Go binary, copies it to `/usr/local/bin/mcpyeahyouknowme`, downloads the ONNX Runtime for semantic search, sets up the core daemon, and adds shell completions. Run `./tasks.sh install-onnx` separately to install ONNX Runtime without the full install flow.
 
 3. **Log in** (first time only)
 
    ```bash
-   whatsapp-cli login
+   mcpyeahyouknowme login
    ```
 
    Scan the QR code with your WhatsApp app. The initial history sync will be captured during login. The daemon will handle reconnection from now on.
@@ -57,7 +57,7 @@ See the [product spec](docs/spec.md) for full details.
    {
      "mcpServers": {
        "whatsapp": {
-         "command": "whatsapp-cli",
+         "command": "mcpyeahyouknowme",
          "args": ["mcp"]
        }
      }
@@ -74,23 +74,23 @@ See the [product spec](docs/spec.md) for full details.
 Install the core daemon (runs on login, auto-restarts) and manage it:
 
 ```bash
-whatsapp-cli install-daemon
-whatsapp-cli start
-whatsapp-cli stop
-whatsapp-cli restart
+mcpyeahyouknowme install-daemon
+mcpyeahyouknowme start
+mcpyeahyouknowme stop
+mcpyeahyouknowme restart
 ```
 
 Other commands:
 
 ```bash
 # Show status and data locations
-whatsapp-cli info
+mcpyeahyouknowme info
 
 # Uninstall daemon and wipe all data
-whatsapp-cli reset
+mcpyeahyouknowme reset
 
 # Full uninstall (reset + remove binaries)
-whatsapp-cli uninstall
+mcpyeahyouknowme uninstall
 ```
 
 ## Troubleshooting
@@ -98,9 +98,9 @@ whatsapp-cli uninstall
 - **QR code not displaying**: Restart the CLI. Check that your terminal supports QR rendering.
 - **Already logged in**: The CLI reconnects automatically without a QR code.
 - **Device limit reached**: Remove an existing device from WhatsApp on your phone (Settings > Linked Devices).
-- **No messages loading**: Initial history sync can take several minutes for large accounts. History is only pushed during first pairing. If your database is empty, run `whatsapp-cli login --relogin` to re-pair and capture the initial sync.
-- **Out of sync**: Run `whatsapp-cli reset` to wipe all data, then `whatsapp-cli login` to re-authenticate.
-- **Session expired / 405 error**: Run `whatsapp-cli login --relogin` to clear the stale session and re-pair. The daemon will be restarted automatically.
+- **No messages loading**: Initial history sync can take several minutes for large accounts. History is only pushed during first pairing. If your database is empty, run `mcpyeahyouknowme login --relogin` to re-pair and capture the initial sync.
+- **Out of sync**: Run `mcpyeahyouknowme reset` to wipe all data, then `mcpyeahyouknowme login` to re-authenticate.
+- **Session expired / 405 error**: Run `mcpyeahyouknowme login --relogin` to clear the stale session and re-pair. The daemon will be restarted automatically.
 For additional Claude Desktop troubleshooting, see the [MCP documentation](https://modelcontextprotocol.io/quickstart/server#claude-for-desktop-integration-issues).
 
 ### Windows
@@ -108,8 +108,8 @@ For additional Claude Desktop troubleshooting, see the [MCP documentation](https
 `go-sqlite3` requires CGO, which is disabled by default on Windows. Install a C compiler via [MSYS2](https://www.msys2.org/) (add `ucrt64\bin` to PATH), then:
 
 ```bash
-cd whatsapp-cli
+cd src
 go env -w CGO_ENABLED=1
-go build -o whatsapp-cli .
-./whatsapp-cli --core
+go build -o mcpyeahyouknowme .
+./mcpyeahyouknowme --core
 ```

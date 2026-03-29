@@ -17,7 +17,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-const plistName = "com.whatsapp-cli.core"
+const plistName = "com.mcpyeahyouknowme.core"
 
 func plistPath() string {
 	home, _ := os.UserHomeDir()
@@ -25,13 +25,13 @@ func plistPath() string {
 }
 
 func installedBinPath() string {
-	return "/usr/local/bin/whatsapp-cli"
+	return "/usr/local/bin/mcpyeahyouknowme"
 }
 
 func requireDaemonInstalled() string {
 	plist := plistPath()
 	if _, err := os.Stat(plist); os.IsNotExist(err) {
-		fmt.Fprintln(os.Stderr, "Error: core daemon not installed. Run 'whatsapp-cli install-daemon' first.")
+		fmt.Fprintln(os.Stderr, "Error: core daemon not installed. Run 'mcpyeahyouknowme install-daemon' first.")
 		os.Exit(1)
 	}
 	return plist
@@ -56,7 +56,7 @@ func isLoggedIn() bool {
 
 func requireLogin() {
 	if !isLoggedIn() {
-		fmt.Fprintln(os.Stderr, "Not logged in to WhatsApp. Run 'whatsapp-cli login' first.")
+		fmt.Fprintln(os.Stderr, "Not logged in to WhatsApp. Run 'mcpyeahyouknowme login' first.")
 		os.Exit(1)
 	}
 }
@@ -176,7 +176,7 @@ func runLogin(args []string) {
 			fmt.Printf("Captured %d history sync event(s) during login.\n", historySyncCount)
 		}
 	case <-time.After(30 * time.Second):
-		fmt.Println("Paired but connection didn't fully establish. Try running 'whatsapp-cli core' to verify.")
+		fmt.Println("Paired but connection didn't fully establish. Try running 'mcpyeahyouknowme core' to verify.")
 	}
 
 	if messageStore != nil {
@@ -300,13 +300,13 @@ func runUninstall() {
 	// Remove shell completions from .zshrc
 	home, _ := os.UserHomeDir()
 	zshrc := filepath.Join(home, ".zshrc")
-	compLine := `eval "$(whatsapp-cli completions zsh)"`
+	compLine := `eval "$(mcpyeahyouknowme completions zsh)"`
 	if data, err := os.ReadFile(zshrc); err == nil {
 		original := string(data)
 		lines := strings.Split(original, "\n")
 		var filtered []string
 		for _, l := range lines {
-			if !strings.Contains(l, "whatsapp-cli") || !strings.Contains(l, "completions") {
+			if !strings.Contains(l, "mcpyeahyouknowme") || !strings.Contains(l, "completions") {
 				filtered = append(filtered, l)
 			}
 		}
@@ -318,10 +318,10 @@ func runUninstall() {
 	}
 	_ = compLine
 
-	if err := exec.Command("sudo", "rm", "-f", "/usr/local/bin/whatsapp-cli").Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not remove /usr/local/bin/whatsapp-cli (try running with sudo)\n")
+	if err := exec.Command("sudo", "rm", "-f", "/usr/local/bin/mcpyeahyouknowme").Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not remove /usr/local/bin/mcpyeahyouknowme (try running with sudo)\n")
 	} else {
-		fmt.Println("Removed /usr/local/bin/whatsapp-cli")
+		fmt.Println("Removed /usr/local/bin/mcpyeahyouknowme")
 	}
 }
 
@@ -329,7 +329,7 @@ func runInfo() {
 	dDir := dataDir()
 
 	fmt.Println("┌──────────────────────────────────────────┐")
-	fmt.Println("│           whatsapp-cli info              │")
+	fmt.Println("│         mcpyeahyouknowme info            │")
 	fmt.Println("└──────────────────────────────────────────┘")
 	fmt.Println()
 
@@ -338,7 +338,7 @@ func runInfo() {
 	if info, err := os.Stat(dDir); err == nil && info.IsDir() {
 		fmt.Println("   Status:     initialized")
 	} else {
-		fmt.Println("   Status:     not initialized (run 'whatsapp-cli login')")
+		fmt.Println("   Status:     not initialized (run 'mcpyeahyouknowme login')")
 	}
 	fmt.Println()
 
@@ -361,7 +361,7 @@ func runInfo() {
 			fmt.Println("   Logged in:  unable to read session db")
 		}
 	} else {
-		fmt.Println("   Logged in:  no session (run 'whatsapp-cli login')")
+		fmt.Println("   Logged in:  no session (run 'mcpyeahyouknowme login')")
 	}
 
 	msgDB := filepath.Join(dDir, "messages.db")
@@ -426,7 +426,7 @@ func runCompletions(shell string) {
 }
 
 func printBashCompletions() {
-	fmt.Print(`_whatsapp_cli() {
+	fmt.Print(`_mcpyeahyouknowme() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local cmd="${COMP_WORDS[1]}"
 
@@ -441,12 +441,12 @@ func printBashCompletions() {
             ;;
     esac
 }
-complete -o nospace -F _whatsapp_cli whatsapp-cli
+complete -o nospace -F _mcpyeahyouknowme mcpyeahyouknowme
 `)
 }
 
 func printZshCompletions() {
-	fmt.Print(`_whatsapp_cli() {
+	fmt.Print(`_mcpyeahyouknowme() {
     local -a cmds comp_args
 
     cmds=(
@@ -481,6 +481,6 @@ func printZshCompletions() {
 if (( ! $+functions[compdef] )); then
     autoload -Uz compinit && compinit -C
 fi
-compdef _whatsapp_cli whatsapp-cli
+compdef _mcpyeahyouknowme mcpyeahyouknowme
 `)
 }

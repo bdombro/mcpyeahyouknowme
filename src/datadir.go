@@ -17,7 +17,7 @@ func dataDir() string {
 		if err != nil {
 			home = "."
 		}
-		dataDirValue = filepath.Join(home, ".local", "share", "whatsapp-cli")
+		dataDirValue = filepath.Join(home, ".local", "share", "mcpyeahyouknowme")
 	})
 	return dataDirValue
 }

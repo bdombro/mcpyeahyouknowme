@@ -1,6 +1,6 @@
 ---
 description: All changes must be tested with 100% coverage on affected code
-globs: whatsapp-cli/**/*.go
+globs: src/**/*.go
 alwaysApply: false
 ---
 
@@ -14,7 +14,7 @@ Every change to Go source files must include tests that cover 100% of the new or
 2. Write or update tests in the corresponding `*_test.go` file.
 3. Run coverage and verify the changed functions are fully covered:
    ```bash
-   cd whatsapp-cli
+   cd src
    go test -tags "sqlite_fts5" -coverprofile=coverage.out -count=1 ./...
    go tool cover -func=coverage.out | grep <function_name>
    ```

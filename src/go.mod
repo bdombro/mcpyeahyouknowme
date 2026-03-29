@@ -1,4 +1,4 @@
-module whatsapp-client
+module mcpyeahyouknowme
 
 go 1.24.1
 

@@ -1,6 +1,6 @@
 ---
-description: Testing standards for whatsapp-cli Go codebase
-globs: whatsapp-cli/**/*.go
+description: Testing standards for mcpyeahyouknowme Go codebase
+globs: src/**/*.go
 alwaysApply: false
 ---
 
