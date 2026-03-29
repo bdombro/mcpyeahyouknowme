@@ -1,6 +1,10 @@
 package main
 
-import "github.com/mark3labs/mcp-go/server"
+import (
+	"context"
+
+	"github.com/mark3labs/mcp-go/server"
+)
 
 // DataSource represents a pluggable data backend that registers its own MCP
 // tools. Each source owns its lifecycle (DB connections, HTTP clients) and
@@ -24,6 +28,21 @@ type DataSource interface {
 
 	// Close releases any resources held by the source.
 	Close() error
+}
+
+// CoreService is an optional interface for data sources that need to run
+// persistent background services (e.g., maintaining active connections,
+// syncing data). Sources that only provide MCP tools don't need to implement this.
+type CoreService interface {
+	// StartCore runs the source's background services. This should block
+	// until interrupted via context cancellation. If the source needs
+	// authentication, it should check that before starting.
+	StartCore(ctx context.Context) error
+
+	// RequiresAuth returns true if this source needs authentication before
+	// running core services. If true, the daemon will skip this source if
+	// the user hasn't logged in.
+	RequiresAuth() bool
 }
 
 // LoadSources returns all enabled data sources. Currently only WhatsApp.
