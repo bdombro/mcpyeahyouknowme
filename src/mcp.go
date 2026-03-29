@@ -24,6 +24,19 @@ func runMcp() {
 		}
 	}()
 
+	// Filter sources: only include WhatsApp if logged in
+	var enabledSources []DataSource
+	for _, src := range sources {
+		if src.Name() == "whatsapp" {
+			if !isLoggedIn() {
+				fmt.Fprintf(os.Stderr, "Info: WhatsApp not logged in - WhatsApp MCP tools will not be available.\n")
+				fmt.Fprintf(os.Stderr, "      Run 'mcpyeahyouknowme whatsapp login' to enable WhatsApp integration.\n")
+				continue
+			}
+		}
+		enabledSources = append(enabledSources, src)
+	}
+
 	// Initialize embedding model (nil if ONNX not installed)
 	dir := dataDir()
 	embedder, err := NewEmbedder(filepath.Join(dir, "models"))
@@ -57,9 +70,9 @@ func runMcp() {
 	}
 	if searchStore != nil {
 		defer searchStore.Close()
-		indexSources(searchStore, sources)
+		indexSources(searchStore, enabledSources)
 		// Inject search store into sources that support vector-enhanced search
-		for _, src := range sources {
+		for _, src := range enabledSources {
 			if ws, ok := src.(*WhatsAppSource); ok {
 				ws.SetSearchStore(searchStore)
 			}
@@ -72,7 +85,7 @@ func runMcp() {
 		server.WithToolCapabilities(false),
 	)
 
-	for _, src := range sources {
+	for _, src := range enabledSources {
 		src.RegisterTools(s)
 	}
 

@@ -12,7 +12,7 @@ A single Go binary (`mcpyeahyouknowme`) with a pluggable `DataSource` interface.
 
 | Mode | Command | Description |
 |------|---------|-------------|
-| Core | `mcpyeahyouknowme core` | WhatsApp connection daemon: stores messages in SQLite, exposes a REST API |
+| Core | `mcpyeahyouknowme whatsapp core` | WhatsApp connection daemon: stores messages in SQLite, exposes a REST API |
 | MCP  | `mcpyeahyouknowme mcp`  | MCP server over stdio. Loads all enabled sources and registers their tools |
 
 Data flows: Claude/Cursor talks MCP (stdio) to `mcpyeahyouknowme mcp`, which loads each data source. Read tools query local SQLite directly; write tools proxy through the source's backend (e.g. WhatsApp core daemon REST API).
@@ -46,7 +46,7 @@ See the [product spec](docs/spec.md) for full details.
 3. **Log in** (first time only)
 
    ```bash
-   mcpyeahyouknowme login
+   mcpyeahyouknowme whatsapp login
    ```
 
    Scan the QR code with your WhatsApp app. The initial history sync will be captured during login. The daemon will handle reconnection from now on.
@@ -86,10 +86,10 @@ Other commands:
 # Show status and data locations
 mcpyeahyouknowme info
 
-# Uninstall daemon and wipe all data
-mcpyeahyouknowme reset
+# Wipe WhatsApp data and session
+mcpyeahyouknowme whatsapp reset
 
-# Full uninstall (reset + remove binaries)
+# Full uninstall (daemon + all data + binaries)
 mcpyeahyouknowme uninstall
 ```
 
@@ -98,9 +98,9 @@ mcpyeahyouknowme uninstall
 - **QR code not displaying**: Restart the CLI. Check that your terminal supports QR rendering.
 - **Already logged in**: The CLI reconnects automatically without a QR code.
 - **Device limit reached**: Remove an existing device from WhatsApp on your phone (Settings > Linked Devices).
-- **No messages loading**: Initial history sync can take several minutes for large accounts. History is only pushed during first pairing. If your database is empty, run `mcpyeahyouknowme login --relogin` to re-pair and capture the initial sync.
-- **Out of sync**: Run `mcpyeahyouknowme reset` to wipe all data, then `mcpyeahyouknowme login` to re-authenticate.
-- **Session expired / 405 error**: Run `mcpyeahyouknowme login --relogin` to clear the stale session and re-pair. The daemon will be restarted automatically.
+- **No messages loading**: Initial history sync can take several minutes for large accounts. History is only pushed during first pairing. If your database is empty, run `mcpyeahyouknowme whatsapp login --relogin` to re-pair and capture the initial sync.
+- **Out of sync**: Run `mcpyeahyouknowme whatsapp reset` to wipe all data, then `mcpyeahyouknowme whatsapp login` to re-authenticate.
+- **Session expired / 405 error**: Run `mcpyeahyouknowme whatsapp login --relogin` to clear the stale session and re-pair. The daemon will be restarted automatically.
 For additional Claude Desktop troubleshooting, see the [MCP documentation](https://modelcontextprotocol.io/quickstart/server#claude-for-desktop-integration-issues).
 
 ### Windows
@@ -111,5 +111,5 @@ For additional Claude Desktop troubleshooting, see the [MCP documentation](https
 cd src
 go env -w CGO_ENABLED=1
 go build -o mcpyeahyouknowme .
-./mcpyeahyouknowme --core
+./mcpyeahyouknowme whatsapp core
 ```

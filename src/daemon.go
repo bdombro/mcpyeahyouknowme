@@ -56,7 +56,7 @@ func isLoggedIn() bool {
 
 func requireLogin() {
 	if !isLoggedIn() {
-		fmt.Fprintln(os.Stderr, "Not logged in to WhatsApp. Run 'mcpyeahyouknowme login' first.")
+		fmt.Fprintln(os.Stderr, "Not logged in to WhatsApp. Run 'mcpyeahyouknowme whatsapp login' first.")
 		os.Exit(1)
 	}
 }
@@ -343,7 +343,7 @@ func runInfo() {
 	if info, err := os.Stat(dDir); err == nil && info.IsDir() {
 		fmt.Println("   Status:     initialized")
 	} else {
-		fmt.Println("   Status:     not initialized (run 'mcpyeahyouknowme login')")
+		fmt.Println("   Status:     not initialized (run 'mcpyeahyouknowme wa login')")
 	}
 	fmt.Println()
 
@@ -366,7 +366,7 @@ func runInfo() {
 			fmt.Println("   Logged in:  unable to read session db")
 		}
 	} else {
-		fmt.Println("   Logged in:  no session (run 'mcpyeahyouknowme login')")
+		fmt.Println("   Logged in:  no session (run 'mcpyeahyouknowme whatsapp login')")
 	}
 
 	msgDB := filepath.Join(dDir, "messages.db")
@@ -405,17 +405,19 @@ func runInfo() {
 }
 
 var commands = []string{
-	"core",
-	"login",
 	"mcp",
+	"info",
+	"completions",
 	"install-daemon",
-	"uninstall",
 	"start",
 	"stop",
 	"restart",
+	"uninstall",
+	"whatsapp",
+	// Legacy (backward compatibility)
+	"login",
+	"core",
 	"reset",
-	"info",
-	"completions",
 }
 
 func runCompletions(shell string) {
@@ -434,17 +436,23 @@ func printBashCompletions() {
 	fmt.Print(`_mcpyeahyouknowme() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local cmd="${COMP_WORDS[1]}"
+    local subcmd="${COMP_WORDS[2]}"
 
     if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "` + strings.Join(commands, " ") + `" -- "$cur") )
+        COMPREPLY=( $(compgen -W "mcp info completions install-daemon start stop restart uninstall whatsapp login core reset" -- "$cur") )
         return
     fi
 
-    case "$cmd" in
-        completions)
-            COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") )
-            ;;
-    esac
+    if [[ $COMP_CWORD -eq 2 ]]; then
+        case "$cmd" in
+            whatsapp)
+                COMPREPLY=( $(compgen -W "login core reset" -- "$cur") )
+                ;;
+            completions)
+                COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") )
+                ;;
+        esac
+    fi
 }
 complete -o nospace -F _mcpyeahyouknowme mcpyeahyouknowme
 `)
@@ -452,20 +460,23 @@ complete -o nospace -F _mcpyeahyouknowme mcpyeahyouknowme
 
 func printZshCompletions() {
 	fmt.Print(`_mcpyeahyouknowme() {
-    local -a cmds comp_args
+    local -a cmds wa_cmds comp_args
 
     cmds=(
-        'core:Start the WhatsApp connection and REST API'
-        'login:Log in to WhatsApp (scan QR code)'
         'mcp:Start the MCP server (stdio transport)'
+        'info:Show install status and data locations'
+        'completions:Print shell completions (bash or zsh)'
         'install-daemon:Install core daemon (macOS LaunchAgent)'
-        'uninstall:Remove daemon, data, and binaries'
         'start:Start the core daemon'
         'stop:Stop the core daemon'
         'restart:Restart the core daemon'
-        'reset:Uninstall daemon and wipe all data'
-        'info:Show install status and data locations'
-        'completions:Print shell completions (bash or zsh)'
+        'uninstall:Remove daemon, data, and binaries'
+        'whatsapp:WhatsApp commands'
+    )
+    wa_cmds=(
+        'login:Log in to WhatsApp (scan QR code)'
+        'core:Start the WhatsApp connection and REST API'
+        'reset:Wipe WhatsApp data and session'
     )
     comp_args=(
         'bash:Bash completions'
@@ -474,6 +485,8 @@ func printZshCompletions() {
 
     if (( CURRENT == 2 )); then
         _describe -t commands 'command' cmds
+    elif (( CURRENT == 3 )) && [[ "${words[2]}" == whatsapp ]]; then
+        _describe -t wa_commands 'whatsapp command' wa_cmds
     else
         case "${words[2]}" in
             completions)

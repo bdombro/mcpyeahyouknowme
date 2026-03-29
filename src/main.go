@@ -688,22 +688,27 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "Usage: mcpyeahyouknowme <command> [flags]")
 	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Commands:")
-	fmt.Fprintln(os.Stderr, "  login [--relogin]   Log in to WhatsApp (scan QR code)")
-	fmt.Fprintln(os.Stderr, "  core                Start the WhatsApp connection and REST API")
-	fmt.Fprintln(os.Stderr, "  mcp                 Start the MCP server (stdio transport)")
-	fmt.Fprintln(os.Stderr, "  info                Show install status and data locations")
+	fmt.Fprintln(os.Stderr, "General:")
+	fmt.Fprintln(os.Stderr, "  mcp                      Start the MCP server (stdio transport)")
+	fmt.Fprintln(os.Stderr, "  info                     Show install status and data locations")
+	fmt.Fprintln(os.Stderr, "  completions [shell]      Print shell completions (bash or zsh)")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Daemon:")
-	fmt.Fprintln(os.Stderr, "  install-daemon      Install core as a macOS LaunchAgent")
-	fmt.Fprintln(os.Stderr, "  start               Start the core daemon")
-	fmt.Fprintln(os.Stderr, "  stop                Stop the core daemon")
-	fmt.Fprintln(os.Stderr, "  restart             Restart the core daemon")
+	fmt.Fprintln(os.Stderr, "  install-daemon           Install core as a macOS LaunchAgent")
+	fmt.Fprintln(os.Stderr, "  start                    Start the core daemon")
+	fmt.Fprintln(os.Stderr, "  stop                     Stop the core daemon")
+	fmt.Fprintln(os.Stderr, "  restart                  Restart the core daemon")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "WhatsApp:")
+	fmt.Fprintln(os.Stderr, "  whatsapp login [--relogin]   Log in to WhatsApp (scan QR code)")
+	fmt.Fprintln(os.Stderr, "  whatsapp core                Start the WhatsApp connection and REST API")
+	fmt.Fprintln(os.Stderr, "  whatsapp reset               Wipe WhatsApp data and session")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Maintenance:")
-	fmt.Fprintln(os.Stderr, "  reset               Uninstall daemons and wipe all data")
-	fmt.Fprintln(os.Stderr, "  uninstall           Reset, remove binaries, and clean up")
-	fmt.Fprintln(os.Stderr, "  completions [shell] Print shell completions (bash or zsh)")
+	fmt.Fprintln(os.Stderr, "  uninstall                Remove daemon, data, and binaries")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Legacy (deprecated):")
+	fmt.Fprintln(os.Stderr, "  login, core, reset (use 'whatsapp' prefix for WhatsApp commands)")
 }
 
 func main() {
@@ -715,30 +720,21 @@ func main() {
 	cmd := os.Args[1]
 	args := os.Args[2:]
 
+	// Handle WhatsApp subcommands
+	if cmd == "whatsapp" {
+		if len(args) == 0 {
+			fmt.Fprintln(os.Stderr, "Error: whatsapp subcommand required\n")
+			printUsage()
+			os.Exit(1)
+		}
+		cmd = args[0]
+		args = args[1:]
+	}
+
 	switch cmd {
-	case "login":
-		runLogin(args)
-		return
+	// General commands
 	case "mcp":
 		runMcp()
-		return
-	case "install-daemon":
-		runInstallDaemon()
-		return
-	case "uninstall":
-		runUninstall()
-		return
-	case "start":
-		runStart()
-		return
-	case "stop":
-		runStop()
-		return
-	case "restart":
-		runRestart()
-		return
-	case "reset":
-		runReset()
 		return
 	case "info":
 		runInfo()
@@ -750,8 +746,36 @@ func main() {
 		}
 		runCompletions(shell)
 		return
+
+	// Daemon management
+	case "install-daemon":
+		runInstallDaemon()
+		return
+	case "start":
+		runStart()
+		return
+	case "stop":
+		runStop()
+		return
+	case "restart":
+		runRestart()
+		return
+
+	// Maintenance
+	case "uninstall":
+		runUninstall()
+		return
+
+	// WhatsApp commands (legacy, kept for backward compatibility)
+	case "login":
+		runLogin(args)
+		return
 	case "core":
 		requireLogin()
+	case "reset":
+		runReset()
+		return
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", cmd)
 		printUsage()

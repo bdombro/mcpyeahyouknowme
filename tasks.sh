@@ -99,7 +99,7 @@ cmd_install_onnx() {
 cmd_install() {
 	cmd_update
 	cmd_install_onnx
-	mcpyeahyouknowme login
+	mcpyeahyouknowme whatsapp login
 	mcpyeahyouknowme install-daemon
 
 	local comp_line='eval "$(mcpyeahyouknowme completions zsh)"'
@@ -131,8 +131,8 @@ cmd_test_cover() {
 }
 
 cmd_reset() {
-	mcpyeahyouknowme reset
-	mcpyeahyouknowme login
+	mcpyeahyouknowme whatsapp reset
+	mcpyeahyouknowme whatsapp login
 }
 
 case "${1:-}" in
