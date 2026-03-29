@@ -53,9 +53,10 @@ type MCPMessageContext struct {
 // Read operations go directly to SQLite; write operations proxy through the
 // core daemon's REST API.
 type MCPService struct {
-	store   *MessageStore
-	apiURL  string
-	httpCli *http.Client
+	store       *MessageStore
+	apiURL      string
+	httpCli     *http.Client
+	searchStore *SearchStore // optional: enables vector-enhanced message search
 }
 
 func NewMCPService(store *MessageStore, apiURL string) *MCPService {
@@ -64,6 +65,11 @@ func NewMCPService(store *MessageStore, apiURL string) *MCPService {
 		apiURL:  apiURL,
 		httpCli: &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+// SetSearchStore enables vector-enhanced hybrid search for messages.
+func (s *MCPService) SetSearchStore(ss *SearchStore) {
+	s.searchStore = ss
 }
 
 // ---------- Formatting ----------
@@ -151,7 +157,17 @@ func (s *MCPService) listMessagesChronological(after, before, sender, chatJID st
 }
 
 func (s *MCPService) hybridMessageSearch(query string, limit int, chatJID, after, before, sender string, includeContext bool, ctxBefore, ctxAfter int) (string, error) {
-	ranked := s.bm25Search(query, limit*5, chatJID, after, before)
+	bm25Ranked := s.bm25Search(query, limit*5, chatJID, after, before)
+
+	// If a search store with embeddings is available, combine BM25 with
+	// vector results using RRF for better recall.
+	ranked := foldBM25ToRanked(bm25Ranked)
+	if s.searchStore != nil && s.searchStore.embedder != nil {
+		vectorResults := s.vectorMessageSearch(query, limit*5, chatJID, after, before)
+		if len(vectorResults) > 0 {
+			ranked = rrfFuseMessageResults(bm25Ranked, vectorResults)
+		}
+	}
 
 	if len(ranked) == 0 {
 		return s.formatMessages(nil), nil
@@ -183,6 +199,67 @@ func (s *MCPService) hybridMessageSearch(query string, limit int, chatJID, after
 		msgs = s.expandContext(msgs, ctxBefore, ctxAfter)
 	}
 	return s.formatMessages(msgs), nil
+}
+
+// vectorMessageSearch queries the global search index for message-type entries
+// that semantically match the query, then maps them back to message IDs.
+func (s *MCPService) vectorMessageSearch(query string, limit int, chatJID, after, before string) []searchResult {
+	results, err := s.searchStore.Search(query, limit, "whatsapp", "message")
+	if err != nil {
+		return nil
+	}
+
+	var out []searchResult
+	for _, r := range results {
+		var meta struct {
+			MessageID string `json:"message_id"`
+			ChatJID   string `json:"chat_jid"`
+			Timestamp string `json:"timestamp"`
+		}
+		if json.Unmarshal(r.Metadata, &meta) != nil {
+			continue
+		}
+		if chatJID != "" && meta.ChatJID != chatJID {
+			continue
+		}
+		if after != "" && meta.Timestamp < after {
+			continue
+		}
+		if before != "" && meta.Timestamp > before {
+			continue
+		}
+		out = append(out, searchResult{
+			msgID:   meta.MessageID,
+			chatJID: meta.ChatJID,
+			score:   r.Score,
+		})
+	}
+	return out
+}
+
+func foldBM25ToRanked(bm25 []searchResult) []searchResult {
+	return bm25
+}
+
+// rrfFuseMessageResults combines BM25 and vector message search results.
+func rrfFuseMessageResults(bm25, vector []searchResult) []searchResult {
+	type key struct{ msgID, chatJID string }
+	scores := make(map[key]float64)
+	for rank, r := range bm25 {
+		k := key{r.msgID, r.chatJID}
+		scores[k] += 1.0 / float64(rrfK+rank+1)
+	}
+	for rank, r := range vector {
+		k := key{r.msgID, r.chatJID}
+		scores[k] += 1.0 / float64(rrfK+rank+1)
+	}
+
+	results := make([]searchResult, 0, len(scores))
+	for k, score := range scores {
+		results = append(results, searchResult{msgID: k.msgID, chatJID: k.chatJID, score: score})
+	}
+	sort.Slice(results, func(i, j int) bool { return results[i].score > results[j].score })
+	return results
 }
 
 type searchResult struct {

@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -31,6 +35,142 @@ func NewWhatsAppSourceFromStore(store *MessageStore, apiURL string) *WhatsAppSou
 func (w *WhatsAppSource) Name() string        { return "whatsapp" }
 func (w *WhatsAppSource) Description() string  { return "WhatsApp" }
 func (w *WhatsAppSource) Close() error         { w.store.Close(); return nil }
+
+// SetSearchStore enables vector-enhanced hybrid message search.
+func (w *WhatsAppSource) SetSearchStore(ss *SearchStore) {
+	w.svc.SetSearchStore(ss)
+}
+
+func (w *WhatsAppSource) SearchEntries() ([]SearchEntry, error) {
+	var entries []SearchEntry
+	src := w.Name()
+
+	// Chat names
+	chatRows, err := w.store.db.Query("SELECT jid, name, last_message_time FROM chats")
+	if err == nil {
+		defer chatRows.Close()
+		for chatRows.Next() {
+			var jid string
+			var name sql.NullString
+			var lastTime sql.NullString
+			if chatRows.Scan(&jid, &name, &lastTime) != nil || !name.Valid || name.String == "" {
+				continue
+			}
+			meta, _ := json.Marshal(map[string]interface{}{
+				"jid":      jid,
+				"is_group": strings.HasSuffix(jid, "@g.us"),
+			})
+			var ts *time.Time
+			if lastTime.Valid {
+				t := parseTime(lastTime.String)
+				ts = &t
+			}
+			entries = append(entries, SearchEntry{
+				Source:      src,
+				SourceID:    jid,
+				ContentType: "chat_name",
+				Title:       name.String,
+				Content:     name.String,
+				Metadata:    meta,
+				Timestamp:   ts,
+			})
+		}
+	}
+
+	// Participants (from whatsmeow_contacts if available)
+	if w.store.contactsDB != nil {
+		contactRows, err := w.store.contactsDB.Query("SELECT their_jid, full_name, push_name FROM whatsmeow_contacts")
+		if err == nil {
+			defer contactRows.Close()
+			for contactRows.Next() {
+				var jid string
+				var fullName, pushName sql.NullString
+				if contactRows.Scan(&jid, &fullName, &pushName) != nil {
+					continue
+				}
+				if strings.HasSuffix(jid, "@g.us") {
+					continue
+				}
+				displayName := nullStr(fullName)
+				if displayName == "" {
+					displayName = nullStr(pushName)
+				}
+				if displayName == "" {
+					continue
+				}
+				phone := jidPhone(jid)
+				content := displayName
+				if phone != displayName {
+					content = displayName + " " + phone
+				}
+
+				// Find groups this contact belongs to
+				var groups []string
+				gpRows, gpErr := w.store.db.Query(
+					"SELECT group_jid FROM group_participants WHERE participant_jid = ?", jid)
+				if gpErr == nil {
+					for gpRows.Next() {
+						var gj string
+						if gpRows.Scan(&gj) == nil {
+							groups = append(groups, gj)
+						}
+					}
+					gpRows.Close()
+				}
+
+				meta, _ := json.Marshal(map[string]interface{}{
+					"jid":    jid,
+					"groups": groups,
+				})
+				entries = append(entries, SearchEntry{
+					Source:      src,
+					SourceID:    jid,
+					ContentType: "participant",
+					Title:       displayName,
+					Content:     content,
+					Metadata:    meta,
+				})
+			}
+		}
+	}
+
+	// Messages (only those with meaningful content)
+	msgRows, err := w.store.db.Query(`
+		SELECT m.id, m.chat_jid, m.sender, m.content, m.timestamp, m.is_from_me, c.name
+		FROM messages m
+		JOIN chats c ON m.chat_jid = c.jid
+		WHERE LENGTH(m.content) > 20`)
+	if err == nil {
+		defer msgRows.Close()
+		for msgRows.Next() {
+			var id, chatJID, sender, content, tsStr string
+			var isFromMe bool
+			var chatName sql.NullString
+			if msgRows.Scan(&id, &chatJID, &sender, &content, &tsStr, &isFromMe, &chatName) != nil {
+				continue
+			}
+			ts := parseTime(tsStr)
+			meta, _ := json.Marshal(map[string]interface{}{
+				"message_id": id,
+				"chat_jid":   chatJID,
+				"sender":     sender,
+				"timestamp":  ts.Format(time.RFC3339),
+				"is_from_me": isFromMe,
+			})
+			entries = append(entries, SearchEntry{
+				Source:      src,
+				SourceID:    id + ":" + chatJID,
+				ContentType: "message",
+				Title:       nullStr(chatName),
+				Content:     content,
+				Metadata:    meta,
+				Timestamp:   &ts,
+			})
+		}
+	}
+
+	return entries, nil
+}
 
 func (w *WhatsAppSource) RegisterTools(s *server.MCPServer) {
 	svc := w.svc

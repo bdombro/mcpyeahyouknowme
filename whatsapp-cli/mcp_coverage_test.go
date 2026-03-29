@@ -226,3 +226,72 @@ func TestMessagesAround(t *testing.T) {
 		t.Error("expected messages before 2099")
 	}
 }
+
+// ---------- mcp_service.go: vector-enhanced hybrid search ----------
+
+func TestRRFFuseMessageResults(t *testing.T) {
+	bm25 := []searchResult{
+		{msgID: "m1", chatJID: "chat1", score: 10},
+		{msgID: "m2", chatJID: "chat1", score: 5},
+	}
+	vector := []searchResult{
+		{msgID: "m2", chatJID: "chat1", score: 0.9},
+		{msgID: "m3", chatJID: "chat1", score: 0.5},
+	}
+	fused := rrfFuseMessageResults(bm25, vector)
+	if len(fused) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(fused))
+	}
+	// m2 appears in both, should rank first
+	if fused[0].msgID != "m2" {
+		t.Errorf("expected m2 first (in both lists), got %s", fused[0].msgID)
+	}
+}
+
+func TestFoldBM25ToRanked(t *testing.T) {
+	bm25 := []searchResult{{msgID: "m1", chatJID: "c1", score: 5}}
+	result := foldBM25ToRanked(bm25)
+	if len(result) != 1 || result[0].msgID != "m1" {
+		t.Error("foldBM25ToRanked should pass through")
+	}
+}
+
+func TestVectorMessageSearch_noSearchStore(t *testing.T) {
+	svc := newTestService(t, "")
+	// searchStore is nil, so hybridMessageSearch should still work (BM25 only)
+	result, err := svc.ListMessages("", "", "", "", "dinner", 10, 0, false, 0, 0)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	requireContains(t, result, "dinner")
+}
+
+func TestHybridMessageSearch_withVectorEnhancement(t *testing.T) {
+	store := newTestStoreWithContacts(t)
+	svc := NewMCPService(store, "")
+
+	// Create a search store with mock embeddings
+	searchStore := newTestSearchStore(t, &mockEmbedder{dim: 16})
+	ws := NewWhatsAppSourceFromStore(store, "")
+	entries, _ := ws.SearchEntries()
+	searchStore.IndexEntries(entries)
+	svc.SetSearchStore(searchStore)
+
+	result, err := svc.ListMessages("", "", "", "", "dinner", 10, 0, false, 0, 0)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	requireContains(t, result, "dinner")
+}
+
+func TestSetSearchStore(t *testing.T) {
+	svc := newTestService(t, "")
+	if svc.searchStore != nil {
+		t.Error("expected nil searchStore initially")
+	}
+	ss := newTestSearchStore(t, nil)
+	svc.SetSearchStore(ss)
+	if svc.searchStore == nil {
+		t.Error("expected non-nil searchStore after SetSearchStore")
+	}
+}

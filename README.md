@@ -23,6 +23,7 @@ See the [product spec](docs/spec.md) for full details.
 
 - Go (to build)
 - FFmpeg (*optional*) — only needed for automatic audio format conversion when sending voice messages
+- ONNX Runtime (*optional*, auto-downloaded) — required for semantic vector search; `./tasks.sh install` downloads it automatically
 
 ## Quick Start
 
@@ -40,7 +41,7 @@ See the [product spec](docs/spec.md) for full details.
    ./tasks.sh install
    ```
 
-   This builds the Go binary, copies it to `/usr/local/bin/whatsapp-cli`, sets up the core daemon, and adds shell completions.
+   This builds the Go binary, copies it to `/usr/local/bin/whatsapp-cli`, downloads the ONNX Runtime for semantic search, sets up the core daemon, and adds shell completions. Run `./tasks.sh install-onnx` separately to install ONNX Runtime without the full install flow.
 
 3. **Log in** (first time only)
 

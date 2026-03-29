@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -255,4 +257,197 @@ func TestWhatsAppSource_interface(t *testing.T) {
 	}
 
 	var _ DataSource = ws
+}
+
+// ---------- SearchEntries ----------
+
+func TestWhatsAppSource_SearchEntries(t *testing.T) {
+	store := newTestStoreWithContacts(t)
+	ws := NewWhatsAppSourceFromStore(store, "http://localhost:1")
+
+	entries, err := ws.SearchEntries()
+	if err != nil {
+		t.Fatalf("SearchEntries: %v", err)
+	}
+
+	types := make(map[string]int)
+	for _, e := range entries {
+		types[e.ContentType]++
+		if e.Source != "whatsapp" {
+			t.Errorf("expected source=whatsapp, got %s", e.Source)
+		}
+	}
+
+	if types["chat_name"] == 0 {
+		t.Error("expected chat_name entries")
+	}
+	if types["participant"] == 0 {
+		t.Error("expected participant entries")
+	}
+	if types["message"] == 0 {
+		t.Error("expected message entries")
+	}
+}
+
+func TestWhatsAppSource_SearchEntries_noContacts(t *testing.T) {
+	store := newTestStore(t) // no contacts DB
+	ws := NewWhatsAppSourceFromStore(store, "http://localhost:1")
+
+	entries, err := ws.SearchEntries()
+	if err != nil {
+		t.Fatalf("SearchEntries: %v", err)
+	}
+
+	for _, e := range entries {
+		if e.ContentType == "participant" {
+			t.Error("should have no participant entries without contacts DB")
+		}
+	}
+}
+
+// ---------- Global Search MCP Tool ----------
+
+// buildTestMCPServerWithSearch creates an MCP server with the global search tool wired up.
+func buildTestMCPServerWithSearch(t *testing.T) *server.MCPServer {
+	t.Helper()
+
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+	}))
+	t.Cleanup(apiSrv.Close)
+
+	msgStore := newTestStoreWithContacts(t)
+	ws := NewWhatsAppSourceFromStore(msgStore, apiSrv.URL)
+
+	searchDB, err := sql.Open("sqlite3", "file::memory:?cache=shared&_foreign_keys=on")
+	if err != nil {
+		t.Fatalf("open search db: %v", err)
+	}
+	t.Cleanup(func() { searchDB.Close() })
+	searchDB.Exec("PRAGMA journal_mode=WAL")
+	searchDB.Exec("PRAGMA busy_timeout=5000")
+
+	emb := &mockEmbedder{dim: 16}
+	searchStore, err := NewSearchStoreFromDB(searchDB, emb)
+	if err != nil {
+		t.Fatalf("create search store: %v", err)
+	}
+
+	entries, _ := ws.SearchEntries()
+	searchStore.IndexEntries(entries)
+	ws.SetSearchStore(searchStore)
+
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	ws.RegisterTools(s)
+	registerSearchTool(s, searchStore)
+	return s
+}
+
+func TestMCP_GlobalSearch_basic(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+	text := callTool(t, s, "search", map[string]interface{}{"query": "Family"})
+	requireContains(t, text, "Family")
+}
+
+func TestMCP_GlobalSearch_messageContent(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+	text := callTool(t, s, "search", map[string]interface{}{"query": "dinner"})
+	requireContains(t, text, "dinner")
+}
+
+func TestMCP_GlobalSearch_participant(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+	text := callTool(t, s, "search", map[string]interface{}{"query": "Alice"})
+	requireContains(t, text, "Alice")
+}
+
+func TestMCP_GlobalSearch_sourceFilter(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+	text := callTool(t, s, "search", map[string]interface{}{"query": "Family", "source": "whatsapp"})
+	requireContains(t, text, "whatsapp")
+}
+
+func TestMCP_GlobalSearch_typeFilter(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+	text := callTool(t, s, "search", map[string]interface{}{"query": "Family", "content_type": "chat_name"})
+	requireContains(t, text, "chat_name")
+}
+
+func TestMCP_GlobalSearch_noKeywordMatch(t *testing.T) {
+	// With BM25-only (no embedder), a non-matching query should return empty
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+	}))
+	t.Cleanup(apiSrv.Close)
+
+	msgStore := newTestStoreWithContacts(t)
+	ws := NewWhatsAppSourceFromStore(msgStore, apiSrv.URL)
+
+	searchDB, _ := sql.Open("sqlite3", "file::memory:?cache=shared&_foreign_keys=on")
+	t.Cleanup(func() { searchDB.Close() })
+	searchDB.Exec("PRAGMA journal_mode=WAL")
+	searchDB.Exec("PRAGMA busy_timeout=5000")
+
+	searchStore, _ := NewSearchStoreFromDB(searchDB, nil) // no embedder
+	entries, _ := ws.SearchEntries()
+	searchStore.IndexEntries(entries)
+
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	ws.RegisterTools(s)
+	registerSearchTool(s, searchStore)
+
+	text := callTool(t, s, "search", map[string]interface{}{"query": "zzzznonexistent"})
+	requireContains(t, text, "[]")
+}
+
+func TestMCP_GlobalSearch_withLimit(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+	text := callTool(t, s, "search", map[string]interface{}{"query": "Family", "limit": float64(1)})
+	var results []SearchResult
+	json.Unmarshal([]byte(text), &results)
+	if len(results) > 1 {
+		t.Errorf("expected at most 1 result with limit=1, got %d", len(results))
+	}
+}
+
+func TestMCP_ToolsListContainsSearchTool(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+
+	initMsg, _ := json.Marshal(map[string]interface{}{
+		"jsonrpc": "2.0", "id": 0, "method": "initialize",
+		"params": map[string]interface{}{
+			"protocolVersion": "2024-11-05",
+			"clientInfo":      map[string]interface{}{"name": "test", "version": "1.0"},
+			"capabilities":    map[string]interface{}{},
+		},
+	})
+	s.HandleMessage(context.Background(), initMsg)
+
+	listMsg, _ := json.Marshal(map[string]interface{}{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/list",
+	})
+	resultIface := s.HandleMessage(context.Background(), listMsg)
+	result, _ := json.Marshal(resultIface)
+
+	var resp struct {
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	json.Unmarshal(result, &resp)
+
+	found := false
+	for _, tool := range resp.Result.Tools {
+		if tool.Name == "search" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected 'search' tool in tools list")
+	}
 }

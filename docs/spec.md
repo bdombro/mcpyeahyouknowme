@@ -67,6 +67,7 @@ type DataSource interface {
     Name() string                          // prefix for tool names (e.g. "whatsapp")
     Description() string                   // human label (e.g. "WhatsApp")
     RegisterTools(s *server.MCPServer)     // register all tools
+    SearchEntries() ([]SearchEntry, error) // provide indexable content for global search
     Close() error                          // release resources
 }
 ```
@@ -219,7 +220,31 @@ Download media from a previously received message.
 
 ## MCP Tools
 
-The MCP server uses [mcp-go](https://github.com/mark3labs/mcp-go) as the framework. Communication is over stdio (JSON-RPC 2.0). All tool names are prefixed with their source name (e.g. `whatsapp_`).
+The MCP server uses [mcp-go](https://github.com/mark3labs/mcp-go) as the framework. Communication is over stdio (JSON-RPC 2.0). Source-specific tool names are prefixed with their source name (e.g. `whatsapp_`). The global `search` tool is not prefixed.
+
+### Global Search
+
+| Tool | Description |
+|------|-------------|
+| `search` | Search across all connected data sources by name, participant, or message content. Returns results ranked by hybrid BM25 keyword + semantic vector search with hierarchy weighting (chat names ranked highest, then participants, then message content). Accepts optional `source`, `content_type`, and `limit` parameters. |
+
+Results are returned as JSON with a fixed outer shape and source-specific metadata:
+
+```json
+{
+  "source": "whatsapp",
+  "content_type": "message",
+  "title": "Family Chat",
+  "content": "Family dinner tonight at 7pm",
+  "score": 0.92,
+  "metadata": {"message_id": "m4", "chat_jid": "group1@g.us", "sender": "Alice"}
+}
+```
+
+Metadata shapes per WhatsApp content type:
+- **chat_name**: `{"jid", "is_group"}`
+- **participant**: `{"jid", "groups"}` — use `jid` with `whatsapp_get_chat` or `whatsapp_list_messages`
+- **message**: `{"message_id", "chat_jid", "sender", "timestamp", "is_from_me"}` — use `message_id` with `whatsapp_get_message_context`
 
 ### WhatsApp Tools
 
@@ -263,9 +288,28 @@ The MCP server uses [mcp-go](https://github.com/mark3labs/mcp-go) as the framewo
 
 ## Search
 
+### Global Hybrid Search
+
+The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). On MCP server startup, each `DataSource` provides its indexable content via `SearchEntries()`. Content is normalized into a shared schema:
+
+| Content Type | Source | Indexed From |
+|-------------|--------|-------------|
+| `chat_name` | WhatsApp | Chat display names |
+| `participant` | WhatsApp | Contact names from `whatsmeow_contacts` |
+| `message` | WhatsApp | Message content (>20 chars only) |
+
+**Search algorithm:**
+
+1. **BM25** — FTS5 full-text search on the `search_fts` virtual table
+2. **Vector** (when ONNX installed) — embed the query with BGE-Small-EN-v1.5, compute cosine similarity against stored embeddings
+3. **Reciprocal Rank Fusion (RRF)** — combine BM25 and vector ranked lists: `score(d) = sum(1/(k+rank_i))` with k=60
+4. **Hierarchy weighting** — multiply fused score by content type: chat_name (3x), participant (2x), message (1x)
+
+When ONNX Runtime is not installed, vector search is disabled and the system falls back to BM25-only. This is transparent to the caller.
+
 ### BM25 Keyword Search (FTS5)
 
-When `whatsapp_list_messages` is called with a `query` parameter, the server uses SQLite's FTS5 full-text search engine with BM25 scoring. The `messages_fts` virtual table is maintained via triggers so the index is always in sync. FTS5 provides tokenized keyword matching, implicit AND of terms, and TF-IDF-based relevance ranking.
+When `whatsapp_list_messages` is called with a `query` parameter, the server uses SQLite's FTS5 full-text search engine with BM25 scoring. The `messages_fts` virtual table in `messages.db` is maintained via triggers so the index is always in sync. When a `SearchStore` with an embedder is available, the message search combines BM25 with vector results using RRF for improved recall.
 
 Without a `query` parameter, `whatsapp_list_messages` falls back to chronological listing with optional filters.
 
@@ -278,6 +322,12 @@ The `whatsapp_list_chats` tool supports fuzzy search across two dimensions when 
 2. **Participant name matching** — the `whatsmeow_contacts` table in `whatsapp.db` is searched for contacts whose `full_name` or `push_name` fuzzy-matches the query. Matching contact JIDs are then looked up in the `group_participants` table to find groups they belong to, plus their direct chat JIDs. Searching for "Kevin" returns Kevin's direct chat and any group where Kevin is a member, even if the group name doesn't contain "Kevin".
 
 For queries shorter than 3 characters, only exact substring matching is used (fuzzy word matching is disabled to avoid false positives). Multi-word queries require each word to fuzzy-match at least one word in the target text.
+
+### Embedding Infrastructure
+
+Semantic vector search uses [fastembed-go](https://github.com/Anush008/fastembed-go) with the BGE-Small-EN-v1.5 ONNX model. The ONNX Runtime shared library is auto-downloaded during `./tasks.sh install` to `~/.local/share/whatsapp-cli/lib/` (app-local, not exposed to system paths). The embedding model is auto-cached in `~/.local/share/whatsapp-cli/models/` on first use.
+
+Embeddings are pre-computed during MCP server startup for all indexed content and stored in the `search_embeddings` table. Only new/changed entries are embedded on subsequent starts.
 
 ---
 
@@ -303,12 +353,15 @@ All data is stored in `~/.local/share/whatsapp-cli/`.
 |------|---------|
 | `whatsapp.db` | whatsmeow session store (device credentials, contacts, LID mappings) |
 | `messages.db` | Application message and chat database (includes FTS5 index) |
+| `search.db` | Global search index (FTS5 + vector embeddings across all sources) |
+| `lib/` | ONNX Runtime shared library (auto-downloaded by `./tasks.sh install`) |
+| `models/` | Cached embedding model (auto-downloaded on first MCP startup) |
 | `{chat_jid}/` | Downloaded media files, organized by chat |
 | `core.log` | Core daemon log |
 
-Both databases are opened by `NewMessageStore()`. The contacts DB is optional and non-fatal if missing. Both databases use WAL journal mode and a 5-second busy timeout to allow concurrent access from the core daemon without locking conflicts.
+All databases use WAL journal mode and a 5-second busy timeout to allow concurrent access without locking conflicts.
 
-### Database Schema
+### messages.db Schema
 
 | Table | Key | Contents |
 |-------|-----|----------|
@@ -318,6 +371,17 @@ Both databases are opened by `NewMessageStore()`. The contacts DB is optional an
 | `messages_fts` | (FTS5 virtual) | Full-text search index on `messages.content`, maintained via triggers |
 
 Tables are created on startup if they don't exist. The FTS5 index is automatically rebuilt from the messages table on first run. The Go binary must be built with `-tags "sqlite_fts5"` to enable FTS5 support.
+
+### search.db Schema
+
+| Table | Key | Contents |
+|-------|-----|----------|
+| `search_entries` | `id` (auto), unique(`source`, `source_id`, `content_type`) | Normalized content from all sources: source, ID, type, title, content, JSON metadata, timestamp |
+| `search_fts` | (FTS5 virtual) | Full-text search index on `search_entries` title and content, maintained via triggers |
+| `search_embeddings` | `entry_id` (foreign key) | Pre-computed vector embeddings (BGE-Small-EN-v1.5, stored as raw float32 bytes) |
+| `search_meta` | `source` (primary) | Tracks `last_indexed` timestamp per source for incremental updates |
+
+Populated on MCP server startup from each `DataSource.SearchEntries()`. Incremental: only new/changed entries are added on subsequent starts.
 
 ---
 
@@ -338,4 +402,6 @@ No environment variables. Paths and API URL are hardcoded:
 - [go-sqlite3](https://github.com/mattn/go-sqlite3) — SQLite driver (requires CGO, built with `sqlite_fts5` tag)
 - [mcp-go](https://github.com/mark3labs/mcp-go) — Model Context Protocol server framework
 - [qrterminal](https://github.com/mdp/qrterminal) — QR code rendering in terminal
+- [fastembed-go](https://github.com/Anush008/fastembed-go) — ONNX-based text embeddings (BGE-Small-EN-v1.5)
+- **ONNX Runtime** (optional, auto-downloaded) — native shared library for embedding inference, downloaded by `./tasks.sh install` to `~/.local/share/whatsapp-cli/lib/`
 - **ffmpeg** (optional) — required only for automatic audio format conversion in `send_audio_message`

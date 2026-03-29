@@ -1,0 +1,444 @@
+package main
+
+import (
+	"database/sql"
+	"encoding/json"
+	"math"
+	"testing"
+	"time"
+
+	_ "github.com/mattn/go-sqlite3"
+)
+
+// mockEmbedder returns deterministic embeddings for testing.
+type mockEmbedder struct {
+	dim int
+}
+
+func (m *mockEmbedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
+	out := make([][]float32, len(texts))
+	for i, t := range texts {
+		out[i] = m.hashEmbed(t)
+	}
+	return out, nil
+}
+
+func (m *mockEmbedder) EmbedQuery(query string) ([]float32, error) {
+	return m.hashEmbed(query), nil
+}
+
+func (m *mockEmbedder) Close() {}
+
+// hashEmbed generates a deterministic embedding from text content. Similar
+// texts produce similar vectors via character frequency distribution.
+func (m *mockEmbedder) hashEmbed(text string) []float32 {
+	vec := make([]float32, m.dim)
+	for i, c := range text {
+		vec[(int(c)+i)%m.dim] += 1.0
+	}
+	// L2 normalize
+	var norm float64
+	for _, v := range vec {
+		norm += float64(v) * float64(v)
+	}
+	if norm > 0 {
+		norm = math.Sqrt(norm)
+		for i := range vec {
+			vec[i] = float32(float64(vec[i]) / norm)
+		}
+	}
+	return vec
+}
+
+func newTestSearchStore(t *testing.T, embedder EmbedderInterface) *SearchStore {
+	t.Helper()
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared&_foreign_keys=on")
+	if err != nil {
+		t.Fatalf("open test search db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	db.Exec("PRAGMA journal_mode=WAL")
+	db.Exec("PRAGMA busy_timeout=5000")
+
+	store, err := NewSearchStoreFromDB(db, embedder)
+	if err != nil {
+		t.Fatalf("create search store: %v", err)
+	}
+	return store
+}
+
+func seedSearchEntries() []SearchEntry {
+	now := time.Now()
+	t1 := now.Add(-1 * time.Hour)
+	t2 := now.Add(-2 * time.Hour)
+	return []SearchEntry{
+		{Source: "whatsapp", SourceID: "group1@g.us", ContentType: "chat_name", Title: "Family Chat", Content: "Family Chat", Metadata: json.RawMessage(`{"jid":"group1@g.us","is_group":true}`), Timestamp: &t1},
+		{Source: "whatsapp", SourceID: "group2@g.us", ContentType: "chat_name", Title: "Work Team", Content: "Work Team", Metadata: json.RawMessage(`{"jid":"group2@g.us","is_group":true}`), Timestamp: &t2},
+		{Source: "whatsapp", SourceID: "11111@s.whatsapp.net", ContentType: "participant", Title: "Alice Smith", Content: "Alice Smith 11111", Metadata: json.RawMessage(`{"jid":"11111@s.whatsapp.net","groups":["group1@g.us"]}`)},
+		{Source: "whatsapp", SourceID: "22222@s.whatsapp.net", ContentType: "participant", Title: "Bob Jones", Content: "Bob Jones 22222", Metadata: json.RawMessage(`{"jid":"22222@s.whatsapp.net","groups":["group1@g.us"]}`)},
+		{Source: "whatsapp", SourceID: "m4:group1@g.us", ContentType: "message", Title: "Family Chat", Content: "Family dinner tonight at seven", Metadata: json.RawMessage(`{"message_id":"m4","chat_jid":"group1@g.us","sender":"11111"}`)},
+		{Source: "whatsapp", SourceID: "m7:group2@g.us", ContentType: "message", Title: "Work Team", Content: "Meeting at three pm tomorrow", Metadata: json.RawMessage(`{"message_id":"m7","chat_jid":"group2@g.us","sender":"33333"}`)},
+	}
+}
+
+// ---------- Schema & Indexing ----------
+
+func TestSearchStore_IndexEntries(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	entries := seedSearchEntries()
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
+	var count int
+	store.db.QueryRow("SELECT COUNT(*) FROM search_entries").Scan(&count)
+	if count != len(entries) {
+		t.Errorf("expected %d entries, got %d", len(entries), count)
+	}
+}
+
+func TestSearchStore_IndexEntries_upsert(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	entries := seedSearchEntries()
+	store.IndexEntries(entries)
+
+	entries[0].Content = "Updated Family Chat"
+	store.IndexEntries(entries[:1])
+
+	var content string
+	store.db.QueryRow("SELECT content FROM search_entries WHERE source_id = ?", "group1@g.us").Scan(&content)
+	if content != "Updated Family Chat" {
+		t.Errorf("expected updated content, got %q", content)
+	}
+
+	var count int
+	store.db.QueryRow("SELECT COUNT(*) FROM search_entries").Scan(&count)
+	if count != len(entries) {
+		t.Errorf("expected %d entries after upsert, got %d", len(entries), count)
+	}
+}
+
+func TestSearchStore_IndexEntries_withEmbeddings(t *testing.T) {
+	emb := &mockEmbedder{dim: 16}
+	store := newTestSearchStore(t, emb)
+	entries := seedSearchEntries()
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("IndexEntries with embedder: %v", err)
+	}
+
+	var embCount int
+	store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&embCount)
+	if embCount != len(entries) {
+		t.Errorf("expected %d embeddings, got %d", len(entries), embCount)
+	}
+}
+
+// ---------- BM25-only Search ----------
+
+func TestSearchStore_BM25Search(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	store.IndexEntries(seedSearchEntries())
+
+	results, err := store.Search("Family", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected results for 'Family'")
+	}
+	found := false
+	for _, r := range results {
+		if r.Title == "Family Chat" {
+			found = true
+			if r.ContentType != "chat_name" && r.ContentType != "message" {
+				t.Errorf("unexpected content_type: %s", r.ContentType)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected to find 'Family Chat' in results")
+	}
+}
+
+func TestSearchStore_BM25Search_noResults(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	store.IndexEntries(seedSearchEntries())
+
+	results, err := store.Search("zzzznonexistent", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+}
+
+func TestSearchStore_BM25Search_sourceFilter(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	store.IndexEntries(seedSearchEntries())
+
+	results, err := store.Search("dinner", 10, "whatsapp", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	for _, r := range results {
+		if r.Source != "whatsapp" {
+			t.Errorf("expected source=whatsapp, got %s", r.Source)
+		}
+	}
+}
+
+func TestSearchStore_BM25Search_typeFilter(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	store.IndexEntries(seedSearchEntries())
+
+	results, err := store.Search("Family", 10, "", "chat_name")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	for _, r := range results {
+		if r.ContentType != "chat_name" {
+			t.Errorf("expected content_type=chat_name, got %s", r.ContentType)
+		}
+	}
+}
+
+// ---------- Hybrid Search (BM25 + Vector) ----------
+
+func TestSearchStore_HybridSearch(t *testing.T) {
+	emb := &mockEmbedder{dim: 16}
+	store := newTestSearchStore(t, emb)
+	store.IndexEntries(seedSearchEntries())
+
+	results, err := store.Search("dinner", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected hybrid results for 'dinner'")
+	}
+}
+
+func TestSearchStore_HybridSearch_messageOnly(t *testing.T) {
+	emb := &mockEmbedder{dim: 16}
+	store := newTestSearchStore(t, emb)
+	store.IndexEntries(seedSearchEntries())
+
+	results, err := store.Search("meeting", 10, "", "message")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	found := false
+	for _, r := range results {
+		if r.ContentType != "message" {
+			t.Errorf("expected only messages, got %s", r.ContentType)
+		}
+		if containsSubstring(toLower(r.Content), "meeting") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected to find 'meeting' message")
+	}
+}
+
+// ---------- Hierarchy Weighting ----------
+
+func TestSearchStore_HierarchyWeighting(t *testing.T) {
+	emb := &mockEmbedder{dim: 16}
+	store := newTestSearchStore(t, emb)
+
+	now := time.Now()
+	entries := []SearchEntry{
+		{Source: "whatsapp", SourceID: "family-chat", ContentType: "chat_name", Title: "Family", Content: "Family", Timestamp: &now},
+		{Source: "whatsapp", SourceID: "alice-family", ContentType: "participant", Title: "Family Alice", Content: "Family Alice", Timestamp: &now},
+		{Source: "whatsapp", SourceID: "msg-family", ContentType: "message", Title: "Chat", Content: "Family dinner tonight", Timestamp: &now},
+	}
+	store.IndexEntries(entries)
+
+	results, err := store.Search("Family", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 results, got %d", len(results))
+	}
+	// chat_name should rank highest due to 3x weight
+	if results[0].ContentType != "chat_name" {
+		t.Errorf("expected chat_name to rank first, got %s (score=%.4f)", results[0].ContentType, results[0].Score)
+	}
+}
+
+// ---------- RRF Fusion ----------
+
+func TestRRFFuse_singleList(t *testing.T) {
+	list := []rankedEntry{
+		{entryID: 1, score: 10.0},
+		{entryID: 2, score: 5.0},
+	}
+	fused := rrfFuse(list)
+	if len(fused) != 2 {
+		t.Fatalf("expected 2, got %d", len(fused))
+	}
+}
+
+func TestRRFFuse_twoLists(t *testing.T) {
+	list1 := []rankedEntry{
+		{entryID: 1, score: 10.0},
+		{entryID: 2, score: 5.0},
+	}
+	list2 := []rankedEntry{
+		{entryID: 2, score: 8.0},
+		{entryID: 3, score: 3.0},
+	}
+	fused := rrfFuse(list1, list2)
+	if len(fused) != 3 {
+		t.Fatalf("expected 3, got %d", len(fused))
+	}
+	// Entry 2 appears in both lists, should have highest RRF score
+	scoreMap := make(map[int64]float64)
+	for _, r := range fused {
+		scoreMap[r.entryID] = r.score
+	}
+	if scoreMap[2] <= scoreMap[1] {
+		t.Errorf("entry 2 (in both lists) should score higher than entry 1: %.4f vs %.4f", scoreMap[2], scoreMap[1])
+	}
+}
+
+func TestRRFFuse_empty(t *testing.T) {
+	fused := rrfFuse(nil, nil)
+	if len(fused) != 0 {
+		t.Errorf("expected 0, got %d", len(fused))
+	}
+}
+
+// ---------- Vector Math ----------
+
+func TestCosineSimilarity_identical(t *testing.T) {
+	a := []float32{1, 0, 0}
+	sim := cosineSimilarity(a, a)
+	if math.Abs(sim-1.0) > 0.001 {
+		t.Errorf("expected ~1.0, got %.4f", sim)
+	}
+}
+
+func TestCosineSimilarity_orthogonal(t *testing.T) {
+	a := []float32{1, 0, 0}
+	b := []float32{0, 1, 0}
+	sim := cosineSimilarity(a, b)
+	if math.Abs(sim) > 0.001 {
+		t.Errorf("expected ~0.0, got %.4f", sim)
+	}
+}
+
+func TestCosineSimilarity_empty(t *testing.T) {
+	sim := cosineSimilarity(nil, nil)
+	if sim != 0 {
+		t.Errorf("expected 0, got %.4f", sim)
+	}
+}
+
+func TestCosineSimilarity_mismatchedLengths(t *testing.T) {
+	sim := cosineSimilarity([]float32{1, 2}, []float32{1, 2, 3})
+	if sim != 0 {
+		t.Errorf("expected 0 for mismatched, got %.4f", sim)
+	}
+}
+
+func TestFloat32sRoundTrip(t *testing.T) {
+	original := []float32{1.5, -2.3, 0, 100.001}
+	bytes := float32sToBytes(original)
+	restored := bytesToFloat32s(bytes)
+	if len(restored) != len(original) {
+		t.Fatalf("length mismatch: %d vs %d", len(restored), len(original))
+	}
+	for i := range original {
+		if math.Abs(float64(original[i]-restored[i])) > 0.0001 {
+			t.Errorf("index %d: %.4f != %.4f", i, original[i], restored[i])
+		}
+	}
+}
+
+func TestBytesToFloat32s_badLength(t *testing.T) {
+	result := bytesToFloat32s([]byte{1, 2, 3}) // not divisible by 4
+	if result != nil {
+		t.Errorf("expected nil for bad length, got %v", result)
+	}
+}
+
+// ---------- Source Timestamp Tracking ----------
+
+func TestSearchStore_SourceTimestamp(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	now := time.Now().Truncate(time.Second)
+
+	store.UpdateSourceTimestamp("whatsapp", now)
+	got := store.LastIndexed("whatsapp")
+	if got.Unix() != now.Unix() {
+		t.Errorf("expected %v, got %v", now, got)
+	}
+
+	missing := store.LastIndexed("gmail")
+	if !missing.IsZero() {
+		t.Errorf("expected zero time for missing source, got %v", missing)
+	}
+}
+
+// ---------- Search with default limit ----------
+
+func TestSearchStore_DefaultLimit(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	store.IndexEntries(seedSearchEntries())
+
+	results, err := store.Search("Family", 0, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	// limit=0 should default to 20, which is more than our entries
+	if len(results) == 0 {
+		t.Error("expected results with default limit")
+	}
+}
+
+// ---------- Graceful Degradation ----------
+
+func TestSearchStore_NilEmbedder_BM25Only(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	store.IndexEntries(seedSearchEntries())
+
+	results, err := store.Search("dinner", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected BM25 results even without embedder")
+	}
+}
+
+// ---------- Metadata in results ----------
+
+func TestSearchStore_ResultMetadata(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	store.IndexEntries(seedSearchEntries())
+
+	results, err := store.Search("Alice", 10, "", "participant")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected results for 'Alice'")
+	}
+	for _, r := range results {
+		if r.Metadata == nil {
+			t.Error("expected non-nil metadata")
+			continue
+		}
+		var meta map[string]interface{}
+		if err := json.Unmarshal(r.Metadata, &meta); err != nil {
+			t.Errorf("invalid metadata JSON: %v", err)
+		}
+		if _, ok := meta["jid"]; !ok {
+			t.Error("expected 'jid' in participant metadata")
+		}
+	}
+}

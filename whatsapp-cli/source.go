@@ -17,6 +17,11 @@ type DataSource interface {
 	// Tool names must be prefixed with Name() + "_".
 	RegisterTools(s *server.MCPServer)
 
+	// SearchEntries returns all indexable content from this source for the
+	// global search index. Content types include "chat_name", "participant",
+	// and "message".
+	SearchEntries() ([]SearchEntry, error)
+
 	// Close releases any resources held by the source.
 	Close() error
 }
