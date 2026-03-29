@@ -12,7 +12,7 @@ A single Go binary (`mcpyeahyouknowme`) with a pluggable `DataSource` interface.
 
 | Mode | Command | Description |
 |------|---------|-------------|
-| Core | `mcpyeahyouknowme whatsapp core` | WhatsApp connection daemon: stores messages in SQLite, exposes a REST API |
+| Core | `mcpyeahyouknowme core` | Core daemon: WhatsApp connection, stores messages in SQLite, exposes REST API |
 | MCP  | `mcpyeahyouknowme mcp`  | MCP server over stdio. Loads all enabled sources and registers their tools |
 
 Data flows: Claude/Cursor talks MCP (stdio) to `mcpyeahyouknowme mcp`, which loads each data source. Read tools query local SQLite directly; write tools proxy through the source's backend (e.g. WhatsApp core daemon REST API).
@@ -111,5 +111,5 @@ For additional Claude Desktop troubleshooting, see the [MCP documentation](https
 cd src
 go env -w CGO_ENABLED=1
 go build -o mcpyeahyouknowme .
-./mcpyeahyouknowme whatsapp core
+./mcpyeahyouknowme core
 ```

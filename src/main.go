@@ -693,7 +693,8 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  info                     Show install status and data locations")
 	fmt.Fprintln(os.Stderr, "  completions [shell]      Print shell completions (bash or zsh)")
 	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Daemon:")
+	fmt.Fprintln(os.Stderr, "Core Daemon:")
+	fmt.Fprintln(os.Stderr, "  core                     Start the core daemon (WhatsApp connection + REST API)")
 	fmt.Fprintln(os.Stderr, "  install-daemon           Install core as a macOS LaunchAgent")
 	fmt.Fprintln(os.Stderr, "  start                    Start the core daemon")
 	fmt.Fprintln(os.Stderr, "  stop                     Stop the core daemon")
@@ -701,14 +702,13 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "WhatsApp:")
 	fmt.Fprintln(os.Stderr, "  whatsapp login [--relogin]   Log in to WhatsApp (scan QR code)")
-	fmt.Fprintln(os.Stderr, "  whatsapp core                Start the WhatsApp connection and REST API")
 	fmt.Fprintln(os.Stderr, "  whatsapp reset               Wipe WhatsApp data and session")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Maintenance:")
 	fmt.Fprintln(os.Stderr, "  uninstall                Remove daemon, data, and binaries")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Legacy (deprecated):")
-	fmt.Fprintln(os.Stderr, "  login, core, reset (use 'whatsapp' prefix for WhatsApp commands)")
+	fmt.Fprintln(os.Stderr, "  login, reset (use 'whatsapp' prefix for WhatsApp commands)")
 }
 
 func main() {
@@ -747,7 +747,10 @@ func main() {
 		runCompletions(shell)
 		return
 
-	// Daemon management
+	// Core daemon
+	case "core":
+		requireLogin()
+		// Falls through to main WhatsApp client code
 	case "install-daemon":
 		runInstallDaemon()
 		return
@@ -766,12 +769,10 @@ func main() {
 		runUninstall()
 		return
 
-	// WhatsApp commands (legacy, kept for backward compatibility)
+	// WhatsApp commands (legacy login/reset kept for backward compatibility)
 	case "login":
 		runLogin(args)
 		return
-	case "core":
-		requireLogin()
 	case "reset":
 		runReset()
 		return

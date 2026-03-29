@@ -408,6 +408,7 @@ var commands = []string{
 	"mcp",
 	"info",
 	"completions",
+	"core",
 	"install-daemon",
 	"start",
 	"stop",
@@ -416,7 +417,6 @@ var commands = []string{
 	"whatsapp",
 	// Legacy (backward compatibility)
 	"login",
-	"core",
 	"reset",
 }
 
@@ -439,14 +439,14 @@ func printBashCompletions() {
     local subcmd="${COMP_WORDS[2]}"
 
     if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "mcp info completions install-daemon start stop restart uninstall whatsapp login core reset" -- "$cur") )
+        COMPREPLY=( $(compgen -W "mcp info completions core install-daemon start stop restart uninstall whatsapp login reset" -- "$cur") )
         return
     fi
 
     if [[ $COMP_CWORD -eq 2 ]]; then
         case "$cmd" in
             whatsapp)
-                COMPREPLY=( $(compgen -W "login core reset" -- "$cur") )
+                COMPREPLY=( $(compgen -W "login reset" -- "$cur") )
                 ;;
             completions)
                 COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") )
@@ -466,6 +466,7 @@ func printZshCompletions() {
         'mcp:Start the MCP server (stdio transport)'
         'info:Show install status and data locations'
         'completions:Print shell completions (bash or zsh)'
+        'core:Start the core daemon (WhatsApp connection + REST API)'
         'install-daemon:Install core daemon (macOS LaunchAgent)'
         'start:Start the core daemon'
         'stop:Stop the core daemon'
@@ -475,7 +476,6 @@ func printZshCompletions() {
     )
     wa_cmds=(
         'login:Log in to WhatsApp (scan QR code)'
-        'core:Start the WhatsApp connection and REST API'
         'reset:Wipe WhatsApp data and session'
     )
     comp_args=(
