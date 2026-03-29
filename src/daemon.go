@@ -294,13 +294,37 @@ func runReset() {
 	fmt.Printf("Removed all data: %s\n", dDir)
 }
 
+func runWhatsAppReset() {
+	removeDaemon()
+
+	dDir := dataDir()
+	if _, err := os.Stat(dDir); os.IsNotExist(err) {
+		fmt.Println("Nothing to reset (data directory does not exist)")
+		return
+	}
+
+	// Remove only WhatsApp-specific files
+	whatsappFiles := []string{
+		filepath.Join(dDir, "whatsapp.db"),
+		filepath.Join(dDir, "messages.db"),
+	}
+
+	for _, file := range whatsappFiles {
+		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Warning: could not remove %s: %v\n", file, err)
+		} else if err == nil {
+			fmt.Printf("Removed %s\n", file)
+		}
+	}
+	fmt.Println("WhatsApp data reset complete")
+}
+
 func runUninstall() {
 	runReset()
 
 	// Remove shell completions from .zshrc
 	home, _ := os.UserHomeDir()
 	zshrc := filepath.Join(home, ".zshrc")
-	compLine := `eval "$(mcpyeahyouknowme completions zsh)"`
 	if data, err := os.ReadFile(zshrc); err == nil {
 		original := string(data)
 		lines := strings.Split(original, "\n")
@@ -316,7 +340,6 @@ func runUninstall() {
 			fmt.Println("Removed shell completions from ~/.zshrc")
 		}
 	}
-	_ = compLine
 
 	if err := exec.Command("sudo", "rm", "-f", "/usr/local/bin/mcpyeahyouknowme").Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not remove /usr/local/bin/mcpyeahyouknowme (try running with sudo)\n")
@@ -415,6 +438,7 @@ var commands = []string{
 	"restart",
 	"uninstall",
 	"whatsapp",
+	"googledocs",
 	// Legacy (backward compatibility)
 	"login",
 	"reset",
@@ -439,13 +463,16 @@ func printBashCompletions() {
     local subcmd="${COMP_WORDS[2]}"
 
     if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "mcp info completions core install-daemon start stop restart uninstall whatsapp login reset" -- "$cur") )
+        COMPREPLY=( $(compgen -W "mcp info completions core install-daemon start stop restart uninstall whatsapp googledocs login reset" -- "$cur") )
         return
     fi
 
     if [[ $COMP_CWORD -eq 2 ]]; then
         case "$cmd" in
             whatsapp)
+                COMPREPLY=( $(compgen -W "login reset" -- "$cur") )
+                ;;
+            googledocs)
                 COMPREPLY=( $(compgen -W "login reset" -- "$cur") )
                 ;;
             completions)
@@ -460,23 +487,28 @@ complete -o nospace -F _mcpyeahyouknowme mcpyeahyouknowme
 
 func printZshCompletions() {
 	fmt.Print(`_mcpyeahyouknowme() {
-    local -a cmds wa_cmds comp_args
+    local -a cmds wa_cmds gd_cmds comp_args
 
     cmds=(
         'mcp:Start the MCP server (stdio transport)'
         'info:Show install status and data locations'
         'completions:Print shell completions (bash or zsh)'
-        'core:Start the core daemon (WhatsApp connection + REST API)'
+        'core:Start the core daemon (data source services)'
         'install-daemon:Install core daemon (macOS LaunchAgent)'
         'start:Start the core daemon'
         'stop:Stop the core daemon'
         'restart:Restart the core daemon'
         'uninstall:Remove daemon, data, and binaries'
         'whatsapp:WhatsApp commands'
+        'googledocs:Google Docs commands'
     )
     wa_cmds=(
         'login:Log in to WhatsApp (scan QR code)'
         'reset:Wipe WhatsApp data and session'
+    )
+    gd_cmds=(
+        'login:Authenticate with Google OAuth'
+        'reset:Clear Google Docs data and token'
     )
     comp_args=(
         'bash:Bash completions'
@@ -487,6 +519,8 @@ func printZshCompletions() {
         _describe -t commands 'command' cmds
     elif (( CURRENT == 3 )) && [[ "${words[2]}" == whatsapp ]]; then
         _describe -t wa_commands 'whatsapp command' wa_cmds
+    elif (( CURRENT == 3 )) && [[ "${words[2]}" == googledocs ]]; then
+        _describe -t gd_commands 'googledocs command' gd_cmds
     else
         case "${words[2]}" in
             completions)

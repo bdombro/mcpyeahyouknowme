@@ -1,6 +1,6 @@
 # Product Spec
 
-A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports WhatsApp (via [whatsmeow](https://github.com/tulir/whatsmeow)), with the architecture designed to support additional sources like Gmail, Google Drive, and others.
+A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)) and **Google Docs** (via Google Docs/Drive APIs with OAuth 2.0), with the architecture designed to support additional sources like Gmail, Google Drive, and others.
 
 ## Building
 
@@ -13,11 +13,11 @@ CGO must be enabled (default on macOS/Linux) since `go-sqlite3` requires it. On 
 
 ## Commands
 
-### Login
+### WhatsApp Login
 
 ```
-mcpyeahyouknowme login
-mcpyeahyouknowme login --relogin
+mcpyeahyouknowme whatsapp login
+mcpyeahyouknowme whatsapp login --relogin
 ```
 
 Authenticates with WhatsApp by displaying a QR code. Scan it with your phone (Settings > Linked Devices). If already logged in, shows account info. Required before running `core` or `install-daemon`.
@@ -26,13 +26,23 @@ During first login, the CLI captures WhatsApp's initial history sync and stores 
 
 The `--relogin` flag clears the existing session and message databases, re-displays the QR code for a fresh pairing, captures the initial history sync, and restarts the core daemon if it was previously running. Use this when the session is stale or when the initial history sync was missed.
 
-### Core — WhatsApp Connection
+### Google Docs Login
+
+```
+mcpyeahyouknowme googledocs login
+```
+
+Authenticates with Google using OAuth 2.0. Opens the default browser to authorize access to Google Docs and Google Drive APIs. Requires `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` environment variables (obtain from Google Cloud Console). The OAuth token is saved to `googledocs_token.json` for subsequent daemon runs.
+
+### Core — Data Source Services
 
 ```
 mcpyeahyouknowme core
 ```
 
-Connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on port 8080. Requires login. Re-authentication may be required after ~20 days.
+Runs all available data source core services. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on port 8080. For Google Docs: syncs documents every 15 minutes via the Google Docs/Drive APIs. Requires authentication for each source.
+
+Re-authentication may be required after ~20 days for WhatsApp. Google Docs OAuth tokens refresh automatically as long as the refresh token is valid.
 
 ### MCP — Model Context Protocol Server
 
@@ -83,6 +93,7 @@ Current sources:
 | Source | Prefix | File | Description |
 |--------|--------|------|-------------|
 | WhatsApp | `whatsapp_` | `source_whatsapp.go` | Messages, chats, contacts via local SQLite + REST API |
+| Google Docs | `googledocs_` | `source_googledocs.go` | Documents via Google Docs/Drive APIs with periodic sync |
 
 ### Daemon Management
 
@@ -104,15 +115,17 @@ mcpyeahyouknowme restart
 
 ```
 mcpyeahyouknowme info
-mcpyeahyouknowme reset
+mcpyeahyouknowme whatsapp reset
+mcpyeahyouknowme googledocs reset
 mcpyeahyouknowme uninstall
 ```
 
 | Command | Description |
 |---------|-------------|
 | `info` | Shows data directory, logged-in WhatsApp account, message database stats, and daemon install status. |
-| `reset` | Uninstalls the daemon, then wipes all local data including databases, logs, and the WhatsApp session. |
-| `uninstall` | Resets everything, removes installed binaries from `/usr/local/bin`, and cleans shell completions from `~/.zshrc`. |
+| `whatsapp reset` | Removes WhatsApp databases (`whatsapp.db`, `messages.db`) and stops the daemon. Google Docs and other sources are preserved. |
+| `googledocs reset` | Removes Google Docs OAuth token and database (`googledocs_token.json`, `googledocs.db`). WhatsApp and other sources are preserved. |
+| `uninstall` | Uninstalls the daemon, wipes all local data for all sources, removes installed binaries from `/usr/local/bin`, and cleans shell completions from `~/.zshrc`. |
 
 ### Shell Completions
 
@@ -214,7 +227,9 @@ Download media from a previously received message.
 | `message_id` | string | Yes | Message ID |
 | `chat_jid` | string | Yes | Chat JID the message belongs to |
 
-**Response:** `{ "success": bool, "message": string, "filename": string, "path": string }`
+**Response:** `{ "success": bool, "message": string, "filename": string, "file_path": string, "media_type": string }`
+
+Note: Request body uses JSON with `message_id` and `chat_jid` fields (not query parameters).
 
 ---
 
@@ -284,6 +299,16 @@ Metadata shapes per WhatsApp content type:
 |------|-------------|
 | `whatsapp_download_media` | Download media from a received message by `message_id` and `chat_jid`. Routes through the core daemon's `/api/download` endpoint. Returns the local file path. |
 
+### Google Docs Tools
+
+**Read path**: Queries `googledocs.db` directly via SQLite. Documents are synced by the core daemon every 15 minutes. The core daemon does not need to be running for read-only operations.
+
+| Tool | Description |
+|------|-------------|
+| `googledocs_search` | Full-text search across all Google Docs using FTS5. Returns document snippets with highlighted matches, modification times, and web links. Accepts `query` (required) and `limit` (default 10) parameters. |
+| `googledocs_get_document` | Get the full content of a specific Google Doc by ID. Returns title, content, modification time, and web link. |
+| `googledocs_list_recent` | List recently modified Google Docs, sorted by modification time descending. Accepts `limit` parameter (default 20). |
+
 ---
 
 ## Search
@@ -297,13 +322,15 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 | `chat_name` | WhatsApp | Chat display names |
 | `participant` | WhatsApp | Contact names from `whatsmeow_contacts` |
 | `message` | WhatsApp | Message content (>20 chars only) |
+| `document_title` | Google Docs | Document titles |
+| `document_content` | Google Docs | Document text content (chunked at 5000 chars) |
 
 **Search algorithm:**
 
 1. **BM25** — FTS5 full-text search on the `search_fts` virtual table
 2. **Vector** (when ONNX installed) — embed the query with BGE-Small-EN-v1.5, compute cosine similarity against stored embeddings
 3. **Reciprocal Rank Fusion (RRF)** — combine BM25 and vector ranked lists: `score(d) = sum(1/(k+rank_i))` with k=60
-4. **Hierarchy weighting** — multiply fused score by content type: chat_name (3x), participant (2x), message (1x)
+4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `message` (1x), `document_title` (2x), `document_content` (1x)
 
 When ONNX Runtime is not installed, vector search is disabled and the system falls back to BM25-only. This is transparent to the caller.
 
@@ -353,14 +380,12 @@ All data is stored in `~/.local/share/mcpyeahyouknowme/`.
 |------|---------|
 | `whatsapp.db` | whatsmeow session store (device credentials, contacts, LID mappings) |
 | `messages.db` | Application message and chat database (includes FTS5 index) |
+| `googledocs.db` | Google Docs documents database (includes FTS5 full-text index) |
+| `googledocs_token.json` | OAuth 2.0 token for Google Docs/Drive APIs |
 | `search.db` | Global search index (FTS5 + vector embeddings across all sources) |
 | `lib/` | ONNX Runtime shared library (auto-downloaded by `./tasks.sh install`) |
 | `models/` | Cached embedding model (auto-downloaded on first MCP startup) |
-| `{chat_jid}/` | Downloaded media files, organized by chat |
-| `core.log` | Core daemon log |
-
-All databases use WAL journal mode and a 5-second busy timeout to allow concurrent access without locking conflicts.
-
+| `downloads/` | Downloaded WhatsApp media files |
 ### messages.db Schema
 
 | Table | Key | Contents |
@@ -387,7 +412,15 @@ Populated on MCP server startup from each `DataSource.SearchEntries()`. Incremen
 
 ## Configuration
 
-No environment variables. Paths and API URL are hardcoded:
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `GOOGLE_CLIENT_ID` | For Google Docs | - | OAuth 2.0 client ID from Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | For Google Docs | - | OAuth 2.0 client secret from Google Cloud Console |
+| `MCP_ENABLE_EMBEDDINGS` | No | `true` | Set to `false` to disable vector search and skip ONNX Runtime |
+
+### Hardcoded Paths
 
 | Setting | Value |
 |---------|-------|
@@ -403,5 +436,7 @@ No environment variables. Paths and API URL are hardcoded:
 - [mcp-go](https://github.com/mark3labs/mcp-go) — Model Context Protocol server framework
 - [qrterminal](https://github.com/mdp/qrterminal) — QR code rendering in terminal
 - [fastembed-go](https://github.com/Anush008/fastembed-go) — ONNX-based text embeddings (BGE-Small-EN-v1.5)
+- [golang.org/x/oauth2](https://pkg.go.dev/golang.org/x/oauth2) — OAuth 2.0 client library
+- [google.golang.org/api](https://pkg.go.dev/google.golang.org/api) — Google APIs (Docs v1, Drive v3)
 - **ONNX Runtime** (optional, auto-downloaded) — native shared library for embedding inference, downloaded by `./tasks.sh install` to `~/.local/share/mcpyeahyouknowme/lib/`
 - **ffmpeg** (optional) — required only for automatic audio format conversion in `send_audio_message`

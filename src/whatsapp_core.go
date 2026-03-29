@@ -554,7 +554,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	var fileLength uint64
 
 	err := messageStore.db.QueryRow(`
-		SELECT media_type, media_filename, media_url, media_key, media_file_sha256, media_file_enc_sha256, media_file_length
+		SELECT media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length
 		FROM messages 
 		WHERE id = ? AND chat_jid = ?
 	`, messageID, chatJID).Scan(&mediaType, &filename, &url, &mediaKey, &fileSHA256, &fileEncSHA256, &fileLength)
@@ -629,8 +629,10 @@ func extractDirectPathFromURL(url string) string {
 
 // startRESTServer starts an HTTP server for sending messages
 func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port int) {
+	mux := http.NewServeMux()
+
 	// Endpoint to send a message
-	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -654,21 +656,27 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	})
 
 	// Endpoint to download media
-	http.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		messageID := r.URL.Query().Get("message_id")
-		chatJID := r.URL.Query().Get("chat_jid")
+		var req struct {
+			MessageID string `json:"message_id"`
+			ChatJID   string `json:"chat_jid"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
 
-		if messageID == "" || chatJID == "" {
+		if req.MessageID == "" || req.ChatJID == "" {
 			http.Error(w, "Missing message_id or chat_jid parameter", http.StatusBadRequest)
 			return
 		}
 
-		success, filePath, mediaType, filename, err := downloadMedia(client, messageStore, messageID, chatJID)
+		success, filePath, mediaType, filename, err := downloadMedia(client, messageStore, req.MessageID, req.ChatJID)
 		if !success {
 			http.Error(w, fmt.Sprintf("Failed to download: %v", err), http.StatusInternalServerError)
 			return
@@ -689,7 +697,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	go func() {
 		addr := fmt.Sprintf(":%d", port)
 		fmt.Printf("Starting REST API server on %s\n", addr)
-		if err := http.ListenAndServe(addr, nil); err != nil {
+		if err := http.ListenAndServe(addr, mux); err != nil {
 			fmt.Printf("REST server error: %v\n", err)
 		}
 	}()
@@ -1059,23 +1067,12 @@ func analyzeOggOpus(data []byte) (duration uint32, waveform []byte, err error) {
 	return duration, waveform, nil
 }
 
-// min returns the smaller of x or y
-func min(x, y int) int {
-	if x < y {
-		return x
-	}
-	return y
-}
-
 // placeholderWaveform generates a synthetic waveform for WhatsApp voice messages
 // that appears natural with some variability based on the duration
 func placeholderWaveform(duration uint32) []byte {
 	// WhatsApp expects a 64-byte waveform for voice messages
 	const waveformLength = 64
 	waveform := make([]byte, waveformLength)
-
-	// Seed the random number generator for consistent results with the same duration
-	rand.Seed(int64(duration))
 
 	// Create a more natural looking waveform with some patterns and variability
 	// rather than completely random values

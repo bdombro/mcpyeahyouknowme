@@ -31,6 +31,10 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  whatsapp login [--relogin]   Log in to WhatsApp (scan QR code)")
 	fmt.Fprintln(os.Stderr, "  whatsapp reset               Wipe WhatsApp data and session")
 	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Google Docs:")
+	fmt.Fprintln(os.Stderr, "  googledocs login             Authenticate with Google OAuth")
+	fmt.Fprintln(os.Stderr, "  googledocs reset             Clear Google Docs data and token")
+	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Maintenance:")
 	fmt.Fprintln(os.Stderr, "  uninstall                Remove daemon, data, and binaries")
 	fmt.Fprintln(os.Stderr, "")
@@ -54,8 +58,41 @@ func main() {
 			printUsage()
 			os.Exit(1)
 		}
-		cmd = args[0]
-		args = args[1:]
+		subcmd := args[0]
+		switch subcmd {
+		case "login":
+			runLogin(args[1:])
+			return
+		case "reset":
+			runWhatsAppReset()
+			return
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown whatsapp subcommand: %s\n\n", subcmd)
+			printUsage()
+			os.Exit(1)
+		}
+	}
+
+	// Handle Google Docs subcommands
+	if cmd == "googledocs" {
+		if len(args) == 0 {
+			fmt.Fprintln(os.Stderr, "Error: googledocs subcommand required\n")
+			printUsage()
+			os.Exit(1)
+		}
+		subcmd := args[0]
+		switch subcmd {
+		case "login":
+			runGoogleDocsLogin()
+			return
+		case "reset":
+			runGoogleDocsReset()
+			return
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown googledocs subcommand: %s\n\n", subcmd)
+			printUsage()
+			os.Exit(1)
+		}
 	}
 
 	switch cmd {
@@ -141,8 +178,11 @@ func runCore() {
 			}
 			coreServices = append(coreServices, struct {
 				name string
-				svc CoreService
-			}{src.Description(), coreSvc})
+				svc  CoreService
+			}{
+				name: src.Name(),
+				svc:  coreSvc,
+			})
 		}
 	}
 
@@ -151,21 +191,47 @@ func runCore() {
 		os.Exit(1)
 	}
 
-	// For now, run the first core service
-	// In the future, we could run multiple services concurrently
-	fmt.Printf("Starting %s core service...\n", coreServices[0].name)
-	if err := coreServices[0].svc.StartCore(context.Background()); err != nil {
-		fmt.Fprintf(os.Stderr, "Core service error: %v\n", err)
-		os.Exit(1)
+	// Run all core services concurrently
+	fmt.Printf("Starting %d core service(s)...\n", len(coreServices))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Use a channel to wait for all services to start or fail
+	errChan := make(chan error, len(coreServices))
+
+	for _, cs := range coreServices {
+		fmt.Printf("  - %s\n", cs.name)
+		go func(name string, svc CoreService) {
+			if err := svc.StartCore(ctx); err != nil {
+				errChan <- fmt.Errorf("%s: %w", name, err)
+			} else {
+				errChan <- nil
+			}
+		}(cs.name, cs.svc)
+	}
+
+	// Wait for the first error or signal
+	for i := 0; i < len(coreServices); i++ {
+		if err := <-errChan; err != nil {
+			fmt.Fprintf(os.Stderr, "Core service error: %v\n", err)
+			cancel()
+			os.Exit(1)
+		}
 	}
 }
 
 // isSourceAuthenticated checks if a data source is authenticated.
-// Currently only checks WhatsApp, but can be extended for other sources.
 func isSourceAuthenticated(src DataSource) bool {
-	if src.Name() == "whatsapp" {
+	switch src.Name() {
+	case "whatsapp":
 		return isLoggedIn()
+	case "googledocs":
+		if gd, ok := src.(*GoogleDocsSource); ok {
+			return gd.isAuthenticated()
+		}
+		return false
+	default:
+		// Other sources assumed not to need auth unless they implement CoreService.RequiresAuth()
+		return true
 	}
-	// Other sources assumed not to need auth unless they implement CoreService.RequiresAuth()
-	return true
 }

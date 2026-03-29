@@ -1,5 +1,7 @@
 package main
 
+import "strings"
+
 // sequenceMatcherRatio returns the similarity ratio between two strings,
 // equivalent to Python's difflib.SequenceMatcher.ratio(). It computes
 // 2.0 * M / T where M is the number of matching characters (longest
@@ -74,17 +76,9 @@ func fuzzyMatchThreshold(query, text string, threshold float64) bool {
 	return true
 }
 
-// toLower is a simple ASCII-aware lowercaser (sufficient for names/JIDs).
+// toLower converts a string to lowercase (handles Unicode properly)
 func toLower(s string) string {
-	b := make([]byte, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		b[i] = c
-	}
-	return string(b)
+	return strings.ToLower(s)
 }
 
 func containsSubstring(haystack, needle string) bool {

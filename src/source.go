@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -45,16 +46,26 @@ type CoreService interface {
 	RequiresAuth() bool
 }
 
-// LoadSources returns all enabled data sources. Currently only WhatsApp.
-// Future sources (Gmail, Google Drive, etc.) will be added here.
+// LoadSources returns all enabled data sources.
+// Currently supports WhatsApp and Google Docs.
 func LoadSources() ([]DataSource, error) {
 	var sources []DataSource
 
+	// WhatsApp source
 	ws, err := NewWhatsAppSource()
 	if err != nil {
 		return nil, err
 	}
 	sources = append(sources, ws)
+
+	// Google Docs source
+	gd, err := NewGoogleDocsSource()
+	if err != nil {
+		// Log error but continue - Google Docs is optional
+		fmt.Printf("Info: Google Docs source not available: %v\n", err)
+	} else {
+		sources = append(sources, gd)
+	}
 
 	return sources, nil
 }

@@ -80,8 +80,8 @@ func runMcp() {
 	}
 
 	s := server.NewMCPServer(
-		"mcp-bridge",
-		"1.0.0",
+		"mcpyeahyouknowme",
+		BuildVersion,
 		server.WithToolCapabilities(false),
 	)
 
@@ -134,7 +134,10 @@ Result metadata varies by source and content_type:
 		mcp.WithNumber("limit", mcp.Description("Maximum results to return (default 20)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		query, _ := req.RequireString("query")
+		query, err := req.RequireString("query")
+		if err != nil {
+			return mcp.NewToolResultError("query parameter is required"), nil
+		}
 		source, _ := args["source"].(string)
 		contentType, _ := args["content_type"].(string)
 		limit := intArg(args, "limit", 20)

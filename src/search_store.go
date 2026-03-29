@@ -37,9 +37,11 @@ type SearchResult struct {
 
 // Hierarchy weights: name matches are most valuable, then participants, then messages.
 var hierarchyWeights = map[string]float64{
-	"chat_name":   3.0,
-	"participant": 2.0,
-	"message":     1.0,
+	"chat_name":        3.0,
+	"participant":      2.0,
+	"message":          1.0,
+	"document_title":   2.0,
+	"document_content": 1.0,
 }
 
 const rrfK = 60 // constant for Reciprocal Rank Fusion
