@@ -71,12 +71,6 @@ func runMcp() {
 	if searchStore != nil {
 		defer searchStore.Close()
 		indexSources(searchStore, enabledSources)
-		// Inject search store into sources that support vector-enhanced search
-		for _, src := range enabledSources {
-			if ws, ok := src.(*WhatsAppSource); ok {
-				ws.SetSearchStore(searchStore)
-			}
-		}
 	}
 
 	s := server.NewMCPServer(

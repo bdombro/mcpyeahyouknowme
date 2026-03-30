@@ -336,7 +336,6 @@ func buildTestMCPServerWithSearch(t *testing.T) *server.MCPServer {
 
 	entries, _ := ws.SearchEntries()
 	searchStore.IndexEntries(entries)
-	ws.SetSearchStore(searchStore)
 
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
 	ws.RegisterTools(s)

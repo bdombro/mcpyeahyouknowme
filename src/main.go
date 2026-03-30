@@ -54,7 +54,7 @@ func main() {
 	// Handle WhatsApp subcommands
 	if cmd == "whatsapp" {
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Error: whatsapp subcommand required\n")
+			fmt.Fprintln(os.Stderr, "Error: whatsapp subcommand required")
 			printUsage()
 			os.Exit(1)
 		}
@@ -76,7 +76,7 @@ func main() {
 	// Handle Google Docs subcommands
 	if cmd == "googledocs" {
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Error: googledocs subcommand required\n")
+			fmt.Fprintln(os.Stderr, "Error: googledocs subcommand required")
 			printUsage()
 			os.Exit(1)
 		}

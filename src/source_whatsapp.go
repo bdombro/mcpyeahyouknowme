@@ -36,11 +36,6 @@ func (w *WhatsAppSource) Name() string        { return "whatsapp" }
 func (w *WhatsAppSource) Description() string  { return "WhatsApp" }
 func (w *WhatsAppSource) Close() error         { w.store.Close(); return nil }
 
-// SetSearchStore enables vector-enhanced hybrid message search.
-func (w *WhatsAppSource) SetSearchStore(ss *SearchStore) {
-	w.svc.SetSearchStore(ss)
-}
-
 func (w *WhatsAppSource) SearchEntries() ([]SearchEntry, error) {
 	var entries []SearchEntry
 	src := w.Name()
