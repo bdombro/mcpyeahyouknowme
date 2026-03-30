@@ -45,7 +45,7 @@ func runMcp() {
 		embedder = nil
 	}
 	if embedder == nil {
-		fmt.Fprintf(os.Stderr, "Info: ONNX Runtime not found; semantic search disabled. Run ./tasks.sh install-onnx to enable.\n")
+		fmt.Fprintf(os.Stderr, "Info: ONNX Runtime not found; semantic search disabled. Run 'brew install onnxruntime' to enable.\n")
 	}
 	
 	// TEMPORARY: Disable embeddings during indexing due to tokenizer library crashes

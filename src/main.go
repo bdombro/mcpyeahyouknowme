@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // Build-time variables set via -ldflags
@@ -43,6 +44,12 @@ func printUsage() {
 }
 
 func main() {
+	// Set GO_TOKENIZER early so the sugarme/tokenizer library uses our app data dir
+	// instead of ~/.cache/tokenizer. Note: the library's init() has already run by now
+	// (creating ~/.cache/tokenizer and logging to stderr), but this ensures any
+	// subsequent CachedPath calls use the correct directory.
+	os.Setenv("GO_TOKENIZER", filepath.Join(dataDir(), "cache", "tokenizer"))
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)

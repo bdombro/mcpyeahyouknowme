@@ -20,17 +20,14 @@ func TestNewEmbedder_noONNX(t *testing.T) {
 	}
 }
 
-func TestOnnxLibName(t *testing.T) {
-	name := onnxLibName()
-	if name == "" {
-		t.Error("expected non-empty lib name")
-	}
-}
-
 func TestOnnxLibPath(t *testing.T) {
 	path := onnxLibPath()
 	if path == "" {
 		t.Error("expected non-empty lib path")
+	}
+	// For macOS, should be one of the Homebrew paths
+	if path != "/opt/homebrew/lib/libonnxruntime.dylib" && path != "/usr/local/lib/libonnxruntime.dylib" {
+		t.Errorf("unexpected lib path: %s", path)
 	}
 }
 

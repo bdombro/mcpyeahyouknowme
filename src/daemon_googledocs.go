@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -85,7 +84,7 @@ func runGoogleDocsLogin() {
 			<html>
 			<head><title>Authentication Successful</title></head>
 			<body style="font-family: sans-serif; text-align: center; padding: 50px;">
-				<h1>✓ Authentication Successful</h1>
+			<h1>Authentication Successful</h1>
 				<p>You can close this window and return to the terminal.</p>
 			</body>
 			</html>
@@ -182,21 +181,9 @@ func generateRandomString(length int) string {
 	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(b)[:length]
 }
 
-// openBrowser opens a URL in the default browser.
+// openBrowser opens a URL in the default browser (macOS only).
 func openBrowser(url string) error {
-	var cmd *exec.Cmd
-
-	switch runtime.GOOS {
-	case "linux":
-		cmd = exec.Command("xdg-open", url)
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	default:
-		return fmt.Errorf("unsupported platform")
-	}
-
+	cmd := exec.Command("open", url)
 	return cmd.Start()
 }
 

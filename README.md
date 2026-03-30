@@ -21,9 +21,11 @@ See the [product spec](docs/spec.md) for full details.
 
 ## Prerequisites
 
-- Go (to build)
-- FFmpeg (*optional*) — only needed for automatic audio format conversion when sending voice messages
-- ONNX Runtime (*optional*, auto-downloaded) — required for semantic vector search; `./tasks.sh install` downloads it automatically
+- **macOS** (Apple Silicon or Intel)
+- **Homebrew** (for installing dependencies)
+- **Go** (to build)
+- **FFmpeg** (*optional*) — only needed for automatic audio format conversion when sending voice messages
+- **ONNX Runtime** (*optional*, via Homebrew) — required for semantic vector search; `./tasks.sh install` installs it automatically
 
 ## Quick Start
 
@@ -41,7 +43,7 @@ See the [product spec](docs/spec.md) for full details.
    ./tasks.sh install
    ```
 
-   This builds the Go binary, copies it to `/usr/local/bin/mcpyeahyouknowme`, downloads the ONNX Runtime for semantic search, sets up the core daemon, and adds shell completions. Run `./tasks.sh install-onnx` separately to install ONNX Runtime without the full install flow.
+   This builds the Go binary, copies it to `/usr/local/bin/mcpyeahyouknowme`, installs ONNX Runtime via Homebrew for semantic search, sets up the core daemon, and adds shell completions. Run `./tasks.sh install-onnx` separately to install ONNX Runtime without the full install flow.
 
 3. **Log in** (first time only)
 
@@ -159,15 +161,5 @@ mcpyeahyouknowme uninstall
 - **No messages loading**: Initial history sync can take several minutes for large accounts. History is only pushed during first pairing. If your database is empty, run `mcpyeahyouknowme whatsapp login --relogin` to re-pair and capture the initial sync.
 - **Out of sync**: Run `mcpyeahyouknowme whatsapp reset` to wipe all data, then `mcpyeahyouknowme whatsapp login` to re-authenticate.
 - **Session expired / 405 error**: Run `mcpyeahyouknowme whatsapp login --relogin` to clear the stale session and re-pair. The daemon will be restarted automatically.
+
 For additional Claude Desktop troubleshooting, see the [MCP documentation](https://modelcontextprotocol.io/quickstart/server#claude-for-desktop-integration-issues).
-
-### Windows
-
-`go-sqlite3` requires CGO, which is disabled by default on Windows. Install a C compiler via [MSYS2](https://www.msys2.org/) (add `ucrt64\bin` to PATH), then:
-
-```bash
-cd src
-go env -w CGO_ENABLED=1
-go build -o mcpyeahyouknowme .
-./mcpyeahyouknowme core
-```
