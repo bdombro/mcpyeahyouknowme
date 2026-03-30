@@ -146,12 +146,29 @@ Other commands:
 # Show status and data locations
 mcpyeahyouknowme info
 
-# Wipe WhatsApp data and session
+# Wipe WhatsApp data and session (only WhatsApp)
 mcpyeahyouknowme whatsapp reset
 
-# Full uninstall (daemon + all data + binaries)
-mcpyeahyouknowme uninstall
+# Wipe Google Docs token and data (only Google Docs)
+mcpyeahyouknowme googledocs reset
 ```
+
+## Uninstalling
+
+To completely remove mcpyeahyouknowme:
+
+```bash
+cd /path/to/mcpyeahyouknowme
+./tasks.sh uninstall
+```
+
+This will:
+- Kill all running mcpyeahyouknowme processes
+- Clean up database lock files
+- Unload and remove the daemon
+- Delete the data directory (`~/.local/share/mcpyeahyouknowme`)
+- Remove shell completions from `~/.zshrc`
+- Remove the binary from `/usr/local/bin/mcpyeahyouknowme`
 
 ## Troubleshooting
 

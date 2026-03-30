@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/mdp/qrterminal"
@@ -320,32 +319,26 @@ func runWhatsAppReset() {
 }
 
 func runUninstall() {
-	runReset()
-
-	// Remove shell completions from .zshrc
-	home, _ := os.UserHomeDir()
-	zshrc := filepath.Join(home, ".zshrc")
-	if data, err := os.ReadFile(zshrc); err == nil {
-		original := string(data)
-		lines := strings.Split(original, "\n")
-		var filtered []string
-		for _, l := range lines {
-			if !strings.Contains(l, "mcpyeahyouknowme") || !strings.Contains(l, "completions") {
-				filtered = append(filtered, l)
-			}
-		}
-		result := strings.Join(filtered, "\n")
-		if result != original {
-			os.WriteFile(zshrc, []byte(result), 0644)
-			fmt.Println("Removed shell completions from ~/.zshrc")
-		}
-	}
-
-	if err := exec.Command("sudo", "rm", "-f", "/usr/local/bin/mcpyeahyouknowme").Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not remove /usr/local/bin/mcpyeahyouknowme (try running with sudo)\n")
-	} else {
-		fmt.Println("Removed /usr/local/bin/mcpyeahyouknowme")
-	}
+	fmt.Println("⚠️  For a complete uninstall, please use the tasks.sh script:")
+	fmt.Println()
+	fmt.Println("  cd /path/to/mcpyeahyouknowme")
+	fmt.Println("  ./tasks.sh uninstall")
+	fmt.Println()
+	fmt.Println("The tasks.sh script will:")
+	fmt.Println("  • Kill all mcpyeahyouknowme processes")
+	fmt.Println("  • Clean up database lock files")
+	fmt.Println("  • Unload and remove the daemon")
+	fmt.Println("  • Remove the data directory")
+	fmt.Println("  • Remove shell completions")
+	fmt.Println("  • Remove the binary")
+	fmt.Println()
+	fmt.Println("If you don't have access to the repository, you can manually:")
+	fmt.Println("  1. pkill -9 -f mcpyeahyouknowme")
+	fmt.Println("  2. launchctl unload ~/Library/LaunchAgents/com.mcpyeahyouknowme.core.plist")
+	fmt.Println("  3. rm ~/Library/LaunchAgents/com.mcpyeahyouknowme.core.plist")
+	fmt.Println("  4. rm -rf ~/.local/share/mcpyeahyouknowme")
+	fmt.Println("  5. Remove completions from ~/.zshrc")
+	fmt.Println("  6. sudo rm /usr/local/bin/mcpyeahyouknowme")
 }
 
 func runInfo() {

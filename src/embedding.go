@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	fastembed "github.com/anush008/fastembed-go"
+	fastembed "github.com/bdombro/fastembed-go"
 )
 
 // Embedder wraps fastembed-go for generating text embeddings.

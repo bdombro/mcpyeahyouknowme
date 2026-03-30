@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -440,5 +442,71 @@ func TestSearchStore_ResultMetadata(t *testing.T) {
 		if _, ok := meta["jid"]; !ok {
 			t.Error("expected 'jid' in participant metadata")
 		}
+	}
+}
+
+// ---------- NewSearchStore (file-backed) ----------
+
+func TestNewSearchStore(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	store, err := NewSearchStore(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("NewSearchStore: %v", err)
+	}
+	if store == nil {
+		t.Fatal("expected non-nil store")
+	}
+
+	// Verify database file was created
+	dbPath := filepath.Join(tmpDir, "search.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		t.Errorf("database file not created at %s", dbPath)
+	}
+
+	// Verify we can use it
+	entries := seedSearchEntries()
+	if err := store.IndexEntries(entries[:1]); err != nil {
+		t.Errorf("IndexEntries: %v", err)
+	}
+
+	store.Close()
+}
+
+// ---------- Close ----------
+
+func TestSearchStore_Close(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+
+	err := store.Close()
+	if err != nil {
+		t.Errorf("Close() error: %v", err)
+	}
+
+	// Verify database is closed
+	_, err = store.db.Query("SELECT 1")
+	if err == nil {
+		t.Error("expected error querying closed db")
+	}
+}
+
+// ---------- Edge cases ----------
+
+func TestSearchStore_IndexEntries_emptyContent(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+
+	entries := []SearchEntry{
+		{Source: "test", SourceID: "empty", ContentType: "message", Title: "", Content: ""},
+	}
+
+	err := store.IndexEntries(entries)
+	if err != nil {
+		t.Fatalf("IndexEntries with empty content: %v", err)
+	}
+
+	var count int
+	store.db.QueryRow("SELECT COUNT(*) FROM search_entries WHERE source_id = 'empty'").Scan(&count)
+	if count != 1 {
+		t.Errorf("expected 1 entry, got %d", count)
 	}
 }

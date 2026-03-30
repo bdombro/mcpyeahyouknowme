@@ -107,31 +107,52 @@ func initSearchSchema(db *sql.DB) error {
 		return fmt.Errorf("create search_entries: %w", err)
 	}
 
-	db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
+	_, err = db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
 		title, content,
 		content='search_entries',
 		content_rowid='id'
 	)`)
-	db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_insert AFTER INSERT ON search_entries BEGIN
-		INSERT INTO search_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-	END`)
-	db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_delete AFTER DELETE ON search_entries BEGIN
-		INSERT INTO search_fts(search_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
-	END`)
-	db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_update AFTER UPDATE ON search_entries BEGIN
-		INSERT INTO search_fts(search_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
-		INSERT INTO search_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-	END`)
+	if err != nil {
+		return fmt.Errorf("create search_fts: %w (hint: build with -tags sqlite_fts5)", err)
+	}
 
-	db.Exec(`CREATE TABLE IF NOT EXISTS search_embeddings (
+	_, err = db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_insert AFTER INSERT ON search_entries BEGIN
+		INSERT INTO search_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
+	END`)
+	if err != nil {
+		return fmt.Errorf("create search_fts_insert trigger: %w", err)
+	}
+
+	_, err = db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_delete AFTER DELETE ON search_entries BEGIN
+		INSERT INTO search_fts(search_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
+	END`)
+	if err != nil {
+		return fmt.Errorf("create search_fts_delete trigger: %w", err)
+	}
+
+	_, err = db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_update AFTER UPDATE ON search_entries BEGIN
+		INSERT INTO search_fts(search_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
+		INSERT INTO search_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
+	END`)
+	if err != nil {
+		return fmt.Errorf("create search_fts_update trigger: %w", err)
+	}
+
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS search_embeddings (
 		entry_id INTEGER PRIMARY KEY REFERENCES search_entries(id) ON DELETE CASCADE,
 		embedding BLOB NOT NULL
 	)`)
+	if err != nil {
+		return fmt.Errorf("create search_embeddings: %w", err)
+	}
 
-	db.Exec(`CREATE TABLE IF NOT EXISTS search_meta (
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS search_meta (
 		source TEXT PRIMARY KEY,
 		last_indexed DATETIME
 	)`)
+	if err != nil {
+		return fmt.Errorf("create search_meta: %w", err)
+	}
 
 	return nil
 }
