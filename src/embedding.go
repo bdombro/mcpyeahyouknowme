@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -44,6 +46,9 @@ func NewEmbedder(cacheDir string) (emb *Embedder, err error) {
 
 	os.Setenv("ONNX_PATH", libPath)
 
+	// Point tokenizer cache into our app data dir instead of ~/.cache/tokenizer
+	os.Setenv("GO_TOKENIZER", filepath.Join(cacheDir, "tokenizer"))
+
 	// fastembed-go panics on ONNX load failure; recover gracefully.
 	defer func() {
 		if r := recover(); r != nil {
@@ -51,6 +56,11 @@ func NewEmbedder(cacheDir string) (emb *Embedder, err error) {
 			err = fmt.Errorf("embedding init failed: %v", r)
 		}
 	}()
+
+	// Suppress the tokenizer library's "INFO: CachedDir=..." log line during init
+	origWriter := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(origWriter)
 
 	model, initErr := fastembed.NewFlagEmbedding(&fastembed.InitOptions{
 		Model:    fastembed.BGESmallENV15,
