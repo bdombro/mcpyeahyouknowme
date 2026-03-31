@@ -1,16 +1,13 @@
 # mcpyeahyouknowme - Project Task Runner
 # =====================================
 # This justfile is a convenience wrapper around bash scripts in scripts/
-# 
+#
 # All scripts can be run directly: ./scripts/install.sh
 # Or via justfile if you have just installed: just install
-# 
-# The actual implementation lives in scripts/*.sh for easy debugging and portability.
-# This wrapper provides discoverability and shell completion via just.
 #
 # Usage:
 #   just             - Show this help
-#   just install     - Full installation
+#   just install     - Full install / update (idempotent)
 #   just test        - Run tests
 #   just uninstall   - Complete uninstall
 #
@@ -30,11 +27,7 @@ default:
 build:
     @{{root}}/scripts/build.sh
 
-# build + install binary to ~/.local/bin + add to PATH + restart daemon if running
-update:
-    @{{root}}/scripts/update.sh
-
-# Full installation: update + install ONNX Runtime + install daemon + shell completions
+# Build, install binary, and restart daemon if binary changed (idempotent)
 install:
     @{{root}}/scripts/install.sh
 
