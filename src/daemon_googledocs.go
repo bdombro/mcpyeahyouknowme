@@ -223,7 +223,7 @@ func fetchGoogleEmail(config *oauth2.Config, token *oauth2.Token) (string, error
 	return result.User.EmailAddress, nil
 }
 
-// runGoogleDocsReset removes the OAuth token and clears local data.
+// runGoogleDocsReset prompts for confirmation then delegates to googleDocsReset.
 func runGoogleDocsReset() {
 	fmt.Println("⚠️  This will remove your Google Docs authentication and delete all synced documents.")
 	fmt.Print("Are you sure? (yes/no): ")
@@ -236,20 +236,43 @@ func runGoogleDocsReset() {
 		return
 	}
 
-	// Remove token and email files
-	dDir := dataDir()
-	tokenPath := filepath.Join(dDir, "googledocs_token.json")
-	if err := os.Remove(tokenPath); err != nil && !os.IsNotExist(err) {
-		fmt.Printf("Warning: Failed to remove token: %v\n", err)
-	}
-	emailPath := filepath.Join(dDir, "googledocs_email.txt")
-	os.Remove(emailPath)
+	googleDocsReset(dataDir(), plistPath())
+}
 
-	dbPath := filepath.Join(dDir, "googledocs.db")
-	if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
-		fmt.Printf("Warning: Failed to remove database: %v\n", err)
+// googleDocsReset removes Google Docs data while preserving the daemon
+// installation and other data sources. Accepts paths so tests can use temp dirs.
+func googleDocsReset(dDir, plist string) {
+	if _, err := os.Stat(dDir); os.IsNotExist(err) {
+		fmt.Println("Nothing to reset (data directory does not exist)")
+		return
 	}
 
-	fmt.Println("✓ Google Docs data cleared")
+	daemonInstalled := false
+	if _, err := os.Stat(plist); err == nil {
+		daemonInstalled = true
+		exec.Command("launchctl", "unload", plist).Run()
+		fmt.Println("Stopped core daemon")
+	}
+
+	googleDocsFiles := []string{
+		filepath.Join(dDir, "googledocs_token.json"),
+		filepath.Join(dDir, "googledocs_email.txt"),
+		filepath.Join(dDir, "googledocs.db"),
+	}
+
+	for _, file := range googleDocsFiles {
+		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Warning: could not remove %s: %v\n", file, err)
+		} else if err == nil {
+			fmt.Printf("Removed %s\n", file)
+		}
+	}
+
+	if daemonInstalled {
+		exec.Command("launchctl", "load", plist).Run()
+		fmt.Println("Restarted core daemon (Google Docs disabled)")
+	}
+
+	fmt.Println("Google Docs data reset complete")
 	fmt.Println("Run 'mcpyeahyouknowme googledocs login' to re-authenticate")
 }
