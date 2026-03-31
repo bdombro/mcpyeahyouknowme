@@ -125,7 +125,7 @@ mcpyeahyouknowme googledocs reset
 | `whatsapp reset` | Stops the daemon, removes WhatsApp databases (`whatsapp.db`, `messages.db`), then restarts the daemon. The restarted daemon detects WhatsApp is not logged in and skips WhatsApp services while continuing to run other sources (e.g. Google Docs). |
 | `googledocs reset` | Removes Google Docs OAuth token and database (`googledocs_token.json`, `googledocs.db`). WhatsApp and other sources are preserved. |
 
-**Uninstalling:** For complete removal of the application, use `./tasks.sh uninstall` from the repository root. This kills all processes, removes the daemon, wipes all data, removes shell completions, and deletes the binary from `/usr/local/bin`. See the [README](../README.md) for details.
+**Uninstalling:** For complete removal of the application, use `./scripts/uninstall.sh` from the repository root. This kills all processes, removes the daemon, wipes all data, removes shell completions, and deletes the binary from `/usr/local/bin`. See the [README](../README.md) for details.
 
 ### Shell Completions
 
@@ -386,7 +386,7 @@ For queries shorter than 3 characters, only exact substring matching is used (fu
 
 ### Embedding Infrastructure
 
-Semantic vector search uses [fastembed-go](https://github.com/bdombro/fastembed-go) with the BGE-Small-EN-v1.5 ONNX model. The ONNX Runtime shared library is auto-downloaded during `./tasks.sh install` to `~/.local/share/mcpyeahyouknowme/lib/` (app-local, not exposed to system paths). The embedding model is auto-cached in `~/.local/share/mcpyeahyouknowme/models/` on first use.
+Semantic vector search uses [fastembed-go](https://github.com/bdombro/fastembed-go) with the BGE-Small-EN-v1.5 ONNX model. The ONNX Runtime shared library is auto-downloaded during `./scripts/install.sh` to `~/.local/share/mcpyeahyouknowme/lib/` (app-local, not exposed to system paths). The embedding model is auto-cached in `~/.local/share/mcpyeahyouknowme/models/` on first use.
 
 Embeddings are pre-computed during MCP server startup for all indexed content and stored in the `search_embeddings` table. Only new/changed entries are embedded on subsequent starts.
 
@@ -417,7 +417,7 @@ All data is stored in `~/.local/share/mcpyeahyouknowme/`.
 | `googledocs.db` | Google Docs documents database (includes FTS5 full-text index) |
 | `googledocs_token.json` | OAuth 2.0 token for Google Docs/Drive APIs |
 | `search.db` | Global search index (FTS5 + vector embeddings across all sources) |
-| `lib/` | ONNX Runtime shared library (auto-downloaded by `./tasks.sh install`) |
+| `lib/` | ONNX Runtime shared library (auto-downloaded by `./scripts/install.sh`) |
 | `models/` | Cached embedding model (auto-downloaded on first MCP startup) |
 | `downloads/` | Downloaded WhatsApp media files |
 ### messages.db Schema
@@ -512,5 +512,5 @@ Without this, Gatekeeper blocks execution — the first invocation is killed (SI
 - [fastembed-go](https://github.com/bdombro/fastembed-go) — ONNX-based text embeddings (BGE-Small-EN-v1.5)
 - [golang.org/x/oauth2](https://pkg.go.dev/golang.org/x/oauth2) — OAuth 2.0 client library
 - [google.golang.org/api](https://pkg.go.dev/google.golang.org/api) — Google APIs (Docs v1, Drive v3)
-- **ONNX Runtime** (optional, auto-downloaded) — native shared library for embedding inference, downloaded by `./tasks.sh install` to `~/.local/share/mcpyeahyouknowme/lib/`
+- **ONNX Runtime** (optional, auto-downloaded) — native shared library for embedding inference, downloaded by `./scripts/install.sh` to `~/.local/share/mcpyeahyouknowme/lib/`
 - **ffmpeg** (optional) — required only for automatic audio format conversion in `send_audio_message`

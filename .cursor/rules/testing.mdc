@@ -34,6 +34,5 @@ alwaysApply: false
 
 ## Running
 ```bash
-./tasks.sh test        # run all tests with coverage summary
-./tasks.sh test-cover  # open HTML coverage report
+./scripts/test.sh      # run all tests with coverage summary
 ```

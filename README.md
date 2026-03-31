@@ -25,7 +25,7 @@ See the [product spec](docs/spec.md) for full details.
 - **Homebrew** (for installing dependencies)
 - **Go** (to build)
 - **FFmpeg** (*optional*) — only needed for automatic audio format conversion when sending voice messages
-- **ONNX Runtime** (*optional*, via Homebrew) — required for semantic vector search; `./tasks.sh install` installs it automatically
+- **ONNX Runtime** (*optional*, via Homebrew) — required for semantic vector search; `./scripts/install.sh` installs it automatically
 
 ## Quick Start
 
@@ -39,11 +39,10 @@ See the [product spec](docs/spec.md) for full details.
 2. **Install**
 
    ```bash
-   chmod +x ./tasks.sh
-   ./tasks.sh install
+   ./scripts/install.sh
    ```
 
-   This builds the Go binary, copies it to `/usr/local/bin/mcpyeahyouknowme`, installs ONNX Runtime via Homebrew for semantic search, sets up the core daemon, and adds shell completions. Run `./tasks.sh install-onnx` separately to install ONNX Runtime without the full install flow.
+   This builds the Go binary, copies it to `/usr/local/bin/mcpyeahyouknowme`, installs ONNX Runtime via Homebrew for semantic search, sets up the core daemon, and adds shell completions.
 
 3. **Log in** (first time only)
 
@@ -159,7 +158,7 @@ To completely remove mcpyeahyouknowme:
 
 ```bash
 cd /path/to/mcpyeahyouknowme
-./tasks.sh uninstall
+./scripts/uninstall.sh
 ```
 
 This will:

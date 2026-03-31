@@ -36,7 +36,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  googledocs reset             Clear Google Docs data and token")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Maintenance:")
-	fmt.Fprintln(os.Stderr, "  uninstall                Instructions for proper uninstall (use ./tasks.sh uninstall)")
+	fmt.Fprintln(os.Stderr, "  uninstall                Instructions for proper uninstall (use ./scripts/uninstall.sh)")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Legacy (deprecated):")
 	fmt.Fprintln(os.Stderr, "  login, reset (use 'whatsapp' prefix for WhatsApp commands)")

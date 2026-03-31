@@ -26,7 +26,7 @@ func plistPath() string {
 func requireDaemonInstalled() string {
 	plist := plistPath()
 	if _, err := os.Stat(plist); os.IsNotExist(err) {
-		fmt.Fprintln(os.Stderr, "Error: core daemon not installed. From the repo, run: ./tasks.sh install-daemon")
+		fmt.Fprintln(os.Stderr, "Error: core daemon not installed. From the repo, run: ./scripts/install.sh")
 		os.Exit(1)
 	}
 	return plist
@@ -289,12 +289,12 @@ func whatsAppReset(dDir, plist string) {
 }
 
 func runUninstall() {
-	fmt.Println("⚠️  For a complete uninstall, please use the tasks.sh script:")
+	fmt.Println("⚠️  For a complete uninstall, please use the uninstall script:")
 	fmt.Println()
 	fmt.Println("  cd /path/to/mcpyeahyouknowme")
-	fmt.Println("  ./tasks.sh uninstall")
+	fmt.Println("  ./scripts/uninstall.sh")
 	fmt.Println()
-	fmt.Println("The tasks.sh script will:")
+	fmt.Println("The uninstall script will:")
 	fmt.Println("  • Kill all mcpyeahyouknowme processes")
 	fmt.Println("  • Clean up database lock files")
 	fmt.Println("  • Unload and remove the daemon")
