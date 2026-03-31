@@ -59,10 +59,16 @@ func runGoogleDocsLogin() {
 
 	// Start local HTTP server
 	codeChan := make(chan string)
-	errChan := make(chan error)
-	server := &http.Server{Addr: ":8085"}
+	errChan := make(chan error, 1)
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Ignore non-root requests (e.g. /favicon.ico) so they don't block on channels
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+
 		// Check state to prevent CSRF
 		if r.URL.Query().Get("state") != state {
 			http.Error(w, "Invalid state parameter", http.StatusBadRequest)
@@ -93,6 +99,7 @@ func runGoogleDocsLogin() {
 
 		codeChan <- code
 	})
+	server := &http.Server{Addr: ":8085", Handler: mux}
 
 	go func() {
 		if err := server.ListenAndServe(); err != http.ErrServerClosed {
@@ -164,8 +171,10 @@ func runGoogleDocsLogin() {
 		os.Exit(1)
 	}
 
-	// Shutdown server
-	server.Shutdown(context.Background())
+	// Shutdown server with a timeout in case connections linger
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer shutdownCancel()
+	server.Shutdown(shutdownCtx)
 }
 
 // generateCodeVerifier generates a random code verifier for PKCE.
