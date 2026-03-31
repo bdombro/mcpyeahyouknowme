@@ -23,13 +23,23 @@
 #
 # Notes:
 #   - Uses force kill (SIGKILL), so no graceful shutdown
-#   - If daemon is installed, LaunchAgent will auto-restart it
+#   - Unloads daemon first to prevent KeepAlive auto-restart during cleanup
+#   - Daemon stays unloaded; use `mcpyeahyouknowme start` to restart it
 #   - Safe to run; database consistency is maintained
 #   - Does not delete any data (only lock files)
 
 set -euo pipefail
 
 DATA_DIR="$HOME/.local/share/mcpyeahyouknowme"
+
+PLIST="$HOME/Library/LaunchAgents/com.mcpyeahyouknowme.core.plist"
+
+# Unload LaunchAgent first to prevent KeepAlive from auto-restarting
+if [ -f "$PLIST" ]; then
+	echo "Unloading LaunchAgent daemon..."
+	launchctl unload "$PLIST" 2>/dev/null || true
+	echo "✓ LaunchAgent unloaded"
+fi
 
 echo "Killing all mcpyeahyouknowme processes..."
 

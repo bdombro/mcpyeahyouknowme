@@ -39,7 +39,7 @@ func NewMessageStore() (*MessageStore, error) {
 	// Enable WAL mode and busy timeout to prevent locking issues when core
 	// daemon and sync (or two syncs) access the database concurrently.
 	db.Exec("PRAGMA journal_mode=WAL")
-	db.Exec("PRAGMA busy_timeout=5000")
+	db.Exec("PRAGMA busy_timeout=30000")
 
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS chats (
@@ -110,7 +110,7 @@ func NewMessageStore() (*MessageStore, error) {
 	store := &MessageStore{db: db}
 
 	// Open whatsmeow contacts DB (read-only) for name resolution; non-fatal if missing
-	contactsDB, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro", filepath.Join(dir, "whatsapp.db")))
+	contactsDB, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", filepath.Join(dir, "whatsapp.db")))
 	if err == nil {
 		store.contactsDB = contactsDB
 	}

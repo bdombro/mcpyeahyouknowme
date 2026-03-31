@@ -72,7 +72,7 @@ func NewSearchStore(dir string, embedder EmbedderInterface) (*SearchStore, error
 	}
 
 	db.Exec("PRAGMA journal_mode=WAL")
-	db.Exec("PRAGMA busy_timeout=5000")
+	db.Exec("PRAGMA busy_timeout=30000")
 
 	if err := initSearchSchema(db); err != nil {
 		db.Close()

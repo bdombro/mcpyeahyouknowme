@@ -27,10 +27,11 @@ type GoogleDocsSource struct {
 // NewGoogleDocsSource creates a new Google Docs data source.
 func NewGoogleDocsSource() (*GoogleDocsSource, error) {
 	dbPath := filepath.Join(dataDir(), "googledocs.db")
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_busy_timeout=30000", dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open googledocs database: %w", err)
 	}
+	db.Exec("PRAGMA journal_mode=WAL")
 
 	// Create tables
 	if err := initGoogleDocsDB(db); err != nil {

@@ -444,6 +444,46 @@ Populated on MCP server startup from each `DataSource.SearchEntries()`. Incremen
 
 ---
 
+## Resilience & Self-Healing
+
+The application must be resilient to transient failures across all connections — database, network, and inter-process. No single failure should crash the daemon or leave the system in a broken state.
+
+### Database Concurrency
+
+Multiple processes access the same SQLite databases concurrently (the `core` daemon writes, `mcp` and CLI commands read). All database connections must follow these rules:
+
+1. **WAL mode** — every database (`messages.db`, `search.db`, `googledocs.db`) must use `PRAGMA journal_mode=WAL` so readers never block writers and vice versa.
+2. **Busy timeout** — every connection must set `busy_timeout` to at least **30 seconds** (30000ms). This tells SQLite to retry internally rather than immediately returning `SQLITE_BUSY`. This applies to both connection-string params (`_busy_timeout=30000`) and PRAGMA statements.
+3. **Context timeouts** — when a Go `context.WithTimeout` wraps a database call, the context deadline must exceed the busy timeout (e.g. 35s) so SQLite's internal retry has time to succeed before the context cancels.
+4. **Read-only where possible** — CLI commands (`info`) and MCP read paths should open databases with `mode=ro` to avoid writer contention entirely.
+
+### Daemon Error Handling
+
+The core daemon runs long-lived services (WhatsApp connection, Google Docs sync). These must not exit on transient errors:
+
+- **WhatsApp message handler** — if `StoreMessage` or `StoreChat` fails (e.g. busy timeout expired), log a warning and continue. The next incoming message will succeed once the lock clears. Never crash the event loop.
+- **Google Docs sync** — if an individual document store fails, log a warning and continue to the next document. If the entire sync cycle fails (API error, auth expiry, database lock), log the error and wait for the next ticker interval to retry. Never return a fatal error from `StartCore` for transient issues.
+- **WhatsApp reconnection** — whatsmeow handles automatic reconnection on websocket drops. The daemon must not exit on connection errors; it should let whatsmeow's backoff retry logic handle reconnection.
+
+### LaunchAgent & Process Management
+
+The macOS LaunchAgent (`com.mcpyeahyouknowme.core`) is configured with `KeepAlive: true`, meaning launchd restarts the daemon if it exits. This means:
+
+- The daemon must **not** exit on recoverable errors (network, database busy, auth expiry) — otherwise launchd will restart it in a tight loop.
+- `scripts/kill.sh` must **unload** the LaunchAgent before killing processes to prevent immediate restart during cleanup. It does not reload the daemon afterward; use `mcpyeahyouknowme start` to bring it back.
+- `scripts/install.sh` must **unload** the LaunchAgent before replacing the binary, then reload it after installation.
+
+### Binary Signing (macOS)
+
+macOS Sequoia+ enforces provenance tracking on copied binaries. After `install.sh` copies the built binary to `~/.local/bin/`, it must:
+
+1. Remove the `com.apple.provenance` extended attribute (`xattr -d`)
+2. Ad-hoc codesign the binary (`codesign --force --sign -`)
+
+Without this, Gatekeeper blocks execution — the first invocation is killed (SIGKILL), and subsequent invocations hang in uninterruptible kernel wait.
+
+---
+
 ## Configuration
 
 ### Environment Variables

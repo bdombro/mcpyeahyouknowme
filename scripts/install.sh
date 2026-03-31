@@ -54,7 +54,7 @@ INSTALLED_BIN="$HOME/.local/bin/mcpyeahyouknowme"
 step_1_onnx() {
 	echo "=== Step 1: Installing ONNX Runtime ==="
 	if command -v brew >/dev/null 2>&1; then
-		if brew list onnxruntime >/dev/null 2>&1; then
+		if brew --prefix onnxruntime >/dev/null 2>&1; then
 			echo -e "✓ ONNX Runtime already installed\n"
 		else
 			brew install onnxruntime
@@ -68,11 +68,7 @@ step_1_onnx() {
 
 step_2_build() {
 	echo "=== Step 2: Building binary ==="
-	local build_time
-	build_time="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-	(cd "$CLI_DIR" && go build -tags "sqlite_fts5" \
-		-ldflags "-X 'main.BuildTime=$build_time' -X 'main.BuildVersion=1.0.0'" \
-		-o mcpyeahyouknowme.bin .)
+	"$ROOT/scripts/build.sh"
 	echo -e "✓ Build complete\n"
 }
 
@@ -127,6 +123,16 @@ step_5_install_binary() {
 	mkdir -p "$HOME/.local/bin"
 	cp "$BUILT_BIN" "$INSTALLED_BIN"
 	chmod +x "$INSTALLED_BIN"
+	# macOS Sequoia+ blocks unsigned binaries with provenance tracking.
+	# Clear the provenance xattr and re-sign so Gatekeeper allows execution.
+	if xattr -l "$INSTALLED_BIN" 2>/dev/null | grep -q "com.apple.provenance"; then
+		if ! xattr -d com.apple.provenance "$INSTALLED_BIN"; then
+			echo "⚠️  Failed to remove provenance xattr — binary may be blocked by Gatekeeper" >&2
+		fi
+	fi
+	if ! codesign --force --sign - "$INSTALLED_BIN" 2>&1; then
+		echo "⚠️  Code signing failed — binary may be blocked by Gatekeeper" >&2
+	fi
 	echo -e "✓ Installed $INSTALLED_BIN\n"
 }
 

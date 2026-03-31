@@ -37,12 +37,12 @@ func isLoggedIn() bool {
 	if _, err := os.Stat(waDB); err != nil {
 		return false
 	}
-	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=3000", waDB))
+	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", waDB))
 	if err != nil {
 		return false
 	}
 	defer db.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
 	var jid string
 	err = db.QueryRowContext(ctx, "SELECT jid FROM whatsmeow_device WHERE jid != '' LIMIT 1").Scan(&jid)
@@ -89,7 +89,7 @@ func runLogin(args []string) {
 	logger := waLog.Stdout("Login", "INFO", true)
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
-	container, err := sqlstore.New(context.Background(), "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", filepath.Join(dir, "whatsapp.db")), dbLog)
+	container, err := sqlstore.New(context.Background(), "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on&_busy_timeout=30000", filepath.Join(dir, "whatsapp.db")), dbLog)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
@@ -316,10 +316,10 @@ func runInfo() {
 	fmt.Println("👤 Account")
 	waDB := filepath.Join(dDir, "whatsapp.db")
 	if _, err := os.Stat(waDB); err == nil {
-		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=3000", waDB))
+		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", waDB))
 		if err == nil {
 			defer db.Close()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 			defer cancel()
 			var jid string
 			err = db.QueryRowContext(ctx, "SELECT jid FROM whatsmeow_device WHERE jid != '' LIMIT 1").Scan(&jid)
@@ -337,10 +337,10 @@ func runInfo() {
 
 	msgDB := filepath.Join(dDir, "messages.db")
 	if _, err := os.Stat(msgDB); err == nil {
-		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=3000", msgDB))
+		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", msgDB))
 		if err == nil {
 			defer db.Close()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 			defer cancel()
 			var chatCount, msgCount int
 			db.QueryRowContext(ctx, "SELECT COUNT(*) FROM chats").Scan(&chatCount)
