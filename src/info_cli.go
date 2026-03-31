@@ -63,6 +63,8 @@ func googleDocsInfoLines(dDir string) []string {
 	tokenPath := filepath.Join(dDir, "googledocs_token.json")
 	if _, err := os.Stat(tokenPath); err != nil {
 		lines = append(lines, "   Logged in:  no (run 'mcpyeahyouknowme googledocs login')")
+	} else if email, err := os.ReadFile(filepath.Join(dDir, "googledocs_email.txt")); err == nil && len(email) > 0 {
+		lines = append(lines, fmt.Sprintf("   Logged in:  %s", string(email)))
 	} else {
 		lines = append(lines, "   Logged in:  yes")
 	}

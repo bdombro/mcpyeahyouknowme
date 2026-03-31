@@ -112,6 +112,20 @@ func TestGoogleDocsInfoLines_withToken(t *testing.T) {
 	}
 }
 
+func TestGoogleDocsInfoLines_withTokenAndEmail(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "googledocs_token.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "googledocs_email.txt"), []byte("user@gmail.com"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lines := googleDocsInfoLines(dir)
+	if len(lines) != 2 || !strings.Contains(lines[0], "user@gmail.com") {
+		t.Fatalf("expected email in login line, got: %q", lines)
+	}
+}
+
 func TestGoogleDocsInfoLines_withDatabase(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "googledocs_token.json"), []byte(`{}`), 0o600); err != nil {

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -138,6 +139,12 @@ func runGoogleDocsLogin() {
 			os.Exit(1)
 		}
 
+		// Fetch and save account email for the info command
+		if email, err := fetchGoogleEmail(config, token); err == nil && email != "" {
+			emailPath := filepath.Join(dataDir(), "googledocs_email.txt")
+			os.WriteFile(emailPath, []byte(email), 0o600)
+		}
+
 		fmt.Println()
 		fmt.Println("✓ Successfully authenticated with Google!")
 		fmt.Println("✓ Token saved for daemon use")
@@ -187,6 +194,26 @@ func openBrowser(url string) error {
 	return cmd.Start()
 }
 
+// fetchGoogleEmail retrieves the authenticated user's email via Drive API.
+// Uses Drive's About endpoint which is covered by the existing DriveReadonly scope.
+func fetchGoogleEmail(config *oauth2.Config, token *oauth2.Token) (string, error) {
+	client := config.Client(context.Background(), token)
+	resp, err := client.Get("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var result struct {
+		User struct {
+			EmailAddress string `json:"emailAddress"`
+		} `json:"user"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	return result.User.EmailAddress, nil
+}
+
 // runGoogleDocsReset removes the OAuth token and clears local data.
 func runGoogleDocsReset() {
 	fmt.Println("⚠️  This will remove your Google Docs authentication and delete all synced documents.")
@@ -200,14 +227,16 @@ func runGoogleDocsReset() {
 		return
 	}
 
-	// Remove token file
-	tokenPath := filepath.Join(dataDir(), "googledocs_token.json")
+	// Remove token and email files
+	dDir := dataDir()
+	tokenPath := filepath.Join(dDir, "googledocs_token.json")
 	if err := os.Remove(tokenPath); err != nil && !os.IsNotExist(err) {
 		fmt.Printf("Warning: Failed to remove token: %v\n", err)
 	}
+	emailPath := filepath.Join(dDir, "googledocs_email.txt")
+	os.Remove(emailPath)
 
-	// Remove database
-	dbPath := filepath.Join(dataDir(), "googledocs.db")
+	dbPath := filepath.Join(dDir, "googledocs.db")
 	if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
 		fmt.Printf("Warning: Failed to remove database: %v\n", err)
 	}

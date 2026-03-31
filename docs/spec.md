@@ -121,9 +121,9 @@ mcpyeahyouknowme googledocs reset
 
 | Command | Description |
 |---------|-------------|
-| `info` | Shows build metadata; global data directory status; per-source sections (WhatsApp session and message counts, Google Docs login and synced document count); and core daemon install status. |
+| `info` | Shows build metadata; global data directory status; per-source sections (WhatsApp session and message counts, Google Docs login email and synced document count); and core daemon install status. |
 | `whatsapp reset` | Stops the daemon, removes WhatsApp databases (`whatsapp.db`, `messages.db`), then restarts the daemon. The restarted daemon detects WhatsApp is not logged in and skips WhatsApp services while continuing to run other sources (e.g. Google Docs). |
-| `googledocs reset` | Removes Google Docs OAuth token and database (`googledocs_token.json`, `googledocs.db`). WhatsApp and other sources are preserved. |
+| `googledocs reset` | Removes Google Docs OAuth token, account email, and database (`googledocs_token.json`, `googledocs_email.txt`, `googledocs.db`). WhatsApp and other sources are preserved. |
 
 **Uninstalling:** For complete removal of the application, use `./scripts/uninstall.sh` from the repository root. This kills all processes, removes the daemon, wipes all data, removes shell completions, and deletes the binary from `/usr/local/bin`. See the [README](../README.md) for details.
 
@@ -416,6 +416,7 @@ All data is stored in `~/.local/share/mcpyeahyouknowme/`.
 | `messages.db` | Application message and chat database (includes FTS5 index) |
 | `googledocs.db` | Google Docs documents database (includes FTS5 full-text index) |
 | `googledocs_token.json` | OAuth 2.0 token for Google Docs/Drive APIs |
+| `googledocs_email.txt` | Cached Google account email (fetched during login via Drive API) |
 | `search.db` | Global search index (FTS5 + vector embeddings across all sources) |
 | `lib/` | ONNX Runtime shared library (auto-downloaded by `./scripts/install.sh`) |
 | `models/` | Cached embedding model (auto-downloaded on first MCP startup) |
