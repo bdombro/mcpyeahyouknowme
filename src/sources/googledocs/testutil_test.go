@@ -31,10 +31,10 @@ func newMCPTestSource(t *testing.T) *Source {
 	t.Helper()
 	db := newTestGoogleDocsDB(t)
 	_, err := db.Exec(`
-		INSERT INTO documents (id, title, content, modified_time, created_time, web_view_link, last_synced)
+		INSERT INTO documents (id, title, content, modified_time, created_time, web_view_link, owners, last_synced)
 		VALUES
-		  ('doc1', 'Alpha Document', 'Hello alpha world', '2024-01-02T00:00:00Z', '2024-01-01T00:00:00Z', 'https://docs.google.com/doc1', '2024-01-02T00:00:00Z'),
-		  ('doc2', 'Beta Document',  'Beta content here', '2024-01-03T00:00:00Z', '2024-01-01T00:00:00Z', 'https://docs.google.com/doc2', '2024-01-03T00:00:00Z')
+		  ('doc1', 'Alpha Document', 'Hello alpha world', '2024-01-02T00:00:00Z', '2024-01-01T00:00:00Z', 'https://docs.google.com/doc1', 'Alice <alice@example.com>', '2024-01-02T00:00:00Z'),
+		  ('doc2', 'Beta Document',  'Beta content here', '2024-01-03T00:00:00Z', '2024-01-01T00:00:00Z', 'https://docs.google.com/doc2', 'Bob <bob@example.com>', '2024-01-03T00:00:00Z')
 	`)
 	if err != nil {
 		t.Fatalf("seed documents: %v", err)

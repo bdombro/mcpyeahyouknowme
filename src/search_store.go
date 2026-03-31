@@ -31,6 +31,7 @@ var hierarchyWeights = map[string]float64{
 	"participant":      2.0,
 	"message":          1.0,
 	"document_title":   2.0,
+	"document_owner":   2.0,
 	"document_content": 1.0,
 }
 

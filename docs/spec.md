@@ -41,7 +41,7 @@ Authenticates with Google using OAuth 2.0. Opens the default browser to authoriz
 mcpyeahyouknowme core
 ```
 
-Runs all available data source core services. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on port 8080. For Google Docs: syncs documents every 15 minutes via the Google Docs/Drive APIs. Requires authentication for each source.
+Runs all available data source core services. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on port 8080. For Google Docs: syncs documents every 5 minutes via the Google Docs/Drive APIs. Requires authentication for each source.
 
 Re-authentication may be required after ~20 days for WhatsApp. Google Docs OAuth tokens refresh automatically as long as the refresh token is valid.
 
@@ -135,7 +135,6 @@ Current sources:
 ### Daemon Management
 
 ```
-mcpyeahyouknowme install-daemon
 mcpyeahyouknowme start
 mcpyeahyouknowme stop
 mcpyeahyouknowme restart
@@ -372,7 +371,7 @@ Metadata shapes per WhatsApp content type:
 
 ### Google Docs Tools
 
-**Read path**: Queries `googledocs.db` directly via SQLite. Documents are synced by the core daemon every 15 minutes. The core daemon does not need to be running for read-only operations.
+**Read path**: Queries `googledocs.db` directly via SQLite. Documents are synced by the core daemon every 5 minutes. Each sync cycle lists all Google Docs (including shared drives) via the Drive API, fetches content only for new or modified documents, and deletes local rows for documents that have been trashed or deleted remotely. The core daemon does not need to be running for read-only operations.
 
 | Tool | Description |
 |------|-------------|
@@ -393,15 +392,16 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 | `chat_name` | WhatsApp | Chat display names |
 | `participant` | WhatsApp | Contact names from `whatsmeow_contacts` |
 | `message` | WhatsApp | Message content (>20 chars only) |
-| `document_title` | Google Docs | Document titles |
-| `document_content` | Google Docs | Document text content (chunked at 5000 chars) |
+| `document_title` | Google Docs | Document titles (prefixed with owner names when present) |
+| `document_owner` | Google Docs | Document owner names and emails |
+| `document_content` | Google Docs | Document text content (prefixed with owner names, chunked at 5000 chars) |
 
 **Search algorithm:**
 
 1. **BM25** — FTS5 full-text search on the `search_fts` virtual table
 2. **Vector** (when ONNX installed) — embed the query with BGE-Small-EN-v1.5, compute cosine similarity against stored embeddings
 3. **Reciprocal Rank Fusion (RRF)** — combine BM25 and vector ranked lists: `score(d) = sum(1/(k+rank_i))` with k=60
-4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `message` (1x), `document_title` (2x), `document_content` (1x)
+4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `message` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x)
 
 When ONNX Runtime is not installed, vector search is disabled and the system falls back to BM25-only. This is transparent to the caller.
 
@@ -500,7 +500,7 @@ Multiple processes access the same SQLite databases concurrently (the `core` dae
 The core daemon runs long-lived services (WhatsApp connection, Google Docs sync). These must not exit on transient errors:
 
 - **WhatsApp message handler** — if `StoreMessage` or `StoreChat` fails (e.g. busy timeout expired), log a warning and continue. The next incoming message will succeed once the lock clears. Never crash the event loop.
-- **Google Docs sync** — if an individual document store fails, log a warning and continue to the next document. If the entire sync cycle fails (API error, auth expiry, database lock), log the error and wait for the next ticker interval to retry. Never return a fatal error from `StartCore` for transient issues.
+- **Google Docs sync** — each cycle does a full Drive metadata listing to detect new, modified, and deleted documents. Content is fetched via the Docs API only for new or modified documents; locally-stored documents absent from the remote listing are deleted. If an individual document fetch or store fails, log a warning and continue to the next document. If the entire sync cycle fails (API error, auth expiry, database lock), log the error and wait for the next ticker interval to retry. Never return a fatal error from `StartCore` for transient issues.
 - **WhatsApp reconnection** — whatsmeow handles automatic reconnection on websocket drops. The daemon must not exit on connection errors; it should let whatsmeow's backoff retry logic handle reconnection.
 
 ### LaunchAgent & Process Management

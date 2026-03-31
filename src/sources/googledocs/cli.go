@@ -124,7 +124,7 @@ func RunLogin(dataDir string) {
 		fmt.Println("✓ Token saved for daemon use")
 		fmt.Println()
 		fmt.Println("You can now:")
-		fmt.Println("  • Start the daemon: mcpyeahyouknowme start")
+		fmt.Println("  • See the status: mcpyeahyouknowme info")
 		fmt.Println("  • Use MCP server: mcpyeahyouknowme mcp")
 
 	case err := <-errChan:

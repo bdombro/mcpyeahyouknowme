@@ -49,7 +49,7 @@ func (g *Source) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 
 	rows, err := g.db.Query(`
 		SELECT d.id, d.title, snippet(documents_fts, 1, '<mark>', '</mark>', '...', 32) as snippet, 
-		       d.modified_time, d.web_view_link
+		       d.modified_time, d.web_view_link, d.owners
 		FROM documents_fts
 		JOIN documents d ON d.rowid = documents_fts.rowid
 		WHERE documents_fts MATCH ?
@@ -63,8 +63,8 @@ func (g *Source) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 
 	var results []map[string]interface{}
 	for rows.Next() {
-		var id, title, snippet, modifiedTime, webViewLink string
-		if err := rows.Scan(&id, &title, &snippet, &modifiedTime, &webViewLink); err != nil { // nocov
+		var id, title, snippet, modifiedTime, webViewLink, owners string
+		if err := rows.Scan(&id, &title, &snippet, &modifiedTime, &webViewLink, &owners); err != nil { // nocov
 			continue
 		}
 		results = append(results, map[string]interface{}{
@@ -73,6 +73,7 @@ func (g *Source) handleSearch(ctx context.Context, req mcp.CallToolRequest) (*mc
 			"snippet":       snippet,
 			"modified_time": modifiedTime,
 			"link":          webViewLink,
+			"owners":        owners,
 		})
 	}
 
@@ -92,12 +93,12 @@ func (g *Source) handleGetDocument(ctx context.Context, req mcp.CallToolRequest)
 		return mcp.NewToolResultError("Database not available"), nil
 	}
 
-	var title, content, modifiedTime, webViewLink string
+	var title, content, modifiedTime, webViewLink, owners string
 	err := g.db.QueryRow(`
-		SELECT title, content, modified_time, web_view_link
+		SELECT title, content, modified_time, web_view_link, owners
 		FROM documents
 		WHERE id = ?
-	`, docID).Scan(&title, &content, &modifiedTime, &webViewLink)
+	`, docID).Scan(&title, &content, &modifiedTime, &webViewLink, &owners)
 
 	if err == sql.ErrNoRows {
 		return mcp.NewToolResultError("Document not found"), nil
@@ -112,6 +113,7 @@ func (g *Source) handleGetDocument(ctx context.Context, req mcp.CallToolRequest)
 		"content":       content,
 		"modified_time": modifiedTime,
 		"link":          webViewLink,
+		"owners":        owners,
 	}, "", "  ")
 
 	return mcp.NewToolResultText(string(data)), nil
@@ -125,7 +127,7 @@ func (g *Source) handleListRecent(ctx context.Context, req mcp.CallToolRequest) 
 	}
 
 	rows, err := g.db.Query(`
-		SELECT id, title, modified_time, web_view_link
+		SELECT id, title, modified_time, web_view_link, owners
 		FROM documents
 		ORDER BY modified_time DESC
 		LIMIT ?
@@ -137,8 +139,8 @@ func (g *Source) handleListRecent(ctx context.Context, req mcp.CallToolRequest) 
 
 	var results []map[string]interface{}
 	for rows.Next() {
-		var id, title, modifiedTime, webViewLink string
-		if err := rows.Scan(&id, &title, &modifiedTime, &webViewLink); err != nil { // nocov
+		var id, title, modifiedTime, webViewLink, owners string
+		if err := rows.Scan(&id, &title, &modifiedTime, &webViewLink, &owners); err != nil { // nocov
 			continue
 		}
 		results = append(results, map[string]interface{}{
@@ -146,6 +148,7 @@ func (g *Source) handleListRecent(ctx context.Context, req mcp.CallToolRequest) 
 			"title":         title,
 			"modified_time": modifiedTime,
 			"link":          webViewLink,
+			"owners":        owners,
 		})
 	}
 

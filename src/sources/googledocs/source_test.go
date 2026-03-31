@@ -1,6 +1,8 @@
 package googledocs
 
 import (
+	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +30,48 @@ func TestInitGoogleDocsDB(t *testing.T) {
 		if err != nil {
 			t.Errorf("trigger %s not created: %v", trigger, err)
 		}
+	}
+}
+
+func TestInitGoogleDocsDB_MigrateFTSOwners(t *testing.T) {
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared&_foreign_keys=on")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	// Create the old schema without owners in FTS
+	_, err = db.Exec(`
+		CREATE TABLE documents (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			content TEXT NOT NULL,
+			modified_time TEXT NOT NULL,
+			created_time TEXT NOT NULL,
+			web_view_link TEXT,
+			owners TEXT NOT NULL DEFAULT '',
+			last_synced TEXT NOT NULL
+		);
+		CREATE VIRTUAL TABLE documents_fts USING fts5(
+			title, content,
+			content='documents',
+			content_rowid='rowid'
+		);
+	`)
+	if err != nil {
+		t.Fatalf("create old schema: %v", err)
+	}
+
+	// Run init which should detect and migrate
+	if err := initGoogleDocsDB(db); err != nil {
+		t.Fatalf("initGoogleDocsDB: %v", err)
+	}
+
+	// Verify FTS now has owners column
+	var ftsSQL string
+	db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='documents_fts'").Scan(&ftsSQL)
+	if !strings.Contains(ftsSQL, "owners") {
+		t.Errorf("FTS table should have owners column after migration, sql: %s", ftsSQL)
 	}
 }
 
@@ -302,8 +346,8 @@ func TestGoogleDocsSource_SearchEntries(t *testing.T) {
 
 	// Seed a document
 	_, err := db.Exec(`
-		INSERT INTO documents (id, title, content, modified_time, created_time, web_view_link, last_synced)
-		VALUES ('doc1', 'Test Doc', 'Hello world', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', 'https://docs.google.com/doc1', '2024-01-01T00:00:00Z')
+		INSERT INTO documents (id, title, content, modified_time, created_time, web_view_link, owners, last_synced)
+		VALUES ('doc1', 'Test Doc', 'Hello world', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', 'https://docs.google.com/doc1', 'Alice <alice@example.com>', '2024-01-01T00:00:00Z')
 	`)
 	if err != nil {
 		t.Fatalf("seed document: %v", err)
@@ -313,14 +357,26 @@ func TestGoogleDocsSource_SearchEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SearchEntries() error: %v", err)
 	}
-	if len(entries) < 2 {
-		t.Fatalf("expected at least 2 entries (title + content), got %d", len(entries))
+	if len(entries) < 3 {
+		t.Fatalf("expected at least 3 entries (title + owner + content), got %d", len(entries))
 	}
 	if entries[0].ContentType != "document_title" {
 		t.Errorf("first entry ContentType = %q, want document_title", entries[0].ContentType)
 	}
-	if entries[1].ContentType != "document_content" {
-		t.Errorf("second entry ContentType = %q, want document_content", entries[1].ContentType)
+	if !strings.Contains(entries[0].Content, "Alice") {
+		t.Errorf("title entry Content should contain owner name, got: %s", entries[0].Content)
+	}
+	if entries[1].ContentType != "document_owner" {
+		t.Errorf("second entry ContentType = %q, want document_owner", entries[1].ContentType)
+	}
+	if entries[1].Content != "Alice <alice@example.com>" {
+		t.Errorf("owner entry Content = %q, want %q", entries[1].Content, "Alice <alice@example.com>")
+	}
+	if entries[2].ContentType != "document_content" {
+		t.Errorf("third entry ContentType = %q, want document_content", entries[2].ContentType)
+	}
+	if !strings.Contains(entries[2].Content, "Owners: Alice") {
+		t.Errorf("content entry should start with owners, got: %s", entries[2].Content)
 	}
 }
 

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"mcpyeahyouknowme/core"
 
@@ -300,6 +302,42 @@ func TestWhatsAppSource_SearchEntries_noContacts(t *testing.T) {
 	for _, e := range entries {
 		if e.ContentType == "participant" {
 			t.Error("should have no participant entries without contacts DB")
+		}
+	}
+}
+
+func TestWhatsAppSource_SearchEntries_senderPrepend(t *testing.T) {
+	store := newTestStoreWithContacts(t)
+
+	now := time.Now()
+	store.db.Exec(`INSERT INTO messages (id, chat_jid, sender, content, timestamp, is_from_me)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		"m_self", "11111@s.whatsapp.net", "me",
+		"This is a long message from myself", now.Format(time.RFC3339), true)
+
+	ws := NewSourceFromStore(store, "http://localhost:1")
+	entries, err := ws.SearchEntries()
+	if err != nil {
+		t.Fatalf("SearchEntries: %v", err)
+	}
+
+	for _, e := range entries {
+		if e.ContentType != "message" {
+			continue
+		}
+		switch {
+		case strings.Contains(e.Content, "How are you doing today?"):
+			if !strings.HasPrefix(e.Content, "Alice Smith: ") {
+				t.Errorf("expected sender prepend for other's message, got: %s", e.Content)
+			}
+		case strings.Contains(e.Content, "Family dinner tonight"):
+			if !strings.HasPrefix(e.Content, "Alice Smith: ") {
+				t.Errorf("expected sender prepend for other's group message, got: %s", e.Content)
+			}
+		case strings.Contains(e.Content, "long message from myself"):
+			if e.Content != "This is a long message from myself" {
+				t.Errorf("is_from_me message should not have sender prepended, got: %s", e.Content)
+			}
 		}
 	}
 }

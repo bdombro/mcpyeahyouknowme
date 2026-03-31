@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"mcpyeahyouknowme/core"
 
@@ -79,23 +80,47 @@ func initGoogleDocsDB(db *sql.DB) error {
 		modified_time TEXT NOT NULL,
 		created_time TEXT NOT NULL,
 		web_view_link TEXT,
+		owners TEXT NOT NULL DEFAULT '',
 		last_synced TEXT NOT NULL
 	);
+	`)
+	if err != nil {
+		return err
+	}
+	// Add owners column to existing databases (no-op if already present).
+	db.Exec("ALTER TABLE documents ADD COLUMN owners TEXT NOT NULL DEFAULT ''")
 
+	_, err = db.Exec(`
 	CREATE TABLE IF NOT EXISTS sync_state (
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL
 	);
+	`)
+	if err != nil { // nocov
+		return err
+	}
 
+	// Migrate FTS5 to include owners: if the existing FTS table lacks the
+	// owners column, drop it and its triggers so they're recreated below.
+	var ftsSQL string
+	_ = db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='documents_fts'").Scan(&ftsSQL)
+	if ftsSQL != "" && !strings.Contains(ftsSQL, "owners") {
+		db.Exec("DROP TABLE IF EXISTS documents_fts")
+		db.Exec("DROP TRIGGER IF EXISTS documents_ai")
+		db.Exec("DROP TRIGGER IF EXISTS documents_ad")
+		db.Exec("DROP TRIGGER IF EXISTS documents_au")
+	}
+
+	_, err = db.Exec(`
 	CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
-		title, content,
+		title, content, owners,
 		content='documents',
 		content_rowid='rowid'
 	);
 
 	CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN
-		INSERT INTO documents_fts(rowid, title, content)
-		VALUES (new.rowid, new.title, new.content);
+		INSERT INTO documents_fts(rowid, title, content, owners)
+		VALUES (new.rowid, new.title, new.content, new.owners);
 	END;
 
 	CREATE TRIGGER IF NOT EXISTS documents_ad AFTER DELETE ON documents BEGIN
@@ -103,11 +128,17 @@ func initGoogleDocsDB(db *sql.DB) error {
 	END;
 
 	CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN
-		INSERT INTO documents_fts(documents_fts, rowid, title, content) VALUES('delete', old.rowid, old.title, old.content);
-		INSERT INTO documents_fts(rowid, title, content) VALUES (new.rowid, new.title, new.content);
+		INSERT INTO documents_fts(documents_fts, rowid, title, content, owners) VALUES('delete', old.rowid, old.title, old.content, old.owners);
+		INSERT INTO documents_fts(rowid, title, content, owners) VALUES (new.rowid, new.title, new.content, new.owners);
 	END;
 	`)
-	return err
+	if err != nil { // nocov
+		return err
+	}
+
+	// Rebuild FTS content after migration or on first run.
+	db.Exec("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
+	return nil
 }
 
 // SearchEntries returns all documents for the global search index.
@@ -116,7 +147,7 @@ func (g *Source) SearchEntries() ([]core.SearchEntry, error) {
 		return nil, nil
 	}
 	rows, err := g.db.Query(`
-		SELECT id, title, content, modified_time
+		SELECT id, title, content, modified_time, owners
 		FROM documents
 	`)
 	if err != nil {
@@ -126,32 +157,58 @@ func (g *Source) SearchEntries() ([]core.SearchEntry, error) {
 
 	var entries []core.SearchEntry
 	for rows.Next() {
-		var id, title, content, modifiedTime string
-		if err := rows.Scan(&id, &title, &content, &modifiedTime); err != nil { // nocov
+		var id, title, content, modifiedTime, owners string
+		if err := rows.Scan(&id, &title, &content, &modifiedTime, &owners); err != nil { // nocov
 			continue
 		}
 
-		metadata, _ := json.Marshal(map[string]interface{}{
+		baseMeta := map[string]interface{}{
 			"document_id":   id,
 			"modified_time": modifiedTime,
-		})
+		}
+		if owners != "" {
+			baseMeta["owners"] = owners
+		}
+
+		indexedTitle := title
+		if owners != "" {
+			indexedTitle = owners + " — " + title
+		}
+
+		metadata, _ := json.Marshal(baseMeta)
 		entries = append(entries, core.SearchEntry{
 			Source:      g.Name(),
 			SourceID:    id,
 			ContentType: "document_title",
 			Title:       title,
-			Content:     title,
+			Content:     indexedTitle,
 			Metadata:    metadata,
 		})
 
+		if owners != "" {
+			ownerMeta, _ := json.Marshal(baseMeta)
+			entries = append(entries, core.SearchEntry{
+				Source:      g.Name(),
+				SourceID:    id,
+				ContentType: "document_owner",
+				Title:       title,
+				Content:     owners,
+				Metadata:    ownerMeta,
+			})
+		}
+
 		if len(content) > 0 {
+			contentWithOwners := content
+			if owners != "" {
+				contentWithOwners = "Owners: " + owners + "\n\n" + content
+			}
 			chunkSize := 5000
-			for i := 0; i < len(content); i += chunkSize {
+			for i := 0; i < len(contentWithOwners); i += chunkSize {
 				end := i + chunkSize
-				if end > len(content) {
-					end = len(content)
+				if end > len(contentWithOwners) {
+					end = len(contentWithOwners)
 				}
-				chunk := content[i:end]
+				chunk := contentWithOwners[i:end]
 
 				chunkMeta, _ := json.Marshal(map[string]interface{}{
 					"document_id":    id,

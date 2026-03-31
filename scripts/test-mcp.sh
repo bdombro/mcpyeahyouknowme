@@ -35,5 +35,5 @@ CLI_DIR="$ROOT/src"
 (
 	echo '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
 	echo '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-	echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"query":"Eileen","limit":5}}}'
+	echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"query":"Meeeeee","limit":5}}}'
 ) | "$ROOT/mcpyeahyouknowme.bin" mcp 2>/dev/null

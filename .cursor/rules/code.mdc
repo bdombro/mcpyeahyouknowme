@@ -1,7 +1,7 @@
 ---
 description: Code structure and organization standards
 globs: src/**/*.go
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Code Standards

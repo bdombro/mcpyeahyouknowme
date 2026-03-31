@@ -72,9 +72,9 @@ See the [product spec](docs/spec.md) for full details.
 
 ## Google Docs Setup
 
-Google Docs integration requires OAuth 2.0 credentials:
+Google Docs integration requires app API keys and OAuth 2.0 auth:
 
-1. **Get OAuth credentials**
+1. **Get OAuth API keys**
 
    - Go to [Google Cloud Console](https://console.cloud.google.com/)
    - Create a project or select an existing one
@@ -133,7 +133,6 @@ mcpyeahyouknowme googledocs
 Install the core daemon (runs on login, auto-restarts) and manage it:
 
 ```bash
-mcpyeahyouknowme install-daemon
 mcpyeahyouknowme start
 mcpyeahyouknowme stop
 mcpyeahyouknowme restart
