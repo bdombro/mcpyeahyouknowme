@@ -18,7 +18,7 @@
 #   - Search tool execution with query="Eileen"
 #
 # Prerequisites:
-#   - Built binary at src/mcpyeahyouknowme.bin (run build.sh first)
+#   - Built binary at mcpyeahyouknowme.bin in repo root (run build.sh first)
 #   - WhatsApp data in database (optional, for meaningful results)
 #
 # Notes:
@@ -36,4 +36,4 @@ CLI_DIR="$ROOT/src"
 	echo '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
 	echo '{"jsonrpc":"2.0","method":"notifications/initialized"}'
 	echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"query":"Eileen","limit":5}}}'
-) | "$CLI_DIR/mcpyeahyouknowme.bin" mcp 2>/dev/null
+) | "$ROOT/mcpyeahyouknowme.bin" mcp 2>/dev/null

@@ -4,9 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -266,7 +268,7 @@ func TestSearchStore_HybridSearch_messageOnly(t *testing.T) {
 		if r.ContentType != "message" {
 			t.Errorf("expected only messages, got %s", r.ContentType)
 		}
-		if containsSubstring(toLower(r.Content), "meeting") {
+		if strings.Contains(strings.ToLower(r.Content), "meeting") {
 			found = true
 		}
 	}
@@ -657,5 +659,30 @@ func TestCosineSimilarity_zeroVector(t *testing.T) {
 	sim := cosineSimilarity(a, b)
 	if sim != 0 {
 		t.Errorf("expected 0 for zero vector, got %f", sim)
+	}
+}
+
+func TestSearchStore_VectorSearch_LimitTruncates(t *testing.T) {
+	emb := &mockEmbedder{dim: 4}
+	store := newTestSearchStore(t, emb)
+
+	// Index more entries than the search limit so the truncation branch is hit.
+	entries := make([]SearchEntry, 5)
+	for i := range entries {
+		entries[i] = SearchEntry{
+			Source: "test", SourceID: fmt.Sprintf("id%d", i),
+			ContentType: "message", Title: fmt.Sprintf("doc %d", i),
+			Content: fmt.Sprintf("content number %d", i),
+		}
+	}
+	store.IndexEntries(entries)
+
+	// Call vectorSearch with limit=2 directly so the len(all)>limit branch is exercised.
+	results, err := store.vectorSearch("content", 2, "", "")
+	if err != nil {
+		t.Fatalf("vectorSearch: %v", err)
+	}
+	if len(results) > 2 {
+		t.Errorf("expected at most 2 results, got %d", len(results))
 	}
 }

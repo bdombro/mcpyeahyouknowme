@@ -2,22 +2,21 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"mcpyeahyouknowme/core"
+	"mcpyeahyouknowme/sources/whatsapp"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
 func runMcp() {
-	sources, err := LoadSources()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load data sources: %v\n", err)
-		os.Exit(1)
-	}
+	dir := core.DataDir()
+	sources := LoadSources(dir)
 	defer func() {
 		for _, src := range sources {
 			src.Close()
@@ -25,10 +24,10 @@ func runMcp() {
 	}()
 
 	// Filter sources: only include WhatsApp if logged in
-	var enabledSources []DataSource
+	var enabledSources []core.DataSource
 	for _, src := range sources {
 		if src.Name() == "whatsapp" {
-			if !isLoggedIn() {
+			if !whatsapp.IsLoggedIn(dir) {
 				fmt.Fprintf(os.Stderr, "Info: WhatsApp not logged in - WhatsApp MCP tools will not be available.\n")
 				fmt.Fprintf(os.Stderr, "      Run 'mcpyeahyouknowme whatsapp login' to enable WhatsApp integration.\n")
 				continue
@@ -37,8 +36,6 @@ func runMcp() {
 		enabledSources = append(enabledSources, src)
 	}
 
-	// Initialize embedding model (nil if ONNX not installed)
-	dir := dataDir()
 	embedder, err := NewEmbedder(filepath.Join(dir, "models"))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: embedding init failed: %v (falling back to BM25-only)\n", err)
@@ -47,9 +44,7 @@ func runMcp() {
 	if embedder == nil {
 		fmt.Fprintf(os.Stderr, "Info: ONNX Runtime not found; semantic search disabled. Run 'brew install onnxruntime' to enable.\n")
 	}
-	
-	// TEMPORARY: Disable embeddings during indexing due to tokenizer library crashes
-	// The BM25/FTS5 search will still work perfectly fine
+
 	var indexEmbedder EmbedderInterface
 	if os.Getenv("MCP_ENABLE_EMBEDDINGS") == "1" {
 		indexEmbedder = embedder
@@ -63,7 +58,6 @@ func runMcp() {
 		defer embedder.Close()
 	}
 
-	// Initialize global search index
 	searchStore, err := NewSearchStore(dir, indexEmbedder)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: search index unavailable: %v\n", err)
@@ -94,7 +88,7 @@ func runMcp() {
 }
 
 // indexSources populates the search index from all data sources.
-func indexSources(store *SearchStore, sources []DataSource) {
+func indexSources(store *SearchStore, sources []core.DataSource) {
 	for _, src := range sources {
 		entries, err := src.SearchEntries()
 		if err != nil {
@@ -109,7 +103,7 @@ func indexSources(store *SearchStore, sources []DataSource) {
 	}
 }
 
-// registerSearchTool adds the global search MCP tool (not source-prefixed).
+// registerSearchTool adds the global search MCP tool.
 func registerSearchTool(s *server.MCPServer, store *SearchStore) {
 	searchDesc := `Search across all connected data sources (WhatsApp, etc.) by name, participant, or message content. ` +
 		`Returns results ranked by relevance using hybrid BM25 keyword + semantic vector search with hierarchy weighting ` +
@@ -134,43 +128,12 @@ Result metadata varies by source and content_type:
 		}
 		source, _ := args["source"].(string)
 		contentType, _ := args["content_type"].(string)
-		limit := intArg(args, "limit", 20)
+		limit := core.IntArg(args, "limit", 20)
 
 		results, err := store.Search(query, limit, source, contentType)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return jsonResult(results)
+		return core.JsonResult(results)
 	})
-}
-
-// ---------- Shared tool helpers ----------
-
-func jsonResult(v interface{}) (*mcp.CallToolResult, error) {
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
-}
-
-func intArg(args map[string]interface{}, key string, def int) int {
-	if v, ok := args[key]; ok {
-		switch n := v.(type) {
-		case float64:
-			return int(n)
-		case int:
-			return n
-		}
-	}
-	return def
-}
-
-func boolArg(args map[string]interface{}, key string, def bool) bool {
-	if v, ok := args[key]; ok {
-		if b, ok := v.(bool); ok {
-			return b
-		}
-	}
-	return def
 }

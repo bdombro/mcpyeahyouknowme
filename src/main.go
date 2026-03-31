@@ -4,15 +4,20 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
+
+	"mcpyeahyouknowme/core"
+	"mcpyeahyouknowme/sources/googledocs"
+	"mcpyeahyouknowme/sources/whatsapp"
 )
 
 // Build-time variables set via -ldflags
 var (
-	BuildTime          = "unknown"
-	BuildVersion       = "dev"
-	GoogleClientID     string
-	GoogleClientSecret string
+	BuildTime    = "unknown"
+	BuildVersion = "dev"
 )
 
 func printUsage() {
@@ -45,11 +50,7 @@ func printUsage() {
 }
 
 func main() {
-	// Set GO_TOKENIZER early so the sugarme/tokenizer library uses our app data dir
-	// instead of ~/.cache/tokenizer. Note: the library's init() has already run by now
-	// (creating ~/.cache/tokenizer and logging to stderr), but this ensures any
-	// subsequent CachedPath calls use the correct directory.
-	os.Setenv("GO_TOKENIZER", filepath.Join(dataDir(), "cache", "tokenizer"))
+	os.Setenv("GO_TOKENIZER", filepath.Join(core.DataDir(), "cache", "tokenizer"))
 
 	if len(os.Args) < 2 {
 		printUsage()
@@ -59,7 +60,6 @@ func main() {
 	cmd := os.Args[1]
 	args := os.Args[2:]
 
-	// Handle WhatsApp subcommands
 	if cmd == "whatsapp" {
 		if len(args) == 0 {
 			fmt.Fprintln(os.Stderr, "Error: whatsapp subcommand required")
@@ -69,10 +69,10 @@ func main() {
 		subcmd := args[0]
 		switch subcmd {
 		case "login":
-			runLogin(args[1:])
+			whatsapp.RunLogin(core.DataDir(), args[1:])
 			return
 		case "reset":
-			runWhatsAppReset()
+			whatsapp.RunReset(core.DataDir())
 			return
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown whatsapp subcommand: %s\n\n", subcmd)
@@ -81,7 +81,6 @@ func main() {
 		}
 	}
 
-	// Handle Google Docs subcommands
 	if cmd == "googledocs" {
 		if len(args) == 0 {
 			fmt.Fprintln(os.Stderr, "Error: googledocs subcommand required")
@@ -91,10 +90,10 @@ func main() {
 		subcmd := args[0]
 		switch subcmd {
 		case "login":
-			runGoogleDocsLogin()
+			googledocs.RunLogin(core.DataDir())
 			return
 		case "reset":
-			runGoogleDocsReset()
+			googledocs.RunReset(core.DataDir())
 			return
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown googledocs subcommand: %s\n\n", subcmd)
@@ -104,48 +103,31 @@ func main() {
 	}
 
 	switch cmd {
-	// General commands
 	case "mcp":
 		runMcp()
-		return
 	case "info":
 		runInfo()
-		return
 	case "completions":
 		shell := "zsh"
 		if len(args) > 0 {
 			shell = args[0]
 		}
 		runCompletions(shell)
-		return
-
-	// Core Daemon commands
 	case "core":
 		runCore()
-		return
 	case "start":
 		runStart()
-		return
 	case "stop":
 		runStop()
-		return
 	case "restart":
 		runRestart()
-		return
-
-	// Maintenance
 	case "uninstall":
 		runUninstall()
-		return
-
-	// WhatsApp commands (legacy login/reset kept for backward compatibility)
 	case "login":
-		runLogin(args)
-		return
+		// Legacy: backward compatibility
+		whatsapp.RunLogin(core.DataDir(), args)
 	case "reset":
 		runReset()
-		return
-
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", cmd)
 		printUsage()
@@ -153,90 +135,143 @@ func main() {
 	}
 }
 
-// runCore starts all available data source core services.
-// Each data source that implements CoreService will be started.
+// runCore starts data source core services with config polling (10s interval).
 func runCore() {
-	sources, err := LoadSources()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load data sources: %v\n", err)
-		os.Exit(1)
-	}
-	defer func() {
-		for _, src := range sources {
-			src.Close()
+	dir := core.DataDir()
+	cfg := loadConfig(dir)
+
+	running := map[string]context.CancelFunc{}
+
+	for name, sc := range cfg.Sources {
+		if sc.Reset {
+			handleReset(dir, name, &cfg)
+			continue
 		}
-	}()
-
-	// Filter to sources that implement CoreService
-	var coreServices []struct {
-		name string
-		svc  CoreService
-	}
-
-	for _, src := range sources {
-		if coreSvc, ok := src.(CoreService); ok {
-			// Skip sources that require auth if not authenticated
-			if coreSvc.RequiresAuth() && !isSourceAuthenticated(src) {
-				fmt.Printf("ℹ %s core service requires authentication - run 'mcpyeahyouknowme %s login' first\n",
-					src.Description(), src.Name())
-				continue
-			}
-			coreServices = append(coreServices, struct {
-				name string
-				svc  CoreService
-			}{
-				name: src.Name(),
-				svc:  coreSvc,
-			})
+		if sc.Enabled {
+			startSource(dir, name, running)
 		}
 	}
 
-	if len(coreServices) == 0 {
-		fmt.Println("No data source core services available to run.")
-		os.Exit(1)
-	}
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
 
-	// Run all core services concurrently
-	fmt.Printf("Starting %d core service(s)...\n", len(coreServices))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	// Use a channel to wait for all services to start or fail
-	errChan := make(chan error, len(coreServices))
-
-	for _, cs := range coreServices {
-		fmt.Printf("  - %s\n", cs.name)
-		go func(name string, svc CoreService) {
-			if err := svc.StartCore(ctx); err != nil {
-				errChan <- fmt.Errorf("%s: %w", name, err)
-			} else {
-				errChan <- nil
+	for {
+		select {
+		case <-sigCh:
+			for _, cancel := range running {
+				cancel()
 			}
-		}(cs.name, cs.svc)
-	}
-
-	// Wait for the first error or signal
-	for i := 0; i < len(coreServices); i++ {
-		if err := <-errChan; err != nil {
-			fmt.Fprintf(os.Stderr, "Core service error: %v\n", err)
-			cancel()
-			os.Exit(1)
+			return
+		case <-ticker.C:
+			newCfg := loadConfig(dir)
+			// Handle resets
+			for name, sc := range newCfg.Sources {
+				if sc.Reset {
+					if cancel, ok := running[name]; ok {
+						cancel()
+						delete(running, name)
+					}
+					handleReset(dir, name, &newCfg)
+				}
+			}
+			// Start newly-enabled sources
+			for name, sc := range newCfg.Sources {
+				if sc.Enabled && !sc.Reset && running[name] == nil {
+					startSource(dir, name, running)
+				}
+			}
+			// Stop removed/disabled sources
+			for name, cancel := range running {
+				sc, exists := newCfg.Sources[name]
+				if !exists || !sc.Enabled {
+					cancel()
+					delete(running, name)
+				}
+			}
+			cfg = newCfg
 		}
 	}
 }
 
-// isSourceAuthenticated checks if a data source is authenticated.
-func isSourceAuthenticated(src DataSource) bool {
+// constructSource builds the named source.
+func constructSource(name, dir string) core.DataSource {
+	switch name {
+	case "whatsapp":
+		return whatsapp.NewSource(dir)
+	case "googledocs":
+		return googledocs.NewSource(dir)
+	default:
+		return nil
+	}
+}
+
+// startSource constructs the source, checks auth, and starts its CoreService.
+func startSource(dir, name string, running map[string]context.CancelFunc) {
+	src := constructSource(name, dir)
+	if src == nil {
+		fmt.Fprintf(os.Stderr, "Warning: unknown source %q\n", name)
+		return
+	}
+	cs, ok := src.(core.CoreService)
+	if !ok {
+		return
+	}
+	if cs.RequiresAuth() && !isSourceAuthenticated(src) {
+		fmt.Printf("ℹ %s requires authentication - run 'mcpyeahyouknowme %s login' first\n",
+			src.Description(), src.Name())
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	running[name] = cancel
+	go func() {
+		if err := cs.StartCore(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "Core service %s error: %v\n", name, err)
+		}
+		delete(running, name)
+	}()
+}
+
+// handleReset calls source.Reset(), removes the config entry, and saves config.
+func handleReset(dir, name string, cfg *core.Config) {
+	src := constructSource(name, dir)
+	if src != nil {
+		if err := src.Reset(dir); err != nil {
+			fmt.Fprintf(os.Stderr, "Reset error for %s: %v\n", name, err)
+		}
+	}
+	delete(cfg.Sources, name)
+	saveConfig(dir, *cfg)
+}
+
+// isSourceAuthenticated checks if a source has valid credentials.
+func isSourceAuthenticated(src core.DataSource) bool {
 	switch src.Name() {
 	case "whatsapp":
-		return isLoggedIn()
+		return whatsapp.IsLoggedIn(core.DataDir())
 	case "googledocs":
-		if gd, ok := src.(*GoogleDocsSource); ok {
-			return gd.isAuthenticated()
+		if gd, ok := src.(*googledocs.Source); ok {
+			_ = gd // isAuthenticated is unexported; RequiresAuth checks state
 		}
-		return false
+		// Check by loading token
+		return googledocs.NewSource(core.DataDir()).RequiresAuth() && tokenExists()
 	default:
-		// Other sources assumed not to need auth unless they implement CoreService.RequiresAuth()
 		return true
+	}
+}
+
+func tokenExists() bool {
+	tokenPath := filepath.Join(core.DataDir(), "googledocs_token.json")
+	_, err := os.Stat(tokenPath)
+	return err == nil
+}
+
+// LoadSources returns all data sources for MCP use (read-only, no auth gate).
+func LoadSources(dir string) []core.DataSource {
+	return []core.DataSource{
+		whatsapp.NewSource(dir),
+		googledocs.NewSource(dir),
 	}
 }

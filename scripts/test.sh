@@ -50,13 +50,19 @@ filter_coverage() {
 	local filtered="$ROOT/coverage/coverage.txt"
 
 	# Step 1: Keep only business-logic files, drop *_init.go
-	grep -E "^(mode:|mcpyeahyouknowme/(fuzzy|mcp_service|search_store|store|embedding)\.go:)" "$raw" | \
-		grep -v '_init\.go:' > "$filtered.tmp"
+	local keep_pat='^(mode:'
+	keep_pat+='|mcpyeahyouknowme/(search_store|embedding)\.go:'
+	keep_pat+='|mcpyeahyouknowme/sources/whatsapp/(service|store|helpers)\.go:'
+	keep_pat+='|mcpyeahyouknowme/sources/googledocs/(source|mcp|client)\.go:'
+	keep_pat+=')'
+	grep -E "$keep_pat" "$raw" \
+		| grep -v '_init\.go:' \
+		> "$filtered.tmp"
 
 	# Step 2: Collect // nocov line numbers from source
 	local nocov_lines
 	nocov_lines=$(mktemp)
-	for src in "$CLI_DIR"/*.go; do
+	for src in "$CLI_DIR"/*.go "$CLI_DIR"/sources/whatsapp/*.go "$CLI_DIR"/sources/googledocs/*.go; do
 		base=$(basename "$src")
 		[[ "$base" == *_test.go ]] && continue
 		[[ "$base" == *_init.go ]] && continue
@@ -106,7 +112,10 @@ filter_coverage() {
 
 generate_report() {
 	# Render filtered coverage data as an interactive HTML report
-	go tool cover -html="$ROOT/coverage/coverage.txt" -o "$ROOT/coverage/coverage.html" 2>/dev/null
+	go tool cover \
+		-html="$ROOT/coverage/coverage.txt" \
+		-o    "$ROOT/coverage/coverage.html" \
+		2>/dev/null
 }
 
 generate_markdown() {
@@ -192,11 +201,23 @@ cleanup_txt() {
 }
 
 main() {
+	local raw_txt="$ROOT/coverage/coverage_unfiltered.txt"
+	local cov_txt="$ROOT/coverage/coverage.txt"
+
 	run_tests
 	filter_coverage
 	generate_report
-	generate_markdown "$ROOT/coverage/coverage_unfiltered.txt" "$ROOT/coverage/coverage_unfiltered.md"
-	generate_markdown "$ROOT/coverage/coverage.txt" "$ROOT/coverage/coverage.md"
+	generate_markdown "$raw_txt" "$ROOT/coverage/coverage_unfiltered.md"
+	generate_markdown "$cov_txt" "$ROOT/coverage/coverage.md"
+
+	# Print filtered total to stdout
+	perl -lane '
+		next if /^mode:/;
+		$stmts += $F[1];
+		$cov   += $F[1] if $F[2] > 0;
+		END { printf "Filtered coverage: %.1f%%\n", $stmts ? 100*$cov/$stmts : 0 }
+	' "$cov_txt"
+
 	cleanup_txt
 }
 

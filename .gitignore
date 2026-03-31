@@ -1,6 +1,6 @@
-*.db
-claude_desktop_config.json
-whatsapp.log
 *.bin
-coverage/
+*.db
 .env
+claude_desktop_config.json
+coverage/coverage.html
+whatsapp.log

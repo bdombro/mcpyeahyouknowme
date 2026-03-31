@@ -7,7 +7,7 @@
 #   and embeds build metadata (timestamp and version).
 #
 # Output:
-#   Creates src/mcpyeahyouknowme.bin (~38MB)
+#   Creates mcpyeahyouknowme.bin in repo root (~38MB)
 #
 # Usage:
 #   ./scripts/build.sh    # From repo root
@@ -20,7 +20,7 @@
 # Notes:
 #   - Uses -tags "sqlite_fts5" for full-text search support
 #   - Build time is embedded for version tracking
-#   - Output binary is placed in src/ directory
+#   - Output binary is placed in the repo root directory
 
 set -euo pipefail
 
@@ -48,6 +48,6 @@ cd "$CLI_DIR" && go build -tags "sqlite_fts5" \
 	-ldflags "\
 		-X 'main.BuildTime=$build_time' \
 		-X 'main.BuildVersion=1.0.0' \
-		-X 'main.GoogleClientID=$GOOGLE_CLIENT_ID' \
-		-X 'main.GoogleClientSecret=$GOOGLE_CLIENT_SECRET'" \
-	-o mcpyeahyouknowme.bin .
+		-X 'mcpyeahyouknowme/sources/googledocs.GoogleClientID=$GOOGLE_CLIENT_ID' \
+		-X 'mcpyeahyouknowme/sources/googledocs.GoogleClientSecret=$GOOGLE_CLIENT_SECRET'" \
+	-o "$ROOT/mcpyeahyouknowme.bin" .

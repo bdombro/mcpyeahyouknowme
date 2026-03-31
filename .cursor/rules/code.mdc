@@ -27,3 +27,7 @@ if err != nil { // nocov
 2. `// nocov` must be on a line within the uncovered block.
 3. Prefer dependency injection (interfaces) over concrete types.
 4. Verify `// nocov` paths truly can't be exercised in tests.
+
+## Data source packages
+
+Source-specific file conventions are in `datasources.mdc`. The `<name>.go` / `<name>_init.go` split applies within each source package under `src/sources/<name>/`.

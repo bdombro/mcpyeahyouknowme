@@ -23,7 +23,7 @@ root := justfile_directory()
 default:
     @just --list
 
-# Build mcpyeahyouknowme (FTS5) into src/mcpyeahyouknowme.bin
+# Build mcpyeahyouknowme (FTS5) into mcpyeahyouknowme.bin at repo root
 build:
     @{{root}}/scripts/build.sh
 

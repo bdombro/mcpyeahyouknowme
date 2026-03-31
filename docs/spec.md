@@ -71,7 +71,7 @@ For **Cursor**: save to `~/.cursor/mcp.json`
 
 ## Multi-Source Architecture
 
-The MCP server loads data sources via the `DataSource` interface. Each source registers its own MCP tools, namespaced with a prefix (e.g. `whatsapp_`, `gmail_`, `gdrive_`). This allows multiple sources to coexist in a single MCP server without tool name collisions.
+The MCP server loads data sources via the `DataSource` interface defined in `core/interfaces.go`. Each source lives in its own Go package under `src/sources/<name>/` and registers its own MCP tools namespaced with a prefix (e.g. `whatsapp_`, `googledocs_`).
 
 ```go
 type DataSource interface {
@@ -79,22 +79,58 @@ type DataSource interface {
     Description() string                   // human label (e.g. "WhatsApp")
     RegisterTools(s *server.MCPServer)     // register all tools
     SearchEntries() ([]SearchEntry, error) // provide indexable content for global search
+    Reset(dataDir string) error            // remove all source data files
     Close() error                          // release resources
 }
 ```
 
-`LoadSources()` in `source.go` returns all enabled sources. To add a new source:
+Each source also implements `CoreService` (in `daemon.go`) for the background sync daemon:
 
-1. Create `source_<name>.go` implementing `DataSource`
-2. Create `<name>_service.go` with the source's query/write logic
-3. Add it to `LoadSources()`
+```go
+type CoreService interface {
+    StartCore(ctx context.Context) error
+    RequiresAuth() bool
+}
+```
+
+### Package structure
+
+```
+src/
+  core/          — shared interfaces, helpers (DataDir, IntArg, BoolArg, JsonResult),
+                   utilities (DefaultReset, RunPollLoop, OpenDB), config (LoadConfig, SaveConfig)
+  sources/
+    whatsapp/    — store, service, mcp, daemon, client, cli, helpers
+    googledocs/  — source, mcp, daemon, client, cli
+  config.go      — delegates to core.LoadConfig / core.SaveConfig + legacy migration
+  main.go        — CLI dispatch + runCore() polling loop
+  mcp.go         — MCP server setup + global search tool
+  search_store.go — cross-source search index
+```
+
+### Config-driven daemon
+
+The daemon (`runCore()`) reads `{DataDir}/config.json` every 10 seconds and:
+- Starts newly-enabled sources
+- Stops removed/disabled sources
+- Handles `reset: true` by calling `source.Reset()` then removing the config entry
+
+Login commands (`whatsapp login`, `googledocs login`) write `{enabled: true}` to config on success so the daemon picks them up within 10 seconds without a restart.
+
+On first run after upgrade from a pre-config version, the daemon auto-migrates existing auth artifacts (`whatsapp.db` session, `googledocs_token.json`) into config.json.
+
+`LoadSources()` in `main.go` returns all sources for MCP read access. To add a new source:
+
+1. Create `src/sources/<name>/` implementing `core.DataSource` and `core.CoreService`
+2. Add it to `LoadSources()` in `main.go`
+3. Add it to `constructSource()` in `main.go`
 
 Current sources:
 
-| Source | Prefix | File | Description |
-|--------|--------|------|-------------|
-| WhatsApp | `whatsapp_` | `source_whatsapp.go` | Messages, chats, contacts via local SQLite + REST API |
-| Google Docs | `googledocs_` | `source_googledocs.go` | Documents via Google Docs/Drive APIs with periodic sync |
+| Source | Prefix | Package | Description |
+|--------|--------|---------|-------------|
+| WhatsApp | `whatsapp_` | `sources/whatsapp/` | Messages, chats, contacts via local SQLite + REST API |
+| Google Docs | `googledocs_` | `sources/googledocs/` | Documents via Google Docs/Drive APIs with 5-minute polling sync |
 
 ### Daemon Management
 
@@ -123,8 +159,8 @@ mcpyeahyouknowme googledocs reset
 | Command | Description |
 |---------|-------------|
 | `info` | Shows build metadata; global data directory status; per-source sections (WhatsApp session and message counts, Google Docs login email and synced document count); and core daemon install status. |
-| `whatsapp reset` | Stops the daemon, removes WhatsApp databases (`whatsapp.db`, `messages.db`), then restarts the daemon. The restarted daemon detects WhatsApp is not logged in and skips WhatsApp services while continuing to run other sources (e.g. Google Docs). |
-| `googledocs reset` | Stops the daemon, removes Google Docs OAuth token, account email, and database (`googledocs_token.json`, `googledocs_email.txt`, `googledocs.db`), then restarts the daemon. The restarted daemon detects Google Docs is not logged in and skips Google Docs services while continuing to run other sources (e.g. WhatsApp). |
+| `whatsapp reset` | Writes `reset: true` to config.json. If the daemon is running, it stops WhatsApp, removes `whatsapp.db` and `messages.db`, then continues running other sources. If the daemon is not running, resets directly. |
+| `googledocs reset` | Prompts for confirmation, then writes `reset: true` to config.json. If the daemon is running, it stops Google Docs, removes `googledocs_token.json`, `googledocs_email.txt`, and `googledocs.db`, then continues running other sources. If the daemon is not running, resets directly. |
 
 **Uninstalling:** For complete removal of the application, use `./scripts/uninstall.sh` from the repository root. This kills all processes, removes the daemon, wipes all data, removes shell completions, and deletes the binary from `/usr/local/bin`. See the [README](../README.md) for details.
 

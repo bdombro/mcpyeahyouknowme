@@ -8,18 +8,12 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"mcpyeahyouknowme/core"
 )
 
-// SearchEntry is the unit of indexable content from any DataSource.
-type SearchEntry struct {
-	Source      string          `json:"source"`
-	SourceID   string          `json:"source_id"`
-	ContentType string         `json:"content_type"` // "chat_name", "participant", "message"
-	Title      string          `json:"title"`
-	Content    string          `json:"content"`
-	Metadata   json.RawMessage `json:"metadata,omitempty"`
-	Timestamp  *time.Time      `json:"timestamp,omitempty"`
-}
+// SearchEntry is an alias for core.SearchEntry for backward compatibility.
+type SearchEntry = core.SearchEntry
 
 // SearchResult is returned by the global search MCP tool.
 type SearchResult struct {

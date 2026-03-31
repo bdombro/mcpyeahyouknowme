@@ -45,7 +45,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLI_DIR="$ROOT/src"
-BUILT_BIN="$CLI_DIR/mcpyeahyouknowme.bin"
+BUILT_BIN="$ROOT/mcpyeahyouknowme.bin"
 DATA_DIR="$HOME/.local/share/mcpyeahyouknowme"
 PLIST_LABEL="com.mcpyeahyouknowme.core"
 PLIST="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"

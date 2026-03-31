@@ -17,6 +17,7 @@ After functional Go source changes, update the relevant section of `docs/spec.md
 - Search behavior → **Search**
 - Name resolution → **Name Resolution**
 - Dependency changes → **Dependencies**
+- Adding/removing a data source → **Architecture**, **MCP Tools**, update `LoadSources()` in `main.go`
 
 ## How
 

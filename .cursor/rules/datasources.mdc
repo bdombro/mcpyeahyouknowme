@@ -1,0 +1,71 @@
+---
+description: Data source package conventions and requirements
+globs: src/sources/**/*.go
+alwaysApply: false
+---
+
+# Data Sources
+
+Every data source lives in its own Go package under `src/sources/<name>/` and implements the `core.DataSource` interface.
+
+## Package structure
+
+Each source package contains these files:
+
+- `source.go` — struct, `Name()`, `Description()`, `Close()`, `SearchEntries()`, `Reset()`
+- `mcp.go` — `RegisterTools()` + MCP tool handler functions
+- `daemon.go` — `StartCore()`, `RequiresAuth()`, sync/subscription logic
+- `client.go` — external API/protocol wrappers, auth helpers
+- `cli.go` — exported CLI entry points (`RunLogin()`, `RunReset()`, `InfoLines()`)
+- `store.go` / `store_init.go` — local database (if needed)
+- `service.go` — business logic called by MCP tool handlers (if complex enough to warrant separation)
+- `helpers.go` — unexported utilities
+
+## Required behaviors
+
+### Local data sync
+
+Every source must download and locally persist all indexable content. Data must be kept current via one of:
+
+- **Subscription**: maintain a persistent connection (WebSocket, push, etc.) and process events in real time.
+- **Polling**: fetch changes every 5 minutes from `StartCore()`.
+
+MCP tool handlers read from the local database only — never call the upstream API for reads.
+
+### Global search integration
+
+Every source must implement `SearchEntries()` returning `[]core.SearchEntry` covering all locally-stored content. This feeds the MCP `search` tool which searches across all sources. Each entry must set:
+
+- `Source` — the source `Name()`
+- `SourceID` — unique ID within the source
+- `ContentType` — category (e.g. `"chat_name"`, `"document_title"`, `"message"`, `"document_content"`)
+- `Title`, `Content` — human-readable text for indexing
+- `Metadata` — JSON with source-specific fields the AI can use for follow-up tool calls
+
+### Reset (daemon-owned cleanup)
+
+Each source implements `Reset(dataDir string)` which removes all of its data files (DBs, tokens, caches). The daemon — not the CLI — calls `Reset()` after stopping the source's `StartCore()`. This avoids race conditions with open file handles.
+
+- CLI sets `{"<source>": {"reset": true}}` in config.json
+- Daemon detects within 10s, stops the source, calls `Reset()`, removes the source entry from config
+- If daemon is not running, CLI calls `Reset()` directly (safe — no open handles)
+
+## Shared utilities in `core/`
+
+Use `core` utility functions for common patterns — do not duplicate boilerplate:
+
+- `core.RunPollLoop(ctx, interval, fn)` — standard 5-minute polling loop for `StartCore()`
+- `core.DefaultReset(dataDir, files)` — delete a source's data files in `Reset()`
+- `core.OpenDB(dataDir, filename)` — open SQLite with shared pragmas (WAL, busy_timeout)
+
+Do NOT use struct embedding or base types. Interfaces enforce contracts; utility functions share behavior.
+
+## Interface checklist for new sources
+
+1. Implement `core.DataSource` (required) — includes `Reset(dataDir string)` for cleanup
+2. Implement `core.CoreService` (required — for sync daemon)
+3. Register all tools via `RegisterTools()` with `Name() + "_"` prefix
+4. Return comprehensive `SearchEntries()` for global search
+5. Accept `dataDir string` in constructor (dependency injection)
+6. Store credentials via the shared config.json (see config.go) or in a source-owned file
+7. Use `core.RunPollLoop` / `core.DefaultReset` / `core.OpenDB` instead of reimplementing
