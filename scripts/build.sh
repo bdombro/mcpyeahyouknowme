@@ -27,7 +27,27 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLI_DIR="$ROOT/src"
 
+# Source .env for Google OAuth credentials (baked into the binary via ldflags).
+if [ -f "$ROOT/.env" ]; then
+	set -a
+	source "$ROOT/.env"
+	set +a
+fi
+
+missing=()
+[ -z "${GOOGLE_CLIENT_ID:-}" ] && missing+=("GOOGLE_CLIENT_ID")
+[ -z "${GOOGLE_CLIENT_SECRET:-}" ] && missing+=("GOOGLE_CLIENT_SECRET")
+if [ ${#missing[@]} -gt 0 ]; then
+	echo "Error: required variable(s) not set: ${missing[*]}" >&2
+	echo "Copy .env.example to .env and fill in the values, or export them in your shell." >&2
+	exit 1
+fi
+
 build_time="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 cd "$CLI_DIR" && go build -tags "sqlite_fts5" \
-	-ldflags "-X 'main.BuildTime=$build_time' -X 'main.BuildVersion=1.0.0'" \
+	-ldflags "\
+		-X 'main.BuildTime=$build_time' \
+		-X 'main.BuildVersion=1.0.0' \
+		-X 'main.GoogleClientID=$GOOGLE_CLIENT_ID' \
+		-X 'main.GoogleClientSecret=$GOOGLE_CLIENT_SECRET'" \
 	-o mcpyeahyouknowme.bin .

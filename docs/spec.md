@@ -5,9 +5,10 @@ A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.
 ## Building
 
 ```
-cd src
-go build -tags "sqlite_fts5" -o mcpyeahyouknowme .
+./scripts/build.sh
 ```
+
+The build script sources `.env` from the repository root (if present) and bakes `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` into the binary via `-ldflags`. Copy `.env.example` to `.env` and fill in the values before building. If `.env` is missing, the binary still builds but Google Docs features will require the environment variables at runtime.
 
 CGO must be enabled (default on macOS/Linux) since `go-sqlite3` requires it. On Windows, install a C compiler via [MSYS2](https://www.msys2.org/) and run `go env -w CGO_ENABLED=1` first.
 
@@ -32,7 +33,7 @@ The `--relogin` flag clears the existing session and message databases, re-displ
 mcpyeahyouknowme googledocs login
 ```
 
-Authenticates with Google using OAuth 2.0. Opens the default browser to authorize access to Google Docs and Google Drive APIs. Requires `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` environment variables (obtain from Google Cloud Console). The OAuth token is saved to `googledocs_token.json` for subsequent daemon runs.
+Authenticates with Google using OAuth 2.0. Opens the default browser to authorize access to Google Docs and Google Drive APIs. OAuth client credentials are baked into the binary at build time from `.env` via `-ldflags` (see **Building**). The OAuth token is saved to `googledocs_token.json` for subsequent daemon runs.
 
 ### Core — Data Source Services
 
@@ -269,7 +270,7 @@ Use `tools/call` with `params.name` set to one of the tool names below and `para
 | `googledocs_get_document` | Full document body by ID. |
 | `googledocs_list_recent` | Recently modified docs; optional `limit`. |
 
-**Availability:** `whatsapp_*` tools are registered only when WhatsApp is logged in. `googledocs_*` tools appear when the Google Docs source loads successfully (OAuth env vars and setup). `search` is registered when the search index initializes on MCP startup; if indexing fails, other tools may still be available without `search`.
+**Availability:** `whatsapp_*` tools are registered only when WhatsApp is logged in. `googledocs_*` tools appear when the Google Docs source loads successfully (OAuth credentials baked in at build time). `search` is registered when the search index initializes on MCP startup; if indexing fails, other tools may still be available without `search`.
 
 ### Global Search
 
@@ -491,9 +492,11 @@ Without this, Gatekeeper blocks execution — the first invocation is killed (SI
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `GOOGLE_CLIENT_ID` | For Google Docs | - | OAuth 2.0 client ID from Google Cloud Console |
-| `GOOGLE_CLIENT_SECRET` | For Google Docs | - | OAuth 2.0 client secret from Google Cloud Console |
+| `GOOGLE_CLIENT_ID` | Build-time | - | OAuth 2.0 client ID from Google Cloud Console; set in `.env` and baked into the binary via `-ldflags` |
+| `GOOGLE_CLIENT_SECRET` | Build-time | - | OAuth 2.0 client secret from Google Cloud Console; set in `.env` and baked into the binary via `-ldflags` |
 | `MCP_ENABLE_EMBEDDINGS` | No | `true` | Set to `false` to disable vector search and skip ONNX Runtime |
+
+Google OAuth credentials must be set before building. Copy `.env.example` to `.env` and fill in the values. The build script (`scripts/build.sh`) will abort if they are missing.
 
 ### Hardcoded Paths
 

@@ -22,24 +22,6 @@ func runGoogleDocsLogin() {
 	fmt.Println("🔐 Starting Google Docs OAuth login...")
 	fmt.Println()
 
-	// Check for required environment variables
-	clientID := os.Getenv("GOOGLE_CLIENT_ID")
-	clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
-
-	if clientID == "" || clientSecret == "" {
-		fmt.Fprintln(os.Stderr, "Error: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables must be set")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "To set up:")
-		fmt.Fprintln(os.Stderr, "1. Go to https://console.cloud.google.com/")
-		fmt.Fprintln(os.Stderr, "2. Create a project or select existing one")
-		fmt.Fprintln(os.Stderr, "3. Enable Google Docs API and Google Drive API")
-		fmt.Fprintln(os.Stderr, "4. Create OAuth 2.0 credentials (Desktop App)")
-		fmt.Fprintln(os.Stderr, "5. Set environment variables:")
-		fmt.Fprintln(os.Stderr, "   export GOOGLE_CLIENT_ID='your-client-id'")
-		fmt.Fprintln(os.Stderr, "   export GOOGLE_CLIENT_SECRET='your-client-secret'")
-		os.Exit(1)
-	}
-
 	// Create Google Docs source to get OAuth config
 	src, err := NewGoogleDocsSource()
 	if err != nil {

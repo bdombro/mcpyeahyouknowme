@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -11,6 +12,36 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// errorEmbedder always returns errors, for testing error-path coverage.
+type errorEmbedder struct{}
+
+func (e *errorEmbedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
+	return nil, errors.New("embedTexts error")
+}
+func (e *errorEmbedder) EmbedQuery(query string) ([]float32, error) {
+	return nil, errors.New("embedQuery error")
+}
+func (e *errorEmbedder) Close() {}
+
+// nilSlotEmbedder returns nil for the first entry, real embeddings for the rest.
+type nilSlotEmbedder struct{ mock *mockEmbedder }
+
+func (n *nilSlotEmbedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
+	out := make([][]float32, len(texts))
+	for i, t := range texts {
+		if i == 0 {
+			out[i] = nil
+		} else {
+			out[i] = n.mock.hashEmbed(t)
+		}
+	}
+	return out, nil
+}
+func (n *nilSlotEmbedder) EmbedQuery(query string) ([]float32, error) {
+	return n.mock.hashEmbed(query), nil
+}
+func (n *nilSlotEmbedder) Close() {}
 
 // mockEmbedder returns deterministic embeddings for testing.
 type mockEmbedder struct {
@@ -508,5 +539,123 @@ func TestSearchStore_IndexEntries_emptyContent(t *testing.T) {
 	store.db.QueryRow("SELECT COUNT(*) FROM search_entries WHERE source_id = 'empty'").Scan(&count)
 	if count != 1 {
 		t.Errorf("expected 1 entry, got %d", count)
+	}
+}
+
+// ---------- rebuildFTSIfNeeded empty store ----------
+
+func TestSearchStore_IndexEntries_emptySlice(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	if err := store.IndexEntries([]SearchEntry{}); err != nil {
+		t.Fatalf("IndexEntries empty slice: %v", err)
+	}
+}
+
+// ---------- computeEmbeddings edge cases ----------
+
+func TestSearchStore_computeEmbeddings_skipEmptyText(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	entries := []SearchEntry{
+		{Source: "test", SourceID: "ws1", ContentType: "message", Title: "  ", Content: ""},
+		{Source: "test", SourceID: "real1", ContentType: "message", Title: "Real", Content: "content"},
+	}
+	store.IndexEntries(entries)
+
+	store.embedder = &mockEmbedder{dim: 16}
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
+	var count int
+	store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&count)
+	if count != 1 {
+		t.Errorf("expected 1 embedding (whitespace entry skipped), got %d", count)
+	}
+}
+
+func TestSearchStore_computeEmbeddings_emptyBatch(t *testing.T) {
+	emb := &mockEmbedder{dim: 16}
+	store := newTestSearchStore(t, emb)
+	entries := seedSearchEntries()
+
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("first IndexEntries: %v", err)
+	}
+	// Second call: all entries already have embeddings → empty batch
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("second IndexEntries: %v", err)
+	}
+}
+
+func TestSearchStore_computeEmbeddings_embedError(t *testing.T) {
+	store := newTestSearchStore(t, &errorEmbedder{})
+	err := store.IndexEntries(seedSearchEntries())
+	if err == nil {
+		t.Error("expected error from errorEmbedder")
+	}
+}
+
+func TestSearchStore_computeEmbeddings_nilEmbedding(t *testing.T) {
+	emb := &nilSlotEmbedder{mock: &mockEmbedder{dim: 16}}
+	store := newTestSearchStore(t, emb)
+	entries := seedSearchEntries()
+
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
+	var count int
+	store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&count)
+	expected := len(entries) - 1
+	if count != expected {
+		t.Errorf("expected %d embeddings (first nil skipped), got %d", expected, count)
+	}
+}
+
+// ---------- Search with vector error ----------
+
+func TestSearchStore_Search_vectorSearchError(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	store.IndexEntries(seedSearchEntries())
+
+	store.embedder = &errorEmbedder{}
+	results, err := store.Search("Family", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search should succeed despite vector error: %v", err)
+	}
+	if len(results) == 0 {
+		t.Error("expected BM25 results even when vector search fails")
+	}
+}
+
+// ---------- loadResults unknown content type ----------
+
+func TestSearchStore_loadResults_unknownContentType(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	entries := []SearchEntry{
+		{Source: "test", SourceID: "u1", ContentType: "unknown_type", Title: "Unique Test", Content: "unique test content"},
+	}
+	store.IndexEntries(entries)
+
+	results, err := store.Search("unique", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected results for unknown content type")
+	}
+	if results[0].Score == 0 {
+		t.Error("expected non-zero score with fallback weight 1.0")
+	}
+}
+
+// ---------- cosineSimilarity zero vector ----------
+
+func TestCosineSimilarity_zeroVector(t *testing.T) {
+	a := []float32{0, 0, 0}
+	b := []float32{1, 0, 0}
+	sim := cosineSimilarity(a, b)
+	if sim != 0 {
+		t.Errorf("expected 0 for zero vector, got %f", sim)
 	}
 }

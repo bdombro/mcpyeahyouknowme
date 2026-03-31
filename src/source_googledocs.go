@@ -142,11 +142,12 @@ func (g *GoogleDocsSource) isAuthenticated() bool {
 	return true
 }
 
-// getOAuthConfig returns the OAuth2 configuration.
+// getOAuthConfig returns the OAuth2 configuration using credentials baked
+// into the binary at build time via -ldflags.
 func (g *GoogleDocsSource) getOAuthConfig() *oauth2.Config {
 	return &oauth2.Config{
-		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
-		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		ClientID:     GoogleClientID,
+		ClientSecret: GoogleClientSecret,
 		RedirectURL:  "http://127.0.0.1:8085",
 		Scopes: []string{
 			docs.DocumentsReadonlyScope,

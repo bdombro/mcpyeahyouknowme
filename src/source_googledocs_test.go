@@ -284,6 +284,13 @@ func TestGoogleDocsSource_Close(t *testing.T) {
 }
 
 func TestGoogleDocsSource_GetOAuthConfig(t *testing.T) {
+	origID := GoogleClientID
+	origSecret := GoogleClientSecret
+	defer func() { GoogleClientID = origID; GoogleClientSecret = origSecret }()
+
+	GoogleClientID = "test-id"
+	GoogleClientSecret = "test-secret"
+
 	g := &GoogleDocsSource{}
 	config := g.getOAuthConfig()
 
@@ -291,7 +298,13 @@ func TestGoogleDocsSource_GetOAuthConfig(t *testing.T) {
 		t.Fatal("expected non-nil config")
 	}
 
-	// Verify config has required scopes
+	if config.ClientID != "test-id" {
+		t.Errorf("ClientID = %q, want %q", config.ClientID, "test-id")
+	}
+	if config.ClientSecret != "test-secret" {
+		t.Errorf("ClientSecret = %q, want %q", config.ClientSecret, "test-secret")
+	}
+
 	expectedScopes := []string{
 		"https://www.googleapis.com/auth/documents.readonly",
 		"https://www.googleapis.com/auth/drive.readonly",
@@ -307,7 +320,6 @@ func TestGoogleDocsSource_GetOAuthConfig(t *testing.T) {
 		}
 	}
 
-	// Verify redirect URL
 	if config.RedirectURL != "http://127.0.0.1:8085" {
 		t.Errorf("RedirectURL = %q, expected %q", config.RedirectURL, "http://127.0.0.1:8085")
 	}

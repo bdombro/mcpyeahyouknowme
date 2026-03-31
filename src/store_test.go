@@ -449,3 +449,81 @@ func TestMessageStoreClose(t *testing.T) {
 		t.Error("expected error querying closed db")
 	}
 }
+
+func TestStoreMessage_skipEmpty(t *testing.T) {
+	store := newTestMessageStore(t)
+	ts := time.Now()
+	store.StoreChat("11111@s.whatsapp.net", "Alice", ts)
+
+	err := store.StoreMessage("skip1", "11111@s.whatsapp.net", "11111@s.whatsapp.net", "", ts, false, "", "", "", nil, nil, nil, 0)
+	if err != nil {
+		t.Fatalf("StoreMessage: %v", err)
+	}
+
+	var count int
+	store.db.QueryRow("SELECT COUNT(*) FROM messages WHERE id = 'skip1'").Scan(&count)
+	if count != 0 {
+		t.Errorf("expected 0 rows when content and mediaType are both empty, got %d", count)
+	}
+}
+
+func TestGetSenderName_fromChatsTable(t *testing.T) {
+	store := newTestMessageStore(t)
+	store.StoreChat("77777@s.whatsapp.net", "Charlie Brown", time.Now())
+
+	result := store.GetSenderName("77777@s.whatsapp.net")
+	if result != "Charlie Brown" {
+		t.Errorf("expected 'Charlie Brown', got %q", result)
+	}
+}
+
+func TestGetSenderName_pushNameFallback(t *testing.T) {
+	store := newTestMessageStore(t)
+
+	store.contactsDB.Exec(`CREATE TABLE IF NOT EXISTS whatsmeow_contacts (
+		their_jid TEXT PRIMARY KEY, full_name TEXT, push_name TEXT
+	)`)
+	store.contactsDB.Exec("INSERT OR REPLACE INTO whatsmeow_contacts VALUES (?, ?, ?)",
+		"88888@s.whatsapp.net", "", "PushOnly")
+
+	result := store.GetSenderName("88888@s.whatsapp.net")
+	if result != "PushOnly" {
+		t.Errorf("expected 'PushOnly', got %q", result)
+	}
+}
+
+func TestGetSenderName_lidMapping(t *testing.T) {
+	store := newTestMessageStore(t)
+
+	store.contactsDB.Exec(`CREATE TABLE IF NOT EXISTS whatsmeow_contacts (
+		their_jid TEXT PRIMARY KEY, full_name TEXT, push_name TEXT
+	)`)
+	store.contactsDB.Exec(`CREATE TABLE IF NOT EXISTS whatsmeow_lid_map (
+		lid TEXT PRIMARY KEY, pn TEXT
+	)`)
+	store.contactsDB.Exec("INSERT OR REPLACE INTO whatsmeow_lid_map VALUES ('lid_test_123', '66666')")
+
+	t.Run("lid with full_name", func(t *testing.T) {
+		store.contactsDB.Exec("INSERT OR REPLACE INTO whatsmeow_contacts VALUES ('66666@s.whatsapp.net', 'LID FullName', 'LID Push')")
+		result := store.GetSenderName("lid_test_123@lid")
+		if result != "LID FullName" {
+			t.Errorf("expected 'LID FullName', got %q", result)
+		}
+	})
+
+	t.Run("lid with push_name only", func(t *testing.T) {
+		store.contactsDB.Exec("UPDATE whatsmeow_contacts SET full_name = '' WHERE their_jid = '66666@s.whatsapp.net'")
+		result := store.GetSenderName("lid_test_123@lid")
+		if result != "LID Push" {
+			t.Errorf("expected 'LID Push', got %q", result)
+		}
+	})
+
+	t.Run("lid with no contact entry", func(t *testing.T) {
+		store.contactsDB.Exec("DELETE FROM whatsmeow_contacts WHERE their_jid = '66666@s.whatsapp.net'")
+		result := store.GetSenderName("lid_test_123@lid")
+		if result != "66666" {
+			t.Errorf("expected resolved phone '66666', got %q", result)
+		}
+	})
+}

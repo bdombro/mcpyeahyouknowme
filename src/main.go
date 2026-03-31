@@ -9,8 +9,10 @@ import (
 
 // Build-time variables set via -ldflags
 var (
-	BuildTime    = "unknown"
-	BuildVersion = "dev"
+	BuildTime          = "unknown"
+	BuildVersion       = "dev"
+	GoogleClientID     string
+	GoogleClientSecret string
 )
 
 func printUsage() {

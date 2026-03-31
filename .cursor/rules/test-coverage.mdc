@@ -29,6 +29,16 @@ Every change to Go source files must include tests that cover 100% of the new or
 - Test both success and error paths for every function.
 - Name tests `TestFunctionName_scenario` with `t.Run` sub-tests.
 
+## Coverage scope
+
+`scripts/test.sh` (run via `just test`) filters the raw profile to the core business-logic files (`fuzzy`, `mcp_service`, `search_store`, `store`, `embedding`) and strips specific untestable lines before computing the percentage. "100% coverage" means 100% of the **filtered** output, not every line in every file. CLI handlers, OAuth flows, event handlers, and daemon code are excluded entirely.
+
 ## Acceptable exceptions
 
-Lines that are impossible to cover without a live WhatsApp connection (e.g. `runMcp` opening a real DB, `runLogin` scanning a QR code) are exempt. Document the exemption in a comment if the function is otherwise partially covered.
+The following categories of lines are stripped from the filtered profile in `scripts/test.sh` and are **exempt** from the 100% requirement. If a function is otherwise partially covered, add a comment explaining which category applies.
+
+1. **Constructor / init error paths** — failures in `os.MkdirAll`, `sql.Open`, or schema-init `db.Exec` calls that require mocking the filesystem or SQLite initialisation.
+2. **DB error paths** — `rows.Scan` failures, `tx.Begin`/`tx.Prepare`/`tx.Commit` failures, and similar `*sql.DB` error branches that cannot be induced without replacing the concrete driver.
+3. **ONNX panic / error recovery** — the `defer/recover` blocks in `EmbedTexts` and `EmbedQuery`, and the `PassageEmbed` error return, which require the ONNX runtime to fail in ways that cannot be safely reproduced in tests (the library spawns goroutines that cause unrecoverable SIGSEGV).
+4. **OS-dependent code paths** — architecture-specific branches (e.g. the Intel Homebrew fallback in `onnxLibPath`) and live-connection flows (e.g. `runMcp`, `runLogin` QR scan) that require real external services.
+
