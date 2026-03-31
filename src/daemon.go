@@ -244,15 +244,27 @@ func runReset() {
 }
 
 func runWhatsAppReset() {
-	removeDaemon()
+	whatsAppReset(dataDir(), plistPath())
+}
 
-	dDir := dataDir()
+// whatsAppReset removes WhatsApp databases while preserving the daemon
+// installation and other data sources. Accepts paths so tests can use temp dirs.
+func whatsAppReset(dDir, plist string) {
 	if _, err := os.Stat(dDir); os.IsNotExist(err) {
 		fmt.Println("Nothing to reset (data directory does not exist)")
 		return
 	}
 
-	// Remove only WhatsApp-specific files
+	// Stop daemon before touching files to avoid race conditions with active
+	// WhatsApp connections writing to the databases. Don't remove the plist —
+	// other services (e.g. Google Docs) should keep running after restart.
+	daemonInstalled := false
+	if _, err := os.Stat(plist); err == nil {
+		daemonInstalled = true
+		exec.Command("launchctl", "unload", plist).Run()
+		fmt.Println("Stopped core daemon")
+	}
+
 	whatsappFiles := []string{
 		filepath.Join(dDir, "whatsapp.db"),
 		filepath.Join(dDir, "messages.db"),
@@ -265,6 +277,14 @@ func runWhatsAppReset() {
 			fmt.Printf("Removed %s\n", file)
 		}
 	}
+
+	// Restart daemon — it will detect WhatsApp is not logged in and skip
+	// WhatsApp services, while continuing to run other sources.
+	if daemonInstalled {
+		exec.Command("launchctl", "load", plist).Run()
+		fmt.Println("Restarted core daemon (WhatsApp disabled)")
+	}
+
 	fmt.Println("WhatsApp data reset complete")
 }
 
@@ -299,60 +319,33 @@ func runInfo() {
 	fmt.Println("└──────────────────────────────────────────┘")
 	fmt.Println()
 
-	fmt.Println("� Build")
+	fmt.Println("\U0001f527 Build")
 	fmt.Printf("   Version:    %s\n", BuildVersion)
 	fmt.Printf("   Built:      %s\n", BuildTime)
 	fmt.Println()
 
-	fmt.Println("�📁 Data")
+	fmt.Println("\U0001f4c1 Data")
 	fmt.Printf("   Directory:  %s\n", dDir)
 	if info, err := os.Stat(dDir); err == nil && info.IsDir() {
 		fmt.Println("   Status:     initialized")
 	} else {
-		fmt.Println("   Status:     not initialized (run 'mcpyeahyouknowme wa login')")
+		fmt.Println("   Status:     not initialized (run 'mcpyeahyouknowme whatsapp login')")
 	}
 	fmt.Println()
 
-	fmt.Println("👤 Account")
-	waDB := filepath.Join(dDir, "whatsapp.db")
-	if _, err := os.Stat(waDB); err == nil {
-		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", waDB))
-		if err == nil {
-			defer db.Close()
-			ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
-			defer cancel()
-			var jid string
-			err = db.QueryRowContext(ctx, "SELECT jid FROM whatsmeow_device WHERE jid != '' LIMIT 1").Scan(&jid)
-			if err == nil && jid != "" {
-				fmt.Printf("   Logged in:  %s\n", jid)
-			} else {
-				fmt.Println("   Logged in:  no")
-			}
-		} else {
-			fmt.Println("   Logged in:  unable to read session db")
-		}
-	} else {
-		fmt.Println("   Logged in:  no session (run 'mcpyeahyouknowme whatsapp login')")
-	}
-
-	msgDB := filepath.Join(dDir, "messages.db")
-	if _, err := os.Stat(msgDB); err == nil {
-		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", msgDB))
-		if err == nil {
-			defer db.Close()
-			ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
-			defer cancel()
-			var chatCount, msgCount int
-			db.QueryRowContext(ctx, "SELECT COUNT(*) FROM chats").Scan(&chatCount)
-			db.QueryRowContext(ctx, "SELECT COUNT(*) FROM messages").Scan(&msgCount)
-			fmt.Printf("   Messages:   %d across %d chats\n", msgCount, chatCount)
-		}
-	} else {
-		fmt.Println("   Messages:   no database yet")
+	fmt.Println("\U0001f4f2 WhatsApp")
+	for _, line := range whatsappInfoLines(dDir) {
+		fmt.Println(line)
 	}
 	fmt.Println()
 
-	fmt.Println("⚙️  Core Daemon")
+	fmt.Println("\U0001f4c4 Google Docs")
+	for _, line := range googleDocsInfoLines(dDir) {
+		fmt.Println(line)
+	}
+	fmt.Println()
+
+	fmt.Println("\u2699\ufe0f  Core Daemon")
 	plist := plistPath()
 	if _, err := os.Stat(plist); err == nil {
 		ctxLC, cancelLC := context.WithTimeout(context.Background(), 5*time.Second)

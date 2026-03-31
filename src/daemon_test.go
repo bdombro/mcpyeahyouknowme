@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -95,4 +96,69 @@ func pathContains(path, component string) bool {
 		dir = filepath.Dir(dir)
 	}
 	return false
+}
+
+func TestWhatsAppReset_noDataDir(t *testing.T) {
+	dDir := filepath.Join(t.TempDir(), "nonexistent")
+	plist := filepath.Join(t.TempDir(), "fake.plist")
+
+	// Should return early without error when data dir doesn't exist
+	whatsAppReset(dDir, plist)
+}
+
+func TestWhatsAppReset_removesOnlyWhatsAppFiles(t *testing.T) {
+	dDir := t.TempDir()
+	plist := filepath.Join(t.TempDir(), "fake.plist") // no plist → daemon not installed
+
+	waDB := filepath.Join(dDir, "whatsapp.db")
+	msgDB := filepath.Join(dDir, "messages.db")
+	gdDB := filepath.Join(dDir, "googledocs.db")
+	token := filepath.Join(dDir, "googledocs_token.json")
+
+	for _, f := range []string{waDB, msgDB, gdDB, token} {
+		if err := os.WriteFile(f, []byte("data"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	whatsAppReset(dDir, plist)
+
+	// WhatsApp files should be gone
+	for _, f := range []string{waDB, msgDB} {
+		if _, err := os.Stat(f); !os.IsNotExist(err) {
+			t.Errorf("expected %s to be removed", filepath.Base(f))
+		}
+	}
+	// Google Docs files should be preserved
+	for _, f := range []string{gdDB, token} {
+		if _, err := os.Stat(f); err != nil {
+			t.Errorf("expected %s to be preserved, got err: %v", filepath.Base(f), err)
+		}
+	}
+}
+
+func TestWhatsAppReset_preservesPlist(t *testing.T) {
+	dDir := t.TempDir()
+	plistDir := t.TempDir()
+	plist := filepath.Join(plistDir, "com.test.plist")
+
+	// Create plist file to simulate installed daemon
+	if err := os.WriteFile(plist, []byte("<plist/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	whatsAppReset(dDir, plist)
+
+	// Plist must NOT be deleted — daemon installation should survive reset
+	if _, err := os.Stat(plist); os.IsNotExist(err) {
+		t.Error("plist file should be preserved after whatsapp reset")
+	}
+}
+
+func TestWhatsAppReset_toleratesMissingFiles(t *testing.T) {
+	dDir := t.TempDir()
+	plist := filepath.Join(t.TempDir(), "fake.plist")
+
+	// Data dir exists but contains no WhatsApp files — should not error
+	whatsAppReset(dDir, plist)
 }
