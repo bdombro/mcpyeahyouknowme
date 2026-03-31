@@ -5,6 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$ROOT/src"
 DATA_DIR="$HOME/.local/share/mcpyeahyouknowme"
+PLIST_LABEL="com.mcpyeahyouknowme.core"
+INSTALLED_BIN="$HOME/.local/bin/mcpyeahyouknowme"
 
 usage() {
 	local code="${1:-1}"
@@ -12,16 +14,15 @@ usage() {
 Usage: ./tasks.sh <command>
 
 Commands:
-  build         Build mcpyeahyouknowme (FTS5) into src/mcpyeahyouknowme.bin
-  update        build + install binary to /usr/local/bin + restart daemon if running
-  install       update + install-onnx + login + install-daemon + zsh completions
-  install-onnx  Install ONNX Runtime via Homebrew (for semantic search)
-  test          Run tests with coverage summary (fuzzy, mcp packages)
-  test-cover    Run tests and open HTML coverage report
-  test-mcp      Smoke-test MCP stdio: initialize, initialized, tools/call search
-  reset         mcpyeahyouknowme reset && mcpyeahyouknowme login
-  kill          Kill all mcpyeahyouknowme processes and clean up database locks
-  uninstall     Kill all processes, remove daemon, data, completions, and binary
+  build      Build mcpyeahyouknowme (FTS5) into src/mcpyeahyouknowme.bin
+  update     build + install binary to ~/.local/bin + add to PATH + restart daemon if running
+  install    update + install-onnx + login + install-daemon + zsh completions
+  test       Run tests with coverage summary (fuzzy, mcp packages)
+  test-cover Run tests and open HTML coverage report
+  test-mcp   Smoke-test MCP stdio: initialize, initialized, tools/call search
+  reset      mcpyeahyouknowme reset && mcpyeahyouknowme login
+  kill       Kill all mcpyeahyouknowme processes and clean up database locks
+  uninstall  Kill all processes, remove daemon, data, completions, and binary
 EOF
 	exit "$code"
 }
@@ -36,16 +37,86 @@ cmd_build() {
 
 cmd_update() {
 	cmd_build
-	sudo cp "$CLI_DIR/mcpyeahyouknowme.bin" /usr/local/bin/mcpyeahyouknowme
-	sudo chmod +x /usr/local/bin/mcpyeahyouknowme
-	echo "Installed /usr/local/bin/mcpyeahyouknowme"
+	
+	# Install to ~/.local/bin instead of /usr/local/bin to avoid macOS security restrictions
+	mkdir -p "$HOME/.local/bin"
+	cp "$CLI_DIR/mcpyeahyouknowme.bin" "$HOME/.local/bin/mcpyeahyouknowme"
+	chmod +x "$HOME/.local/bin/mcpyeahyouknowme"
+	echo "Installed $HOME/.local/bin/mcpyeahyouknowme"
+	
+	# Add to PATH in .zshrc if not already there
+	if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+		echo ""
+		if [ -f ~/.zshrc ]; then
+			if ! grep -qF 'export PATH="$HOME/.local/bin:$PATH"' ~/.zshrc 2>/dev/null; then
+				echo "" >> ~/.zshrc
+				echo '# Added by mcpyeahyouknowme installer' >> ~/.zshrc
+				echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+				echo "✓ Added $HOME/.local/bin to PATH in ~/.zshrc"
+				echo "  Restart your terminal or run: source ~/.zshrc"
+			else
+				echo "✓ PATH already configured in ~/.zshrc"
+			fi
+		else
+			echo "⚠️  ~/.zshrc not found. Add this to your shell config:"
+			echo "   export PATH=\"\$HOME/.local/bin:\$PATH\""
+		fi
+	fi
 
-	echo "Testing if runninn daemon needs restart..."
-	if mcpyeahyouknowme info 2>/dev/null | grep -q "Status:     running"; then
+	echo "Testing if running daemon needs restart..."
+	if "$HOME/.local/bin/mcpyeahyouknowme" info 2>/dev/null | grep -q "Status:     running"; then
 		echo "Restarting daemon..."
-		mcpyeahyouknowme restart
+		"$HOME/.local/bin/mcpyeahyouknowme" restart
 		echo "Restarted core daemon"
 	fi
+}
+
+cmd_install_daemon() {
+	if [ "$(uname -s)" != "Darwin" ]; then
+		echo "Error: install-daemon is only supported on macOS (LaunchAgent)." >&2
+		return 1
+	fi
+	if [ ! -x "$INSTALLED_BIN" ]; then
+		echo "Error: $INSTALLED_BIN not found or not executable. Run ./tasks.sh update first." >&2
+		return 1
+	fi
+
+	local plist="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
+	local log_path="$DATA_DIR/core.log"
+	mkdir -p "$HOME/Library/LaunchAgents"
+	mkdir -p "$DATA_DIR"
+
+	cat >"$plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>${PLIST_LABEL}</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>${INSTALLED_BIN}</string>
+		<string>core</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>${log_path}</string>
+	<key>StandardErrorPath</key>
+	<string>${log_path}</string>
+</dict>
+</plist>
+EOF
+
+	launchctl unload "$plist" 2>/dev/null || true
+	if ! launchctl load "$plist"; then
+		echo "Error: launchctl load failed for $plist" >&2
+		return 1
+	fi
+	echo "Installed and started core daemon: $plist"
+	echo "Logs: $log_path"
 }
 
 cmd_install_onnx() {
@@ -78,7 +149,7 @@ cmd_install() {
 	echo ""
 	
 	echo "=== Step 3: Installing daemon ==="
-	mcpyeahyouknowme install-daemon
+	cmd_install_daemon
 	echo "✓ Daemon installation complete"
 	echo ""
 	
@@ -112,6 +183,8 @@ cmd_test_cover() {
 	(
 		cd "$CLI_DIR"
 		go test -tags "sqlite_fts5" -coverprofile=coverage.out -count=1 ./...
+		echo ""
+		echo "=== Coverage summary ==="
 		go tool cover -html=coverage.out
 	)
 }
@@ -202,10 +275,19 @@ cmd_uninstall() {
 	
 	# Step 6: Remove binary
 	echo "=== Step 6: Removing binary ==="
+	removed=false
+	if [ -f "$HOME/.local/bin/mcpyeahyouknowme" ]; then
+		rm -f "$HOME/.local/bin/mcpyeahyouknowme"
+		echo "✓ Removed $HOME/.local/bin/mcpyeahyouknowme"
+		removed=true
+	fi
+	# Also clean up old location if it exists
 	if [ -f /usr/local/bin/mcpyeahyouknowme ]; then
 		sudo rm -f /usr/local/bin/mcpyeahyouknowme
 		echo "✓ Removed /usr/local/bin/mcpyeahyouknowme"
-	else
+		removed=true
+	fi
+	if [ "$removed" = false ]; then
 		echo "✓ Binary not found"
 	fi
 	echo ""
@@ -217,7 +299,6 @@ case "${1:-}" in
 	build) cmd_build ;;
 	update) cmd_update ;;
 	install) cmd_install ;;
-	install-onnx) cmd_install_onnx ;;
 	test) cmd_test ;;
 	test-cover) cmd_test_cover ;;
 	test-mcp) cmd_test_mcp ;;

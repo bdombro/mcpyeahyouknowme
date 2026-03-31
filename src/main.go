@@ -23,7 +23,6 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Core Daemon:")
 	fmt.Fprintln(os.Stderr, "  core                     Start the core daemon (data source services)")
-	fmt.Fprintln(os.Stderr, "  install-daemon           Install core as a macOS LaunchAgent")
 	fmt.Fprintln(os.Stderr, "  start                    Start the core daemon")
 	fmt.Fprintln(os.Stderr, "  stop                     Stop the core daemon")
 	fmt.Fprintln(os.Stderr, "  restart                  Restart the core daemon")
@@ -121,9 +120,6 @@ func main() {
 	// Core Daemon commands
 	case "core":
 		runCore()
-		return
-	case "install-daemon", "daemon":
-		runInstallDaemon()
 		return
 	case "start":
 		runStart()

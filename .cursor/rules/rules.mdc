@@ -1,0 +1,5 @@
+# Rules
+
+## Rule Organization
+
+Rules are categorized into separate files at `.cursor/rules/{category}.mdc`. Each file contains rules specific to that category.

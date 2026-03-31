@@ -23,14 +23,10 @@ func plistPath() string {
 	return filepath.Join(home, "Library", "LaunchAgents", plistName+".plist")
 }
 
-func installedBinPath() string {
-	return "/usr/local/bin/mcpyeahyouknowme"
-}
-
 func requireDaemonInstalled() string {
 	plist := plistPath()
 	if _, err := os.Stat(plist); os.IsNotExist(err) {
-		fmt.Fprintln(os.Stderr, "Error: core daemon not installed. Run 'mcpyeahyouknowme install-daemon' first.")
+		fmt.Fprintln(os.Stderr, "Error: core daemon not installed. From the repo, run: ./tasks.sh install-daemon")
 		os.Exit(1)
 	}
 	return plist
@@ -191,52 +187,6 @@ func runLogin(args []string) {
 			exec.Command("launchctl", "load", plist).Run()
 		}
 	}
-}
-
-func runInstallDaemon() {
-	requireLogin()
-	dDir := dataDir()
-	binPath := installedBinPath()
-	logPath := filepath.Join(dDir, "core.log")
-	plist := plistPath()
-	os.MkdirAll(filepath.Dir(plist), 0755)
-	os.MkdirAll(dDir, 0755)
-
-	plistContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>Label</key>
-	<string>%s</string>
-	<key>ProgramArguments</key>
-	<array>
-		<string>%s</string>
-		<string>core</string>
-	</array>
-	<key>RunAtLoad</key>
-	<true/>
-	<key>KeepAlive</key>
-	<true/>
-	<key>StandardOutPath</key>
-	<string>%s</string>
-	<key>StandardErrorPath</key>
-	<string>%s</string>
-</dict>
-</plist>
-`, plistName, binPath, logPath, logPath)
-
-	if err := os.WriteFile(plist, []byte(plistContent), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing plist: %v\n", err)
-		os.Exit(1)
-	}
-
-	exec.Command("launchctl", "unload", plist).Run()
-	if err := exec.Command("launchctl", "load", plist).Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading launch agent: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("Installed and started core daemon: %s\n", plist)
-	fmt.Printf("Logs: %s\n", logPath)
 }
 
 func runStart() {
@@ -425,7 +375,6 @@ var commands = []string{
 	"info",
 	"completions",
 	"core",
-	"install-daemon",
 	"start",
 	"stop",
 	"restart",
@@ -456,7 +405,7 @@ func printBashCompletions() {
     local subcmd="${COMP_WORDS[2]}"
 
     if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "mcp info completions core install-daemon start stop restart uninstall whatsapp googledocs login reset" -- "$cur") )
+        COMPREPLY=( $(compgen -W "mcp info completions core start stop restart uninstall whatsapp googledocs login reset" -- "$cur") )
         return
     fi
 
@@ -487,7 +436,6 @@ func printZshCompletions() {
         'info:Show install status and data locations'
         'completions:Print shell completions (bash or zsh)'
         'core:Start the core daemon (data source services)'
-        'install-daemon:Install core daemon (macOS LaunchAgent)'
         'start:Start the core daemon'
         'stop:Stop the core daemon'
         'restart:Restart the core daemon'
