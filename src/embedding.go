@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	fastembed "github.com/bdombro/fastembed-go"
@@ -14,65 +13,13 @@ type Embedder struct {
 	model *fastembed.FlagEmbedding
 }
 
-// onnxLibPath returns the Homebrew-installed ONNX runtime library path for macOS.
-// Checks both Apple Silicon (/opt/homebrew) and Intel (/usr/local) paths.
-func onnxLibPath() string {
-	// Try Apple Silicon path first
-	armPath := "/opt/homebrew/lib/libonnxruntime.dylib"
-	if _, err := os.Stat(armPath); err == nil {
-		return armPath
-	}
-	// Fall back to Intel path
-	return "/usr/local/lib/libonnxruntime.dylib"
-}
-
-// NewEmbedder creates an Embedder by looking for the ONNX runtime library
-// in the app-local lib directory. Returns (nil, nil) if ONNX is not installed,
-// allowing the caller to fall back to BM25-only search.
-func NewEmbedder(cacheDir string) (emb *Embedder, err error) {
-	libPath := onnxLibPath()
-	if _, statErr := os.Stat(libPath); os.IsNotExist(statErr) {
-		return nil, nil
-	}
-
-	os.Setenv("ONNX_PATH", libPath)
-
-	// fastembed-go panics on ONNX load failure; recover gracefully.
-	defer func() {
-		if r := recover(); r != nil {
-			emb = nil
-			err = fmt.Errorf("embedding init failed: %v", r)
-		}
-	}()
-
-	model, initErr := fastembed.NewFlagEmbedding(&fastembed.InitOptions{
-		Model:    fastembed.BGESmallENV15,
-		CacheDir: cacheDir,
-	})
-	if initErr != nil {
-		return nil, fmt.Errorf("fastembed init: %w", initErr)
-	}
-
-	return &Embedder{model: model}, nil
-}
-
 // EmbedTexts generates embeddings for a batch of texts using passage mode.
 // Filters out empty/whitespace-only strings to prevent tokenizer crashes.
-// Recovers from panics in the underlying library and returns partial results.
-func (e *Embedder) EmbedTexts(texts []string, batchSize int) (embeddings [][]float32, err error) {
+func (e *Embedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
 	if batchSize <= 0 {
 		batchSize = 64
 	}
-	
-	// Recover from panics in the tokenizer library
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("embedding panic: %v", r)
-			embeddings = make([][]float32, len(texts))
-		}
-	}()
-	
-	// Filter out empty texts and track original indices
+
 	var validTexts []string
 	var validIndices []int
 	for i, text := range texts {
@@ -82,46 +29,34 @@ func (e *Embedder) EmbedTexts(texts []string, batchSize int) (embeddings [][]flo
 			validIndices = append(validIndices, i)
 		}
 	}
-	
-	// If no valid texts, return empty embeddings for all inputs
+
 	if len(validTexts) == 0 {
-		result := make([][]float32, len(texts))
-		return result, nil
+		return make([][]float32, len(texts)), nil
 	}
-	
-	// Embed only valid texts
-	validEmbeddings, embErr := e.model.PassageEmbed(validTexts, batchSize)
-	if embErr != nil {
+
+	validEmbeddings, embErr := e.safePassageEmbed(validTexts, batchSize)
+	if embErr != nil { // nocov
 		return nil, embErr
 	}
-	
-	// Reconstruct result array with embeddings in original positions
+
 	result := make([][]float32, len(texts))
 	for i, validIdx := range validIndices {
 		if i < len(validEmbeddings) {
 			result[validIdx] = validEmbeddings[i]
 		}
 	}
-	
+
 	return result, nil
 }
 
 // EmbedQuery generates a single embedding for a search query.
 // Returns error if query is empty or whitespace-only.
-// Recovers from panics in the underlying library.
-func (e *Embedder) EmbedQuery(query string) (embedding []float32, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("embedding panic: %v", r)
-			embedding = nil
-		}
-	}()
-	
+func (e *Embedder) EmbedQuery(query string) ([]float32, error) {
 	trimmed := strings.TrimSpace(query)
 	if trimmed == "" {
 		return nil, fmt.Errorf("query cannot be empty")
 	}
-	return e.model.QueryEmbed(trimmed)
+	return e.safeQueryEmbed(trimmed)
 }
 
 // Close releases the underlying model resources.

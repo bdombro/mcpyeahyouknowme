@@ -5,13 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // SearchEntry is the unit of indexable content from any DataSource.
@@ -59,104 +55,6 @@ type SearchStore struct {
 	embedder EmbedderInterface // nil = BM25-only mode
 }
 
-// NewSearchStore opens (or creates) search.db in the given directory.
-func NewSearchStore(dir string, embedder EmbedderInterface) (*SearchStore, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("create search dir: %w", err)
-	}
-
-	dbPath := filepath.Join(dir, "search.db")
-	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", dbPath))
-	if err != nil {
-		return nil, fmt.Errorf("open search db: %w", err)
-	}
-
-	db.Exec("PRAGMA journal_mode=WAL")
-	db.Exec("PRAGMA busy_timeout=30000")
-
-	if err := initSearchSchema(db); err != nil {
-		db.Close()
-		return nil, err
-	}
-
-	return &SearchStore{db: db, embedder: embedder}, nil
-}
-
-// NewSearchStoreFromDB creates a SearchStore from an existing *sql.DB (for tests).
-func NewSearchStoreFromDB(db *sql.DB, embedder EmbedderInterface) (*SearchStore, error) {
-	if err := initSearchSchema(db); err != nil {
-		return nil, err
-	}
-	return &SearchStore{db: db, embedder: embedder}, nil
-}
-
-func initSearchSchema(db *sql.DB) error {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS search_entries (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			source TEXT NOT NULL,
-			source_id TEXT NOT NULL,
-			content_type TEXT NOT NULL,
-			title TEXT,
-			content TEXT NOT NULL,
-			metadata TEXT,
-			timestamp DATETIME,
-			UNIQUE(source, source_id, content_type)
-		)`)
-	if err != nil {
-		return fmt.Errorf("create search_entries: %w", err)
-	}
-
-	_, err = db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
-		title, content,
-		content='search_entries',
-		content_rowid='id'
-	)`)
-	if err != nil {
-		return fmt.Errorf("create search_fts: %w (hint: build with -tags sqlite_fts5)", err)
-	}
-
-	_, err = db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_insert AFTER INSERT ON search_entries BEGIN
-		INSERT INTO search_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-	END`)
-	if err != nil {
-		return fmt.Errorf("create search_fts_insert trigger: %w", err)
-	}
-
-	_, err = db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_delete AFTER DELETE ON search_entries BEGIN
-		INSERT INTO search_fts(search_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
-	END`)
-	if err != nil {
-		return fmt.Errorf("create search_fts_delete trigger: %w", err)
-	}
-
-	_, err = db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_update AFTER UPDATE ON search_entries BEGIN
-		INSERT INTO search_fts(search_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
-		INSERT INTO search_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-	END`)
-	if err != nil {
-		return fmt.Errorf("create search_fts_update trigger: %w", err)
-	}
-
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS search_embeddings (
-		entry_id INTEGER PRIMARY KEY REFERENCES search_entries(id) ON DELETE CASCADE,
-		embedding BLOB NOT NULL
-	)`)
-	if err != nil {
-		return fmt.Errorf("create search_embeddings: %w", err)
-	}
-
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS search_meta (
-		source TEXT PRIMARY KEY,
-		last_indexed DATETIME
-	)`)
-	if err != nil {
-		return fmt.Errorf("create search_meta: %w", err)
-	}
-
-	return nil
-}
-
 // Close releases the search database connection.
 func (s *SearchStore) Close() error {
 	return s.db.Close()
@@ -166,7 +64,7 @@ func (s *SearchStore) Close() error {
 // for new/changed entries when an embedder is available.
 func (s *SearchStore) IndexEntries(entries []SearchEntry) error {
 	tx, err := s.db.Begin()
-	if err != nil {
+	if err != nil { // nocov
 		return err
 	}
 	defer tx.Rollback()
@@ -177,7 +75,7 @@ func (s *SearchStore) IndexEntries(entries []SearchEntry) error {
 		ON CONFLICT(source, source_id, content_type) DO UPDATE SET
 			title=excluded.title, content=excluded.content,
 			metadata=excluded.metadata, timestamp=excluded.timestamp`)
-	if err != nil {
+	if err != nil { // nocov
 		return fmt.Errorf("prepare upsert: %w", err)
 	}
 	defer stmt.Close()
@@ -191,12 +89,12 @@ func (s *SearchStore) IndexEntries(entries []SearchEntry) error {
 		if len(e.Metadata) > 0 {
 			meta = string(e.Metadata)
 		}
-		if _, err := stmt.Exec(e.Source, e.SourceID, e.ContentType, e.Title, e.Content, meta, ts); err != nil {
+		if _, err := stmt.Exec(e.Source, e.SourceID, e.ContentType, e.Title, e.Content, meta, ts); err != nil { // nocov
 			return fmt.Errorf("upsert entry %s/%s: %w", e.Source, e.SourceID, err)
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(); err != nil { // nocov
 		return err
 	}
 
@@ -229,7 +127,7 @@ func (s *SearchStore) computeEmbeddings() error {
 		FROM search_entries e
 		LEFT JOIN search_embeddings se ON e.id = se.entry_id
 		WHERE se.entry_id IS NULL`)
-	if err != nil {
+	if err != nil { // nocov
 		return err
 	}
 	defer rows.Close()
@@ -242,7 +140,7 @@ func (s *SearchStore) computeEmbeddings() error {
 	for rows.Next() {
 		var id int64
 		var title, content string
-		if rows.Scan(&id, &title, &content) != nil {
+		if rows.Scan(&id, &title, &content) != nil { // nocov
 			continue
 		}
 		text := title
@@ -274,13 +172,13 @@ func (s *SearchStore) computeEmbeddings() error {
 	}
 
 	tx, err := s.db.Begin()
-	if err != nil {
+	if err != nil { // nocov
 		return err
 	}
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare("INSERT OR REPLACE INTO search_embeddings (entry_id, embedding) VALUES (?, ?)")
-	if err != nil {
+	if err != nil { // nocov
 		return err
 	}
 	defer stmt.Close()
@@ -291,7 +189,7 @@ func (s *SearchStore) computeEmbeddings() error {
 			continue
 		}
 		blob := float32sToBytes(emb)
-		if _, err := stmt.Exec(batch[i].id, blob); err != nil {
+		if _, err := stmt.Exec(batch[i].id, blob); err != nil { // nocov
 			return err
 		}
 	}
@@ -372,7 +270,7 @@ func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, t
 	params = append(params, limit)
 
 	rows, err := s.db.Query(strings.Join(parts, " "), params...)
-	if err != nil {
+	if err != nil { // nocov
 		return nil
 	}
 	defer rows.Close()
@@ -409,7 +307,7 @@ func (s *SearchStore) vectorSearch(query string, limit int, sourceFilter, typeFi
 			"JOIN search_entries e ON se.entry_id = e.id WHERE "+
 			strings.Join(filterParts, " AND "),
 		filterParams...)
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 	defer rows.Close()
@@ -422,7 +320,7 @@ func (s *SearchStore) vectorSearch(query string, limit int, sourceFilter, typeFi
 	for rows.Next() {
 		var id int64
 		var blob []byte
-		if rows.Scan(&id, &blob) != nil {
+		if rows.Scan(&id, &blob) != nil { // nocov
 			continue
 		}
 		emb := bytesToFloat32s(blob)
@@ -479,7 +377,7 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 		"SELECT id, source, source_id, content_type, title, content, metadata FROM search_entries WHERE id IN ("+
 			strings.Join(placeholders, ",")+
 			")", ids...)
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 	defer rows.Close()
@@ -489,7 +387,7 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 		var id int64
 		var source, sourceID, contentType, title, content string
 		var metadata sql.NullString
-		if rows.Scan(&id, &source, &sourceID, &contentType, &title, &content, &metadata) != nil {
+		if rows.Scan(&id, &source, &sourceID, &contentType, &title, &content, &metadata) != nil { // nocov
 			continue
 		}
 		weight := hierarchyWeights[contentType]

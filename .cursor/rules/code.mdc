@@ -1,0 +1,34 @@
+---
+description: Code structure and organization standards
+globs: src/**/*.go
+alwaysApply: false
+---
+
+# Code Standards
+
+## Separating testable from untestable code
+
+Split Go source files to keep untestable surface isolated:
+
+- **`<name>.go`** — business logic: methods, helpers, and pure functions that are fully testable with in-memory dependencies.
+- **`<name>_init.go`** — construction & runtime wrappers: constructors (`New*`), OS/filesystem setup, panic-recovery wrappers around third-party libraries, and schema initialisation. These files are excluded from the coverage filter.
+
+### Marking untestable branches
+
+For error branches in the business-logic file that cannot be triggered without replacing the concrete SQL driver, annotate with `// nocov`:
+
+```go
+rows, err := s.db.Query(...)
+if err != nil { // nocov
+    return nil, err
+}
+```
+
+`scripts/test.sh` automatically detects `// nocov` comments and excludes the containing uncovered coverage block from the filtered percentage. If a test happens to cover the block, the comment is harmless — covered blocks are always included.
+
+### Rules
+
+1. Never put business logic in `*_init.go` — only construction, schema DDL, and panic-recovery wrappers belong there.
+2. Every `// nocov` annotation must be on a line within the uncovered block (typically the `if err` line).
+3. Prefer dependency injection (interfaces) over concrete types to maximise testability.
+4. When adding a new `// nocov`, verify the path truly cannot be exercised in tests.

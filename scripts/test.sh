@@ -38,87 +38,70 @@ run_tests() {
 }
 
 filter_coverage() {
-	# Filter coverage_unfiltered.txt to core business logic files, removing untestable paths.
-	# Excludes CLI handlers, OAuth flows, event handlers, and daemon code.
-	# Also removes specific uncovered blocks that are:
-	#   Cat 1 - Constructor/init error paths (require mocking filesystem/sqlite init)
-	#   Cat 2 - DB error paths (require mocking sql.DB internal failures)
-	#   Cat 3 - ONNX panic/error recovery (cross-goroutine SIGSEGV, PassageEmbed errors)
-	#   Cat 4 - OS-dependent code paths (architecture-specific)
-	# See .cursor/rules/test-coverage.mdc for full justification.
+	# Filter coverage to core business-logic files, excluding:
+	#   - *_init.go files (constructors, schema DDL, ONNX wrappers)
+	#   - Uncovered blocks containing a "// nocov" source comment
 	#
-	# Each -e pattern matches a coverage profile block start line (file:LINE.col,...).
-	# When source line numbers change, re-run the test, grep the profile for " 0$",
-	# and update the start-line numbers here.
-	grep -E "^(mode:|mcpyeahyouknowme/(fuzzy|mcp_service|search_store|store|embedding)\.go:)" \
-		"$ROOT/coverage/coverage_unfiltered.txt" | \
-		grep -v \
-			-e 'embedding\.go:26\.' \
-			-e 'embedding\.go:34\.' \
-			-e 'embedding\.go:42\.' \
-			-e 'embedding\.go:52\.' \
-			-e 'embedding\.go:69\.' \
-			-e 'embedding\.go:94\.' \
-			-e 'embedding\.go:114\.' \
-			-e 'search_store\.go:64\.' \
-			-e 'search_store\.go:70\.' \
-			-e 'search_store\.go:77\.' \
-			-e 'search_store\.go:87\.' \
-			-e 'search_store\.go:106\.' \
-			-e 'search_store\.go:115\.' \
-			-e 'search_store\.go:122\.' \
-			-e 'search_store\.go:129\.' \
-			-e 'search_store\.go:137\.' \
-			-e 'search_store\.go:145\.' \
-			-e 'search_store\.go:153\.' \
-			-e 'search_store\.go:169\.' \
-			-e 'search_store\.go:180\.' \
-			-e 'search_store\.go:194\.' \
-			-e 'search_store\.go:199\.' \
-			-e 'search_store\.go:232\.' \
-			-e 'search_store\.go:245\.' \
-			-e 'search_store\.go:277\.' \
-			-e 'search_store\.go:283\.' \
-			-e 'search_store\.go:294\.' \
-			-e 'search_store\.go:375\.' \
-			-e 'search_store\.go:412\.' \
-			-e 'search_store\.go:425\.' \
-			-e 'search_store\.go:482\.' \
-			-e 'search_store\.go:492\.' \
-			-e 'store\.go:28\.' \
-			-e 'store\.go:30\.' \
-			-e 'store\.go:34\.' \
-			-e 'store\.go:35\.' \
-			-e 'store\.go:41\.' \
-			-e 'store\.go:75\.' \
-			-e 'store\.go:82\.' \
-			-e 'store\.go:102\.' \
-			-e 'store\.go:105\.' \
-			-e 'store\.go:110\.' \
-			-e 'store\.go:114\.' \
-			-e 'store\.go:118\.' \
-			-e 'store\.go:156\.' \
-			-e 'store\.go:166\.' \
-			-e 'store\.go:178\.' \
-			-e 'store\.go:188\.' \
-			-e 'store\.go:233\.' \
-			-e 'store\.go:242\.' \
-			-e 'mcp_service\.go:141\.' \
-			-e 'mcp_service\.go:159\.' \
-			-e 'mcp_service\.go:173\.' \
-			-e 'mcp_service\.go:221\.' \
-			-e 'mcp_service\.go:280\.' \
-			-e 'mcp_service\.go:355\.' \
-			-e 'mcp_service\.go:412\.' \
-			-e 'mcp_service\.go:421\.' \
-			-e 'mcp_service\.go:524\.' \
-			-e 'mcp_service\.go:534\.' \
-			-e 'mcp_service\.go:561\.' \
-			-e 'mcp_service\.go:571\.' \
-			-e 'mcp_service\.go:594\.' \
-			-e 'mcp_service\.go:614\.' \
-			-e 'mcp_service\.go:716\.' \
-		> "$ROOT/coverage/coverage.txt"
+	# This approach is stable across line-number changes:
+	#   *_init.go exclusion uses filename patterns.
+	#   // nocov exclusion auto-detects comment locations from source.
+
+	local raw="$ROOT/coverage/coverage_unfiltered.txt"
+	local filtered="$ROOT/coverage/coverage.txt"
+
+	# Step 1: Keep only business-logic files, drop *_init.go
+	grep -E "^(mode:|mcpyeahyouknowme/(fuzzy|mcp_service|search_store|store|embedding)\.go:)" "$raw" | \
+		grep -v '_init\.go:' > "$filtered.tmp"
+
+	# Step 2: Collect // nocov line numbers from source
+	local nocov_lines
+	nocov_lines=$(mktemp)
+	for src in "$CLI_DIR"/*.go; do
+		base=$(basename "$src")
+		[[ "$base" == *_test.go ]] && continue
+		[[ "$base" == *_init.go ]] && continue
+		{ grep -n '// nocov' "$src" 2>/dev/null || true; } | while IFS=: read -r num _; do
+			echo "$base $num"
+		done
+	done > "$nocov_lines"
+
+	# Step 3: Remove uncovered blocks whose line range contains a // nocov comment.
+	# Coverage profile format: package/file.go:startLine.col,endLine.col stmts count
+	# Covered blocks (count > 0) always pass through; only uncovered blocks are checked.
+	awk -v nocov_file="$nocov_lines" '
+	BEGIN {
+		while ((getline line < nocov_file) > 0) {
+			split(line, a, " ")
+			nocov[a[1], a[2]+0] = 1
+		}
+	}
+	/^mode:/ { print; next }
+	{
+		count = $NF + 0
+		if (count > 0) { print; next }
+
+		pos = index($1, ":")
+		file_path = substr($1, 1, pos - 1)
+		range_part = substr($1, pos + 1)
+
+		n = split(file_path, parts, "/")
+		filename = parts[n]
+
+		split(range_part, r, ",")
+		split(r[1], s, ".")
+		split(r[2], e, ".")
+		start = s[1] + 0
+		end_line = e[1] + 0
+
+		skip = 0
+		for (i = start; i <= end_line; i++) {
+			if ((filename, i) in nocov) { skip = 1; break }
+		}
+		if (!skip) print
+	}
+	' "$filtered.tmp" > "$filtered"
+
+	rm -f "$filtered.tmp" "$nocov_lines"
 }
 
 generate_report() {

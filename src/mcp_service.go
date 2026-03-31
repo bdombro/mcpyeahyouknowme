@@ -138,7 +138,7 @@ func (s *MCPService) listMessagesChronological(after, before, sender, chatJID st
 	params = append(params, limit, offset)
 
 	rows, err := s.store.db.Query(strings.Join(parts, " "), params...)
-	if err != nil {
+	if err != nil { // nocov
 		return "", fmt.Errorf("query failed: %w", err)
 	}
 	defer rows.Close()
@@ -170,7 +170,7 @@ func (s *MCPService) bm25MessageSearch(query string, limit int, chatJID, after, 
 			WHERE messages.id = ? AND messages.chat_jid = ?`, r.msgID, r.chatJID)
 
 		msg, err := scanMessageRow(row)
-		if err != nil {
+		if err != nil { // nocov
 			continue
 		}
 		if sender != "" && msg.Sender != sender {
@@ -218,7 +218,7 @@ func (s *MCPService) bm25Search(query string, limit int, chatJID, after, before 
 	params = append(params, limit)
 
 	rows, err := s.store.db.Query(strings.Join(parts, " "), params...)
-	if err != nil {
+	if err != nil { // nocov
 		return nil
 	}
 	defer rows.Close()
@@ -277,7 +277,7 @@ func (s *MCPService) messagesAround(chatJID, ts, op, order string, n int) []MCPM
 		WHERE messages.chat_jid = ? AND messages.timestamp %s
 		ORDER BY messages.timestamp %s
 		LIMIT ?`, op, order), chatJID, ts, n)
-	if err != nil {
+	if err != nil { // nocov
 		return nil
 	}
 	defer rows.Close()
@@ -352,7 +352,7 @@ func (s *MCPService) ListChats(query string, limit, page int, includeLast bool, 
 		var lastTime sql.NullString
 		var lastMsg, lastSender sql.NullString
 		var lastFromMe sql.NullBool
-		if err := rows.Scan(&jid, &name, &lastTime, &lastMsg, &lastSender, &lastFromMe); err != nil {
+		if err := rows.Scan(&jid, &name, &lastTime, &lastMsg, &lastSender, &lastFromMe); err != nil { // nocov
 			continue
 		}
 		chat := MCPChat{
@@ -409,7 +409,7 @@ func (s *MCPService) findChatsByParticipantName(query string) []string {
 	}
 
 	rows, err := s.store.contactsDB.Query("SELECT their_jid, full_name, push_name FROM whatsmeow_contacts")
-	if err != nil {
+	if err != nil { // nocov
 		return nil
 	}
 	defer rows.Close()
@@ -418,7 +418,7 @@ func (s *MCPService) findChatsByParticipantName(query string) []string {
 	for rows.Next() {
 		var jid string
 		var fullName, pushName sql.NullString
-		if rows.Scan(&jid, &fullName, &pushName) != nil {
+		if rows.Scan(&jid, &fullName, &pushName) != nil { // nocov
 			continue
 		}
 		if fuzzyMatch(query, nullStr(fullName)) || fuzzyMatch(query, nullStr(pushName)) {
@@ -521,7 +521,7 @@ func (s *MCPService) GetContactChats(jid string, limit, page int) ([]MCPChat, er
 		WHERE m.sender = ? OR c.jid = ?
 		ORDER BY c.last_message_time DESC
 		LIMIT ? OFFSET ?`, jid, jid, limit, page*limit)
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 	defer rows.Close()
@@ -531,7 +531,7 @@ func (s *MCPService) GetContactChats(jid string, limit, page int) ([]MCPChat, er
 		var j string
 		var name, lastTime, lastMsg, lastSender sql.NullString
 		var lastFromMe sql.NullBool
-		if rows.Scan(&j, &name, &lastTime, &lastMsg, &lastSender, &lastFromMe) != nil {
+		if rows.Scan(&j, &name, &lastTime, &lastMsg, &lastSender, &lastFromMe) != nil { // nocov
 			continue
 		}
 		chat := MCPChat{JID: j, Name: nullStr(name), IsGroup: strings.HasSuffix(j, "@g.us")}
@@ -558,7 +558,7 @@ func (s *MCPService) SearchContacts(query string) ([]MCPContact, error) {
 		WHERE (LOWER(name) LIKE LOWER(?) OR LOWER(jid) LIKE LOWER(?))
 			AND jid NOT LIKE '%@g.us'
 		ORDER BY name, jid LIMIT 50`, pattern, pattern)
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 	defer rows.Close()
@@ -568,7 +568,7 @@ func (s *MCPService) SearchContacts(query string) ([]MCPContact, error) {
 	for rows.Next() {
 		var jid string
 		var name sql.NullString
-		if rows.Scan(&jid, &name) != nil {
+		if rows.Scan(&jid, &name) != nil { // nocov
 			continue
 		}
 		seen[jid] = struct{}{}
@@ -591,7 +591,7 @@ func (s *MCPService) SearchContacts(query string) ([]MCPContact, error) {
 			for waRows.Next() {
 				var jid string
 				var fullName, pushName sql.NullString
-				if waRows.Scan(&jid, &fullName, &pushName) != nil {
+				if waRows.Scan(&jid, &fullName, &pushName) != nil { // nocov
 					continue
 				}
 				if _, exists := seen[jid]; exists {
@@ -713,7 +713,7 @@ func scanMessages(rows *sql.Rows) []MCPMessage {
 		var ts, sender, chatName, content, chatJID, id string
 		var isFromMe bool
 		var mediaType sql.NullString
-		if rows.Scan(&ts, &sender, &chatName, &content, &isFromMe, &chatJID, &id, &mediaType) != nil {
+		if rows.Scan(&ts, &sender, &chatName, &content, &isFromMe, &chatJID, &id, &mediaType) != nil { // nocov
 			continue
 		}
 		msgs = append(msgs, MCPMessage{

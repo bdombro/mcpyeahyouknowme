@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -236,4 +237,33 @@ func TestBM25MessageSearch(t *testing.T) {
 		t.Fatalf("ListMessages: %v", err)
 	}
 	requireContains(t, result, "dinner")
+}
+
+func TestBm25MessageSearch_truncation(t *testing.T) {
+	svc := newTestService(t, "")
+	// "there" matches both "Hi there" (m2) and "I'll be there" (m8)
+	result, err := svc.bm25MessageSearch("there", 1, "", "", "", "", false, 0, 0)
+	if err != nil {
+		t.Fatalf("bm25MessageSearch: %v", err)
+	}
+	if result == "" {
+		t.Error("expected non-empty result")
+	}
+}
+
+func TestSearchContacts_truncatesOver50(t *testing.T) {
+	store := newTestStoreWithContacts(t)
+	for i := 0; i < 50; i++ {
+		jid := fmt.Sprintf("%05d@s.whatsapp.net", i+50000)
+		name := fmt.Sprintf("TestContact%d", i)
+		store.db.Exec("INSERT INTO chats (jid, name, last_message_time) VALUES (?, ?, datetime('now'))", jid, name)
+	}
+	svc := NewMCPService(store, "")
+	contacts, err := svc.SearchContacts("")
+	if err != nil {
+		t.Fatalf("SearchContacts: %v", err)
+	}
+	if len(contacts) != 50 {
+		t.Errorf("expected exactly 50 contacts after truncation, got %d", len(contacts))
+	}
 }
