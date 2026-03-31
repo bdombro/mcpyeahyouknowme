@@ -237,6 +237,40 @@ Note: Request body uses JSON with `message_id` and `chat_jid` fields (not query 
 
 The MCP server uses [mcp-go](https://github.com/mark3labs/mcp-go) as the framework. Communication is over stdio (JSON-RPC 2.0). Source-specific tool names are prefixed with their source name (e.g. `whatsapp_`). The global `search` tool is not prefixed.
 
+### MCP tool RPC methods
+
+These are the JSON-RPC methods the server exposes for discovering and invoking tools (after `initialize` and `notifications/initialized`):
+
+| Method | Role |
+|--------|------|
+| `tools/list` | List tool names, schemas, descriptions |
+| `tools/call` | Run a tool (e.g. `search`, `whatsapp_*`, …) |
+
+Use `tools/call` with `params.name` set to one of the tool names below and `params.arguments` as a JSON object of that tool’s parameters (see the following sections for full parameter lists and behavior).
+
+### `tools/call` tool names
+
+| Tool name | Description |
+|-----------|-------------|
+| `search` | Global hybrid search across connected sources (BM25 + optional vectors); optional `source`, `content_type`, `limit`. |
+| `whatsapp_search_contacts` | Search contacts by name or phone (excludes group JIDs). |
+| `whatsapp_list_chats` | List chats; optional fuzzy search by chat or participant name. |
+| `whatsapp_get_chat` | Get one chat by JID; optional last message. |
+| `whatsapp_get_direct_chat_by_contact` | Find direct (1:1) chat for a phone number. |
+| `whatsapp_get_contact_chats` | List chats where a contact appears as sender. |
+| `whatsapp_list_messages` | Search/filter messages (time, sender, chat, text); BM25 when `query` is set. Default `limit` 200. |
+| `whatsapp_get_message_context` | Messages before/after a message ID in the same chat. |
+| `whatsapp_get_last_interaction` | Most recent message involving a contact (formatted). |
+| `whatsapp_send_message` | Send text via core daemon REST API. |
+| `whatsapp_send_file` | Send a local file as media via core daemon. |
+| `whatsapp_send_audio_message` | Send audio as a voice message via core daemon. |
+| `whatsapp_download_media` | Download media for a message via core daemon. |
+| `googledocs_search` | FTS5 search across synced docs; `query`, optional `limit`. |
+| `googledocs_get_document` | Full document body by ID. |
+| `googledocs_list_recent` | Recently modified docs; optional `limit`. |
+
+**Availability:** `whatsapp_*` tools are registered only when WhatsApp is logged in. `googledocs_*` tools appear when the Google Docs source loads successfully (OAuth env vars and setup). `search` is registered when the search index initializes on MCP startup; if indexing fails, other tools may still be available without `search`.
+
 ### Global Search
 
 | Tool | Description |
@@ -281,7 +315,7 @@ Metadata shapes per WhatsApp content type:
 
 | Tool | Description |
 |------|-------------|
-| `whatsapp_list_messages` | Search and filter messages by time range, sender, chat JID, or text content. When a query is provided, uses BM25 keyword search (FTS5) for relevance-ranked results. Supports pagination and optional surrounding context per message. |
+| `whatsapp_list_messages` | Search and filter messages by time range, sender, chat JID, or text content. When a query is provided, uses BM25 keyword search (FTS5) for relevance-ranked results. Supports pagination and optional surrounding context per message. Default `limit` is 200. |
 | `whatsapp_get_message_context` | Get messages before and after a specific message ID within the same chat. |
 | `whatsapp_get_last_interaction` | Get the most recent message involving a contact, returned as a formatted string. |
 

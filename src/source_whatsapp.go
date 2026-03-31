@@ -261,7 +261,7 @@ func (w *WhatsAppSource) RegisterTools(s *server.MCPServer) {
 		mcp.WithString("sender_phone_number", mcp.Description("Optional phone number to filter by sender")),
 		mcp.WithString("chat_jid", mcp.Description("Optional chat JID to filter by chat")),
 		mcp.WithString("query", mcp.Description("Optional search term to filter messages by content")),
-		mcp.WithNumber("limit", mcp.Description("Maximum number of messages to return (default 20)")),
+		mcp.WithNumber("limit", mcp.Description("Maximum number of messages to return (default 200)")),
 		mcp.WithNumber("page", mcp.Description("Page number for pagination (default 0)")),
 		mcp.WithBoolean("include_context", mcp.Description("Include messages before and after matches (default true)")),
 		mcp.WithNumber("context_before", mcp.Description("Number of messages to include before each match (default 1)")),
@@ -273,7 +273,7 @@ func (w *WhatsAppSource) RegisterTools(s *server.MCPServer) {
 		sender, _ := args["sender_phone_number"].(string)
 		chatJID, _ := args["chat_jid"].(string)
 		query, _ := args["query"].(string)
-		limit := intArg(args, "limit", 20)
+		limit := intArg(args, "limit", 200)
 		page := intArg(args, "page", 0)
 		includeCtx := boolArg(args, "include_context", true)
 		ctxBefore := intArg(args, "context_before", 1)
