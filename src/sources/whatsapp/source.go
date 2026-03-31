@@ -148,7 +148,7 @@ func (w *Source) SearchEntries() ([]core.SearchEntry, error) {
 		SELECT m.id, m.chat_jid, m.sender, m.content, m.timestamp, m.is_from_me, c.name
 		FROM messages m
 		JOIN chats c ON m.chat_jid = c.jid
-		WHERE LENGTH(m.content) > 20`)
+		WHERE LENGTH(m.content) > 3`)
 	if err == nil {
 		defer msgRows.Close()
 		for msgRows.Next() {
@@ -158,6 +158,19 @@ func (w *Source) SearchEntries() ([]core.SearchEntry, error) {
 			if msgRows.Scan(&id, &chatJID, &sender, &content, &tsStr, &isFromMe, &chatName) != nil {
 				continue
 			}
+
+			// Prepend resolved sender name for other people's messages so
+			// queries like "eileen mentions circus" match on sender + content.
+			// Skipped for is_from_me to avoid the logged-in user's name
+			// polluting every result.
+			indexContent := content
+			if !isFromMe {
+				senderName := w.store.GetSenderName(sender)
+				if senderName != sender && !looksLikePhoneNumber(senderName) {
+					indexContent = senderName + ": " + content
+				}
+			}
+
 			ts := parseTime(tsStr)
 			meta, _ := json.Marshal(map[string]interface{}{
 				"message_id": id,
@@ -171,7 +184,7 @@ func (w *Source) SearchEntries() ([]core.SearchEntry, error) {
 				SourceID:    id + ":" + chatJID,
 				ContentType: "message",
 				Title:       nullStr(chatName),
-				Content:     content,
+				Content:     indexContent,
 				Metadata:    meta,
 				Timestamp:   &ts,
 			})
