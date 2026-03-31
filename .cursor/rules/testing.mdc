@@ -1,5 +1,5 @@
 ---
-description: Testing standards for mcpyeahyouknowme Go codebase
+description: Testing and coverage standards for Go code
 globs: src/**/*.go
 alwaysApply: false
 ---
@@ -7,32 +7,32 @@ alwaysApply: false
 # Testing Standards
 
 ## Coverage
-- Track coverage with `go test -cover -tags sqlite_fts5 ./...`
-- All new code must have tests; target 100% line coverage on new packages.
-- Use `go tool cover -html=coverage.out` to find uncovered lines.
-- Build tag `sqlite_fts5` is required for all test commands.
 
-## Test Structure
-- Table-driven tests for functions with multiple input/output cases.
-- Each `foo.go` has a corresponding `foo_test.go` in the same package.
-- Helpers shared across tests go in `testutil_test.go`.
+- 100% line coverage required on new/modified code (filtered output from `just test`).
+- Build tag `sqlite_fts5` required for all test/build commands.
+- Verify: `cd src && go test -tags "sqlite_fts5" -coverprofile=coverage.out -count=1 ./... && go tool cover -func=coverage.out | grep <fn>`
 
-## Mocking & Isolation
-- Database: use in-memory SQLite (`file::memory:?cache=shared`) seeded with known fixtures.
-- HTTP (REST API): use `net/http/httptest.NewServer` with handler stubs.
-- WhatsApp client: do **not** call real WhatsApp APIs in tests; wrap access behind interfaces and provide test doubles.
-- File system: use `t.TempDir()` for any file I/O.
+## Coverage filtering (`scripts/test.sh`)
 
-## E2E MCP Tests
-- Instantiate `server.MCPServer`, call `server.ServeStdio`-style helpers or invoke tool handlers directly.
-- Assert on JSON tool results, not internal types.
-- Cover every registered MCP tool with at least one success and one error case.
+- **File exclusion**: only `fuzzy`, `mcp_service`, `search_store`, `store`, `embedding` included. `*_init.go` excluded.
+- **`// nocov` auto-detection**: uncovered blocks containing `// nocov` stripped from filtered profile. Covered blocks unaffected.
+- CLI handlers, OAuth, event handlers, daemon code excluded entirely.
 
-## Naming
-- Test functions: `TestFunctionName_scenario` (e.g. `TestListChats_fuzzyMatch`).
-- Sub-tests via `t.Run("description", ...)`.
+## Test structure
 
-## Running
-```bash
-./scripts/test.sh      # run all tests with coverage summary
-```
+- Table-driven tests for multi-case functions.
+- Each `foo.go` → `foo_test.go` in same package. Shared helpers in `testutil_test.go`.
+- Name: `TestFunctionName_scenario` with `t.Run` sub-tests.
+- Test both success and error paths.
+
+## Mocking & isolation
+
+- DB: in-memory SQLite (`file::memory:?cache=shared`), seed via `newTestStore(t)`.
+- HTTP: `net/http/httptest.NewServer` with handler stubs.
+- WhatsApp: interface test doubles, never real APIs.
+- Files: `t.TempDir()`.
+
+## E2E MCP tests
+
+- Call `MCPServer` tool handlers directly, assert on JSON results.
+- Cover every MCP tool with success + error case.

@@ -1,26 +1,12 @@
 ---
-description: Rules for keeping the justfile aligned with scripts/*
+description: Keep justfile aligned with scripts/*
 globs: justfile,scripts/*.sh
 alwaysApply: false
 ---
 
 # Justfile / Scripts Alignment
 
-The `justfile` is a convenience wrapper around scripts in `scripts/`. Keep them in sync:
-
-- Every script in `scripts/` must have a corresponding recipe in the `justfile`
-- Every recipe in the `justfile` (except `default`) must delegate to a script in `scripts/`
-- When a script is added, renamed, or removed, update the `justfile` to match
-- Recipe comments in the `justfile` should match the one-line description from the script's header
-
-## Current mapping
-
-| Script | Recipe |
-|--------|--------|
-| `scripts/build.sh` | `build` |
-| `scripts/install.sh` | `install` |
-| `scripts/test.sh` | `test` |
-| `scripts/test-mcp.sh` | `test-mcp` |
-| `scripts/reset.sh` | `reset` |
-| `scripts/kill.sh` | `kill` |
-| `scripts/uninstall.sh` | `uninstall` |
+- Every `scripts/*.sh` must have a corresponding justfile recipe (except `default`).
+- Every recipe must delegate to a script.
+- When scripts are added/renamed/removed, update the justfile.
+- Recipe comments should match the script's header description.

@@ -1,59 +1,19 @@
 ---
-description: Coding standards for scripts/* bash scripts
+description: Standards for scripts/*.sh
 globs: scripts/*.sh
 alwaysApply: false
 ---
 
 # Script Standards
 
-## Header comment block
+## Header
 
-Every script must have an overview and usage comment near the top (after the shebang). Follow this structure:
+Every script needs a shebang + comment block: one-line description, longer description, usage, prerequisites.
 
-```bash
-#!/usr/bin/env bash
-# script-name.sh - One-line description
-# ========================================
-#
-# Description:
-#   What this script does and why.
-#
-# Usage:
-#   ./scripts/script-name.sh    # From repo root
-#   just recipe-name            # If using justfile
-#
-# Prerequisites:
-#   - Any required tools or conditions
-```
+## Structure
 
-## Functions for long scripts
+Scripts over ~50 lines: break into `step_N_*()` functions with a `main()` entry point called at bottom (see `install.sh`).
 
-Scripts over ~50 lines must be broken into named functions with a `main()` entry point called at the bottom. Follow the pattern in `install.sh`:
+## Comments
 
-```bash
-step_1_do_thing() {
-    # What this step accomplishes
-    ...
-}
-
-step_2_do_other() {
-    # What this step accomplishes
-    ...
-}
-
-main() {
-    step_1_do_thing
-    step_2_do_other
-}
-
-main
-```
-
-## Function comments
-
-Every function must have a comment explaining its purpose. One-liners are fine for obvious cases:
-
-```bash
-# Returns 0 if the built binary differs from the installed one.
-binary_changed() { ... }
-```
+Every function needs a purpose comment.

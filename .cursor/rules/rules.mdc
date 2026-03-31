@@ -1,5 +1,19 @@
-# Rules
+---
+description: Standards for writing .cursor/rules/*.mdc files
+globs: .cursor/rules/*.mdc
+alwaysApply: false
+---
 
-## Rule Organization
+# Rule Authoring Standards
 
-Rules are categorized into separate files at `.cursor/rules/{category}.mdc`. Each file contains rules specific to that category.
+Rules consume AI context tokens on every matched file. Minimize token cost while preserving intent.
+
+## Principles
+
+- **Merge over multiply**: if two rules share the same globs and >30% content overlap, combine them.
+- **No redundancy across files**: state each fact once; cross-reference rather than repeat.
+- **Prose over examples**: describe patterns in words; only include code blocks when the syntax itself is the point.
+- **No mirrors of source-of-truth**: don't embed mapping tables, file lists, or schemas that duplicate info already in the codebase — they go stale and waste tokens.
+- **Delete zero-value files**: if a rule only states something self-evident, remove it.
+- **Bullet points over paragraphs**: use terse lists; omit filler words.
+- **Frontmatter accuracy**: use the narrowest `globs` that apply; prefer `alwaysApply: false`.

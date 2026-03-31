@@ -6,29 +6,24 @@ alwaysApply: false
 
 # Code Standards
 
-## Separating testable from untestable code
+## File splitting
 
-Split Go source files to keep untestable surface isolated:
+- **`<name>.go`** — testable business logic: methods, helpers, pure functions.
+- **`<name>_init.go`** — untestable: constructors (`New*`), OS/filesystem setup, panic-recovery wrappers, schema init. Excluded from coverage.
 
-- **`<name>.go`** — business logic: methods, helpers, and pure functions that are fully testable with in-memory dependencies.
-- **`<name>_init.go`** — construction & runtime wrappers: constructors (`New*`), OS/filesystem setup, panic-recovery wrappers around third-party libraries, and schema initialisation. These files are excluded from the coverage filter.
+## `// nocov` annotation
 
-### Marking untestable branches
-
-For error branches in the business-logic file that cannot be triggered without replacing the concrete SQL driver, annotate with `// nocov`:
+For error branches that can't be triggered without replacing the SQL driver:
 
 ```go
-rows, err := s.db.Query(...)
 if err != nil { // nocov
-    return nil, err
-}
 ```
 
-`scripts/test.sh` automatically detects `// nocov` comments and excludes the containing uncovered coverage block from the filtered percentage. If a test happens to cover the block, the comment is harmless — covered blocks are always included.
+`scripts/test.sh` auto-excludes uncovered blocks containing `// nocov`. Covered blocks are unaffected.
 
-### Rules
+## Rules
 
-1. Never put business logic in `*_init.go` — only construction, schema DDL, and panic-recovery wrappers belong there.
-2. Every `// nocov` annotation must be on a line within the uncovered block (typically the `if err` line).
-3. Prefer dependency injection (interfaces) over concrete types to maximise testability.
-4. When adding a new `// nocov`, verify the path truly cannot be exercised in tests.
+1. No business logic in `*_init.go`.
+2. `// nocov` must be on a line within the uncovered block.
+3. Prefer dependency injection (interfaces) over concrete types.
+4. Verify `// nocov` paths truly can't be exercised in tests.
