@@ -100,6 +100,15 @@ func commandTree() []Command {
 			},
 		},
 		{
+			Name:    "reindex",
+			Summary: "Rebuild the search index and embeddings",
+			Usage:   "reindex [--clear]",
+			Section: "Maintenance",
+			Run: func(args []string) {
+				runReindex(args)
+			},
+		},
+		{
 			Name:    "uninstall",
 			Summary: "Instructions for proper uninstall (use ./scripts/uninstall.sh)",
 			Usage:   "uninstall",

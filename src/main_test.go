@@ -30,7 +30,7 @@ func TestDispatchCommands(t *testing.T) {
 func TestCommandNames(t *testing.T) {
 	expected := []string{
 		"mcp", "info", "completions", "core", "start", "stop",
-		"restart", "uninstall", "whatsapp", "gsuite", "login", "reset",
+		"restart", "reindex", "uninstall", "whatsapp", "gsuite", "login", "reset",
 	}
 	if got := commandNames(topLevelCommands()); !reflect.DeepEqual(got, expected) {
 		t.Errorf("commandNames() = %v, want %v", got, expected)

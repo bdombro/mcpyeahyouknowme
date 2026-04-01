@@ -138,7 +138,6 @@ Google Suite uses a desktop OAuth client with PKCE. Google still expects both `G
 | `GOOGLE_CLIENT_SECRET` | Optional | Matching desktop OAuth client secret; required only if you want the `gsuite` source available |
 | `GOOGLE_PLACE_API_KEY` | Optional | Build-time Places API key that enables the `google_places_*` tools |
 | `GOOGLE_PROJECT_ID` | Optional | Used by `scripts/google-project-setup.sh` / `just google-project-setup` |
-| `MCP_ENABLE_EMBEDDINGS` | Optional | Set to `false` to disable vector search and skip ONNX Runtime dependency |
 
 ## Managing the Daemon
 

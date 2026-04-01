@@ -400,7 +400,7 @@ func TestFormatSyncStatus(t *testing.T) {
 		count      int
 		wantPrefix string
 	}{
-		{"idle with last sync", "idle", time.Now().Add(-5 * time.Minute), 42, "42 synced — idle"},
+		{"idle with last sync", "idle", time.Now().Add(-5 * time.Minute), 42, "42 synced"},
 		{"currently syncing with count", "syncing:10", time.Time{}, 9, "9 synced — syncing"},
 		{"syncing no count", "syncing", time.Time{}, 0, "0 synced — syncing"},
 		{"no sync yet", "", time.Time{}, 0, "0 synced"},

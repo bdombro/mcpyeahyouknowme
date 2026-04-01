@@ -122,6 +122,21 @@ func TestMCP_GlobalSearch_basic(t *testing.T) {
 	}
 }
 
+func TestMCP_GlobalSearch_metadataHint(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+	text := callSearchTool(t, s, map[string]interface{}{"query": "Family"})
+	var results []SearchResult
+	if err := json.Unmarshal([]byte(text), &results); err != nil {
+		t.Fatalf("unmarshal search results: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least one search result")
+	}
+	if results[0].MetadataHint == "" {
+		t.Fatal("expected metadata_hint on search result")
+	}
+}
+
 func TestMCP_GlobalSearch_messageContent(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "dinner"})
@@ -196,7 +211,8 @@ func TestMCP_GlobalSearch_withLimit(t *testing.T) {
 func TestMCP_GlobalSearch_missingQuery(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{})
-	if text != "query parameter is required" {
+	want := `query parameter is required; call with arguments: {"query":"meeting notes","source":"whatsapp","limit":5}`
+	if text != want {
 		t.Errorf("expected missing query error, got %q", text)
 	}
 }
@@ -234,7 +250,16 @@ func TestMCP_ToolsListContainsSearchTool(t *testing.T) {
 	var resp struct {
 		Result struct {
 			Tools []struct {
-				Name string `json:"name"`
+				Name        string `json:"name"`
+				Annotations struct {
+					ReadOnlyHint    *bool `json:"readOnlyHint"`
+					DestructiveHint *bool `json:"destructiveHint"`
+					IdempotentHint  *bool `json:"idempotentHint"`
+				} `json:"annotations"`
+				InputSchema struct {
+					Properties map[string]json.RawMessage `json:"properties"`
+					Required   []string                   `json:"required"`
+				} `json:"inputSchema"`
 			} `json:"tools"`
 		} `json:"result"`
 	}
@@ -244,6 +269,23 @@ func TestMCP_ToolsListContainsSearchTool(t *testing.T) {
 	for _, tool := range resp.Result.Tools {
 		if tool.Name == "search" {
 			found = true
+			if tool.Annotations.ReadOnlyHint == nil || !*tool.Annotations.ReadOnlyHint {
+				t.Fatal("expected search readOnlyHint=true")
+			}
+			if tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
+				t.Fatal("expected search destructiveHint=false")
+			}
+			if tool.Annotations.IdempotentHint == nil || !*tool.Annotations.IdempotentHint {
+				t.Fatal("expected search idempotentHint=true")
+			}
+			if len(tool.InputSchema.Required) != 1 || tool.InputSchema.Required[0] != "query" {
+				t.Fatalf("unexpected required fields: %#v", tool.InputSchema.Required)
+			}
+			for _, key := range []string{"query", "source", "content_type", "limit"} {
+				if _, ok := tool.InputSchema.Properties[key]; !ok {
+					t.Fatalf("expected %q in inputSchema.properties", key)
+				}
+			}
 			break
 		}
 	}

@@ -166,15 +166,15 @@ func buildTaskRecord(taskList *tasks.TaskList, task *tasks.Task) taskRecord {
 }
 
 func registerTasksTools(src *Source, prefix string, s toolAdder) {
-	s.AddTool(mcp.NewTool(prefix+"tasks_search",
-		mcp.WithDescription("Search across Google Tasks"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"tasks_search",
+		core.ToolDescription("Search across Google Tasks", `{"query":"submit expense report","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleTasksSearch(src, ctx, req)
 	})
-	s.AddTool(mcp.NewTool(prefix+"tasks_list",
-		mcp.WithDescription("List tasks, optionally filtered by status"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"tasks_list",
+		core.ToolDescription("List tasks, optionally filtered by status", `{"status":"needsAction","limit":10}`),
 		mcp.WithString("status", mcp.Description("Filter by status: 'needsAction' or 'completed'")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 20)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
@@ -183,7 +183,10 @@ func registerTasksTools(src *Source, prefix string, s toolAdder) {
 }
 
 func handleTasksSearch(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, _ := req.RequireString("query")
+	query, errResult := core.RequireStringArgument(req, "query", `{"query":"submit expense report","limit":5}`)
+	if errResult != nil {
+		return errResult, nil
+	}
 	limit := core.IntArg(req.GetArguments(), "limit", 10)
 	if src.db == nil {
 		return mcp.NewToolResultText("[]"), nil

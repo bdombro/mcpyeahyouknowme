@@ -6,59 +6,29 @@ alwaysApply: false
 
 # Testing Standards
 
-## Coverage
-
 - 100% line coverage required on new/modified code (filtered output from `just test`).
 - Build tag `sqlite_fts5` required for all test/build commands.
 - Verify: `cd src && go test -tags "sqlite_fts5" -coverprofile=coverage.out -count=1 ./... && go tool cover -func=coverage.out | grep <fn>`
 
-## Coverage filtering (`scripts/test.sh`)
-
 - **File inclusion**: `sources/whatsapp/` (store, service, helpers), `sources/gsuite/` (source, mcp, client, store, app_*), `search_store`, `embedding`. `*_init.go` excluded.
 - **`// nocov` auto-detection**: uncovered blocks containing `// nocov` stripped from filtered profile. Covered blocks unaffected.
 - CLI handlers, OAuth, event handlers, daemon code excluded entirely from the filter.
-
-## Test file layout
 
 - Each `foo.go` → `foo_test.go` in same package.
 - Shared helpers (DB setup, seeders, call helpers) → `testutil_test.go` in same package.
 - Tests for `src/core/` live in `src/core/helpers_test.go`.
 - **Never** create `*_coverage_test.go` files. Organize tests by what they test, not why they were written.
 
-## Test structure
-
 - Table-driven tests for multi-case functions.
 - Name: `TestFunctionName_scenario` with `t.Run` sub-tests for table cases.
 - Test both success and error paths.
-
-## Mocking & isolation
 
 - DB: in-memory SQLite via `core.OpenDB` or `file::memory:?cache=shared`. Each source package has its own `newTestStore(t)` / `newTestXxxDB(t)` in `testutil_test.go`.
 - HTTP: `net/http/httptest.NewServer` with handler stubs.
 - External APIs: interface test doubles, never call real APIs.
 - Files: `t.TempDir()` for dataDir injection.
 
-## E2E MCP tests
-
-Cover every MCP tool with success + error case using one of these two patterns:
-
-**Pattern A — JSON-RPC via server** (used in `whatsapp/`): call `server.HandleMessage` with a full JSON-RPC envelope; parse the response with `extractText`. This exercises tool registration and dispatch.
-
-```go
-func TestMCP_Foo(t *testing.T) {
-    s, _ := buildTestMCPServer(t)
-    text := callTool(t, s, "source_foo", map[string]interface{}{"arg": "val"})
-    requireContains(t, text, "expected")
-}
-```
-
-**Pattern B — Direct handler call** (used in `googledocs/`): call the handler method directly with `buildMCPRequest`; check `result.IsError` and `extractResultText`. Simpler for sources that don't need full server dispatch.
-
-```go
-func TestFoo_success(t *testing.T) {
-    g := newMCPTestSource(t)
-    text, isErr := callHandler(t, g.handleFoo, map[string]interface{}{"arg": "val"})
-    if isErr { t.Fatalf("unexpected error") }
-    if !strings.Contains(text, "expected") { t.Errorf("...") }
-}
-```
+- Cover every MCP tool with both success and error cases.
+- Use one of two MCP patterns:
+  - full JSON-RPC through `server.HandleMessage` when registration/dispatch matters
+  - direct handler calls when registration is irrelevant and the handler is easier to isolate

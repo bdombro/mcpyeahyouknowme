@@ -173,21 +173,21 @@ func extractDocumentText(doc *docs.Document) string {
 }
 
 func registerDocsTools(src *Source, prefix string, s toolAdder) {
-	s.AddTool(mcp.NewTool(prefix+"docs_search",
-		mcp.WithDescription("Search across all Google Docs"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"docs_search",
+		core.ToolDescription("Search across all Google Docs", `{"query":"quarterly roadmap","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleDocsSearch(src, ctx, req)
 	})
-	s.AddTool(mcp.NewTool(prefix+"docs_get_document",
-		mcp.WithDescription("Get full content of a specific Google Doc by ID"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"docs_get_document",
+		core.ToolDescription("Get full content of a specific Google Doc by ID", `{"document_id":"1AbcDefGhIj"}`),
 		mcp.WithString("document_id", mcp.Required(), mcp.Description("Google Doc ID")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleDocsGetDocument(src, ctx, req)
 	})
-	s.AddTool(mcp.NewTool(prefix+"docs_list_recent",
-		mcp.WithDescription("List recently modified Google Docs"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"docs_list_recent",
+		core.ToolDescription("List recently modified Google Docs", `{"limit":10}`),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 20)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleDocsListRecent(src, ctx, req)
@@ -195,7 +195,10 @@ func registerDocsTools(src *Source, prefix string, s toolAdder) {
 }
 
 func handleDocsSearch(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, _ := req.RequireString("query")
+	query, errResult := core.RequireStringArgument(req, "query", `{"query":"quarterly roadmap","limit":5}`)
+	if errResult != nil {
+		return errResult, nil
+	}
 	limit := core.IntArg(req.GetArguments(), "limit", 10)
 	if src.db == nil {
 		return mcp.NewToolResultText("[]"), nil
@@ -226,7 +229,10 @@ func handleDocsSearch(src *Source, ctx context.Context, req mcp.CallToolRequest)
 }
 
 func handleDocsGetDocument(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	docID, _ := req.RequireString("document_id")
+	docID, errResult := core.RequireStringArgument(req, "document_id", `{"document_id":"1AbcDefGhIj"}`)
+	if errResult != nil {
+		return errResult, nil
+	}
 	if src.db == nil {
 		return mcp.NewToolResultError("Database not available"), nil
 	}

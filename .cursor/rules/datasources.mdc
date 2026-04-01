@@ -6,87 +6,33 @@ alwaysApply: false
 
 # Data Sources
 
-Every data source lives in its own Go package under `src/sources/<name>/` and implements the `core.DataSource` interface. Source lifecycle capabilities are declared centrally in `src/sources/registry/registry.go`.
+- Each data source lives in `src/sources/<name>/` and implements `core.DataSource`. Lifecycle capabilities are declared in `src/sources/registry/registry.go`.
 
-## Package structure
+## Package shape
 
-Each source package contains these files:
+- Typical files: `source.go`, `mcp.go`, `daemon.go`, `client.go`, `cli.go`, `store.go` / `store_init.go`, `service.go`, `helpers.go`.
+- Keep source-specific business logic out of `*_init.go`.
 
-- `source.go` — struct, `Name()`, `Description()`, `Close()`, `SearchEntries()`, `Reset()`
-- `mcp.go` — `RegisterTools()` + MCP tool handler functions
-- `daemon.go` — `StartCore()`, `RequiresAuth()`, sync/subscription logic
-- `client.go` — external API/protocol wrappers, auth helpers
-- `cli.go` — exported CLI entry points (`RunLogin()`, `RunReset()`, `InfoLines()`)
-- `store.go` / `store_init.go` — local database (if needed)
-- `service.go` — business logic called by MCP tool handlers (if complex enough to warrant separation)
-- `helpers.go` — unexported utilities
+## Required behavior
 
-## Required behaviors
+- `RunsCore=true`: sync and persist local data via subscription or polling.
+- `IndexGlobally=true`: MCP read handlers use the local DB only; implement `SearchEntries()` with meaningful `Source`, `SourceID`, `ContentType`, `Title`, `Content`, and follow-up `Metadata`.
+- `Reset(dataDir string)`: daemon-owned cleanup; remove source files without racing open handles.
+- Persist disabled state after reset/auth loss; keep the source entry in config.
 
-### Local data sync
+## Shared utilities
 
-Sources with `RunsCore=true` must download and locally persist all indexable content. Data must be kept current via one of:
+- Use `core.RunPollLoop`, `core.DefaultReset`, and `core.OpenDB` instead of duplicating boilerplate.
+- Prefer interfaces and helpers over struct embedding or base types.
 
-- **Subscription**: maintain a persistent connection (WebSocket, push, etc.) and process events in real time.
-- **Polling**: fetch changes every 5 minutes from `StartCore()`.
+## Data requirements
 
-When `IndexGlobally=true`, MCP tool handlers should read from the local database only — never call the upstream API for reads.
+- Capture and return all known timestamps (`created_time`, `modified_time` / `updated_time`, plus domain-specific timestamps).
+- Do not auto-download or cache binary media. Store metadata and expose an explicit download/fetch tool.
 
-### Global search integration
+## New source checklist
 
-Sources with `IndexGlobally=true` must implement `SearchEntries()` returning `[]core.SearchEntry` covering all locally-stored content. This feeds the MCP `search` tool which searches across opted-in sources. Each entry must set:
-
-- `Source` — the source `Name()`
-- `SourceID` — unique ID within the source
-- `ContentType` — category (e.g. `"chat_name"`, `"document_title"`, `"message"`, `"document_content"`)
-- `Title`, `Content` — human-readable text for indexing
-- `Metadata` — JSON with source-specific fields the AI can use for follow-up tool calls
-
-### Reset (daemon-owned cleanup)
-
-Each source implements `Reset(dataDir string)` which removes all of its data files (DBs, tokens, caches). The daemon — not the CLI — calls `Reset()` after stopping the source's `StartCore()`. This avoids race conditions with open file handles.
-
-- CLI or daemon writes a disabled source state back to config after reset
-- Daemon detects within 10s, stops the source, calls `Reset()`, then leaves the source entry present with `enabled: false`
-- If daemon is not running, CLI calls `Reset()` directly (safe — no open handles) and still persists the disabled source state
-
-## Shared utilities in `core/`
-
-Use `core` utility functions for common patterns — do not duplicate boilerplate:
-
-- `core.RunPollLoop(ctx, interval, fn)` — standard 5-minute polling loop for `StartCore()`
-- `core.DefaultReset(dataDir, files)` — delete a source's data files in `Reset()`
-- `core.OpenDB(dataDir, filename)` — open SQLite with shared pragmas (WAL, busy_timeout)
-
-Do NOT use struct embedding or base types. Interfaces enforce contracts; utility functions share behavior.
-
-## Timestamps requirement
-
-Every source must capture and expose known timestamps in both the database schema and MCP tool responses:
-
-- `created_time` — when the record was first created (ISO 8601)
-- `modified_time` / `updated_time` — when the record was last modified
-- Additional domain-specific timestamps (e.g. `date` for email, `start_time`/`end_time` for calendar events)
-
-All timestamp fields must be included in MCP tool response JSON.
-
-## No media auto-download
-
-Sources must NOT automatically download or cache audio, video, or binary attachment files. Instead:
-- Store metadata (filename, MIME type, attachment ID, size) in the local DB
-- Expose an on-demand fetch tool (e.g. `source_download_attachment`) that retrieves the file via API when explicitly called by the AI
-
-## Interface checklist for new sources
-
-1. Implement `core.DataSource` (required) — includes `Reset(dataDir string)` for cleanup
-2. Decide and declare registry capabilities:
-   - `RunsCore=true` for proactively synced sources
-   - `IndexGlobally=true` for sources that feed the global search index
-3. Implement `core.CoreService` only when `RunsCore=true`
-4. Register all tools via `RegisterTools()` with `Name() + "_"` prefix
-5. Return comprehensive `SearchEntries()` when `IndexGlobally=true`
-6. Accept `dataDir string` in constructor (dependency injection)
-7. Store credentials via the shared config.json and/or source-owned files
-8. Use `core.RunPollLoop` / `core.DefaultReset` / `core.OpenDB` instead of reimplementing
-9. Capture all known timestamps in DB schema and MCP responses
-10. Never auto-download media; provide on-demand fetch tool instead
+- Implement `core.DataSource`; add `core.CoreService` only when `RunsCore=true`.
+- Accept `dataDir string` in constructors.
+- Register tools with the `Name() + "_"` prefix.
+- Store credentials in shared config and/or source-owned files.

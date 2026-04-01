@@ -246,7 +246,8 @@ func TestMCP_ToolsListContainsAllTools(t *testing.T) {
 
 // ---------- DataSource interface ----------
 
-func TestWhatsAppSource_interface(t *testing.T) {	store := newTestStore(t)
+func TestWhatsAppSource_interface(t *testing.T) {
+	store := newTestStore(t)
 	ws := NewSourceFromStore(store, "http://localhost:1")
 	defer ws.Close()
 
@@ -347,7 +348,7 @@ func TestWhatsAppSource_SearchEntries_senderPrepend(t *testing.T) {
 func TestMCP_GetChat_missingArg(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callToolRaw(t, s, "whatsapp_get_chat", map[string]interface{}{})
-	requireContains(t, text, "not found")
+	requireContains(t, text, "chat_jid parameter is required")
 }
 
 func TestMCP_GetDirectChat_notFound(t *testing.T) {
@@ -359,5 +360,5 @@ func TestMCP_GetDirectChat_notFound(t *testing.T) {
 func TestMCP_SendMessage_missingArgs(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callToolRaw(t, s, "whatsapp_send_message", map[string]interface{}{})
-	requireContains(t, text, "success")
+	requireContains(t, text, "recipient parameter is required")
 }

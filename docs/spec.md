@@ -41,7 +41,7 @@ Authenticates with Google using OAuth 2.0 for the unified Google Suite source. O
 mcpyeahyouknowme core
 ```
 
-Runs all enabled data source core services. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on port 8080. For Google Suite: syncs each enabled Google app every 5 minutes via the corresponding Google APIs. Requires authentication for each enabled source.
+Runs all enabled data source core services and the search indexer. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on port 8080. For Google Suite: syncs each enabled Google app every 5 minutes via the corresponding Google APIs. The daemon also indexes all sources into `search.db` on startup and periodically on each 10-second tick, with adaptive embedding batch sizes based on available memory. Requires authentication for each enabled source.
 
 Re-authentication may be required after ~20 days for WhatsApp. Google OAuth access tokens refresh automatically as long as the refresh token remains valid, but repeated Google `401 Invalid Credentials` or token refresh `invalid_grant` errors should be treated as persistent credential/configuration problems rather than transient network blips.
 
@@ -51,7 +51,7 @@ Re-authentication may be required after ~20 days for WhatsApp. Google OAuth acce
 mcpyeahyouknowme mcp
 ```
 
-Starts the built-in MCP server over stdio transport. This is what Claude Desktop and Cursor invoke to interact with WhatsApp. It reads directly from the local SQLite databases for queries and proxies write operations (send, download) through the core daemon's REST API at `localhost:8080`. The core daemon must be running for write operations.
+Starts the built-in MCP server over stdio transport. This is what Claude Desktop and Cursor invoke to interact with WhatsApp. It reads directly from the local SQLite databases for queries (including `search.db` for hybrid search) and proxies write operations (send, download) through the core daemon's REST API at `localhost:8080`. The core daemon must be running for write operations. Search indexing is handled by the daemon, not the MCP server.
 
 Configure in your AI client:
 
@@ -68,6 +68,15 @@ Configure in your AI client:
 
 For **Claude Desktop**: save to `~/Library/Application Support/Claude/claude_desktop_config.json`
 For **Cursor**: save to `~/.cursor/mcp.json`
+
+### Reindex — Rebuild Search Index
+
+```
+mcpyeahyouknowme reindex
+mcpyeahyouknowme reindex --clear
+```
+
+Manually rebuilds the search index and embeddings for all available sources. Runs synchronously with progress output. The `--clear` flag wipes existing entries and embeddings before re-indexing.
 
 ## Multi-Source Architecture
 
@@ -108,9 +117,12 @@ src/
   daemon.go         — LaunchAgent management + shell completion rendering
   main.go           — thin entrypoint: sets env and delegates to cmd.go
   runtime.go        — core daemon loop + source lifecycle orchestration
-  mcp.go            — MCP server setup and source wiring
-  search_store.go   — cross-source search index
+  mcp.go            — MCP server setup and source wiring (read-only search consumer)
+  indexer.go        — shared indexing logic used by daemon and reindex CLI
+  search_store.go   — cross-source search index with chunked embedding
   search_mcp.go     — global MCP search tool registration
+  system.go         — system resource detection (adaptive batch sizing)
+  reindex_cli.go    — manual reindex CLI command
 ```
 
 ### Config-driven daemon
@@ -290,11 +302,13 @@ These are the JSON-RPC methods the server exposes for discovering and invoking t
 
 Use `tools/call` with `params.name` set to one of the tool names below and `params.arguments` as a JSON object of that tool’s parameters (see the following sections for full parameter lists and behavior).
 
+Tool descriptions include compact example `arguments` payloads for common calls. Tools also advertise read-only / destructive / idempotent hints via MCP annotations so clients can reason more accurately about safe calls.
+
 ### `tools/call` tool names
 
 | Tool name | Description |
 |-----------|-------------|
-| `search` | Global hybrid search across connected sources (BM25 + optional vectors); optional `source`, `content_type`, `limit`. |
+| `search` | Global hybrid search across connected sources (BM25 + vectors); optional `source`, `content_type`, `limit`. Index populated by daemon. |
 | `whatsapp_search_contacts` | Search contacts by name or phone (excludes group JIDs). |
 | `whatsapp_list_chats` | List chats; optional fuzzy search by chat or participant name. |
 | `whatsapp_get_chat` | Get one chat by JID; optional last message. |
@@ -318,7 +332,7 @@ Use `tools/call` with `params.name` set to one of the tool names below and `para
 | `google_places_search_places` | Live text search for businesses or addresses using the Places API (New). |
 | `google_places_get_place` | Live place details lookup by `place_id` using the Places API (New). |
 
-**Availability:** most source tools are registered only when the source is both `enabled` in config and authenticated. `google_places_*` tools are registered when the binary was built with a non-empty `GOOGLE_PLACE_API_KEY`. `search` is registered when the search index initializes on MCP startup; if indexing fails, other tools may still be available without `search`.
+**Availability:** most source tools are registered only when the source is both `enabled` in config and authenticated. `google_places_*` tools are registered when the binary was built with a non-empty `GOOGLE_PLACE_API_KEY`. `search` is registered when the search store opens successfully on MCP startup. The search index is populated by the core daemon (not by MCP); run `mcpyeahyouknowme reindex` for manual indexing.
 
 ### Global Search
 
@@ -335,7 +349,8 @@ Results are returned as JSON with a fixed outer shape and source-specific metada
   "title": "Family Chat",
   "content": "Family dinner tonight at 7pm",
   "score": 0.92,
-  "metadata": {"message_id": "m4", "chat_jid": "group1@g.us", "sender": "Alice"}
+  "metadata": {"message_id": "m4", "chat_jid": "group1@g.us", "sender": "Alice"},
+  "metadata_hint": "metadata contains {\"message_id\",\"chat_jid\",\"sender\",\"timestamp\"}; use message_id with whatsapp_get_message_context"
 }
 ```
 
@@ -429,7 +444,7 @@ Metadata shapes per WhatsApp content type:
 
 ### Global Hybrid Search
 
-The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). On MCP server startup, each `DataSource` provides its indexable content via `SearchEntries()`. Content is normalized into a shared schema:
+The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 10-second tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available. Embedding batch size scales dynamically based on available system memory (4–32, baseline 16), and embeddings are computed in chunks of 200 rows with per-chunk commits to limit resource usage. Each `DataSource` provides its indexable content via `SearchEntries()`. Content is normalized into a shared schema:
 
 | Content Type | Source | Indexed From |
 |-------------|--------|-------------|
@@ -449,15 +464,15 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 **Search algorithm:**
 
 1. **BM25** — FTS5 full-text search on the `search_fts` virtual table
-2. **Vector** (when ONNX installed) — embed the query with BGE-Small-EN-v1.5, compute cosine similarity against stored embeddings
+2. **Vector** — embed the query with BGE-Small-EN-v1.5, compute cosine similarity against stored embeddings
 3. **Reciprocal Rank Fusion (RRF)** — combine BM25 and vector ranked lists: `score(d) = sum(1/(k+rank_i))` with k=60
 4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `message` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x), `email_thread_subject` (2.5x), `email_thread_participants` (2x), `email_thread_content` (1x)
 
-When ONNX Runtime is not installed, vector search is disabled and the system falls back to BM25-only. This is transparent to the caller.
+ONNX Runtime is required. The server will not start without it (install with `brew install onnxruntime`).
 
 ### BM25 Keyword Search (FTS5)
 
-When `whatsapp_list_messages` is called with a `query` parameter, the server uses SQLite's FTS5 full-text search engine with BM25 scoring. The `messages_fts` virtual table in `messages.db` is maintained via triggers so the index is always in sync. When a `SearchStore` with an embedder is available, the message search combines BM25 with vector results using RRF for improved recall.
+When `whatsapp_list_messages` is called with a `query` parameter, the server uses SQLite's FTS5 full-text search engine with BM25 scoring. The `messages_fts` virtual table in `messages.db` is maintained via triggers so the index is always in sync. The message search combines BM25 with vector results using RRF for improved recall.
 
 Without a `query` parameter, `whatsapp_list_messages` falls back to chronological listing with optional filters.
 
@@ -506,7 +521,7 @@ All data is stored in `~/.local/share/mcpyeahyouknowme/`.
 | `gsuite_email.txt` | Cached Google account email (fetched during login via Drive API) |
 | `search.db` | Global search index (FTS5 + vector embeddings across all sources) |
 | `lib/` | ONNX Runtime shared library (auto-downloaded by `./scripts/install.sh`) |
-| `models/` | Cached embedding model (auto-downloaded on first MCP startup) |
+| `models/` | Cached embedding model (auto-downloaded on first startup by daemon or MCP) |
 | `downloads/` | Downloaded WhatsApp media files |
 ### messages.db Schema
 
@@ -594,7 +609,6 @@ Without this, Gatekeeper blocks execution — the first invocation is killed (SI
 | `GOOGLE_CLIENT_SECRET` | Optional build-time | - | Matching desktop OAuth client secret; when missing, the `gsuite` source is unavailable in the built binary |
 | `GOOGLE_PLACE_API_KEY` | No | - | Optional Places API key; set in `.env`, baked into the binary via `-ldflags`, and enables the `google_places_*` MCP tools |
 | `GOOGLE_PROJECT_ID` | No | - | Convenience project ID for `scripts/google-project-setup.sh` and `just google-project-setup` |
-| `MCP_ENABLE_EMBEDDINGS` | No | `true` | Set to `false` to disable vector search and skip ONNX Runtime |
 
 `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are required only if you want the `gsuite` source available in the built binary. `GOOGLE_PLACE_API_KEY` is optional; when present at build time it enables the `google_places_*` tools. `scripts/google-project-setup.sh` can create a restricted Places API key automatically and write it to `.env`. Copy `.env.example` to `.env` and fill in the values. The build script prints which sources will be available or unavailable at build time.
 

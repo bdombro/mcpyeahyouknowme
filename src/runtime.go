@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -33,6 +35,40 @@ func runCore() {
 		}
 	}
 
+	embedder, err := NewEmbedder(filepath.Join(dir, "models"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: embedding init failed: %v (search indexing disabled)\n", err)
+	}
+	var searchStore *SearchStore
+	if embedder != nil {
+		searchStore, err = NewSearchStore(dir, embedder)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: search index unavailable: %v\n", err)
+		}
+	}
+
+	var indexMu sync.Mutex
+	runIndex := func() {
+		if searchStore == nil {
+			return
+		}
+		if !indexMu.TryLock() {
+			return
+		}
+		go func() {
+			defer indexMu.Unlock()
+			sources := buildActiveSources(dir)
+			defer func() {
+				for _, s := range sources {
+					s.src.Close()
+				}
+			}()
+			indexSources(searchStore, sources)
+		}()
+	}
+
+	runIndex()
+
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
@@ -44,6 +80,12 @@ func runCore() {
 		case <-sigCh:
 			for _, cancel := range running {
 				cancel()
+			}
+			if searchStore != nil {
+				searchStore.Close()
+			}
+			if embedder != nil {
+				embedder.Close()
 			}
 			return
 		case <-ticker.C:
@@ -80,6 +122,8 @@ func runCore() {
 				}
 			}
 			cfg = newCfg
+
+			runIndex()
 		}
 	}
 }

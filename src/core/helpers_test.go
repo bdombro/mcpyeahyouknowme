@@ -1,8 +1,12 @@
 package core
 
 import (
+	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 func TestIntArg_int(t *testing.T) {
@@ -45,6 +49,166 @@ func TestJsonResult_unmarshalable(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Error("expected IsError=true for unmarshalable value")
+	}
+}
+
+func TestToolDescription_withExample(t *testing.T) {
+	got := ToolDescription("Search contacts.", `{"query":"alice"}`)
+	want := `Search contacts. Example arguments: {"query":"alice"}`
+	if got != want {
+		t.Fatalf("ToolDescription() = %q, want %q", got, want)
+	}
+}
+
+func TestToolDescription_withoutExample(t *testing.T) {
+	got := ToolDescription("Search contacts.", "")
+	if got != "Search contacts." {
+		t.Fatalf("ToolDescription() = %q", got)
+	}
+}
+
+func TestNewReadOnlyTool_setsAnnotations(t *testing.T) {
+	tool := NewReadOnlyTool("search", "Search data.")
+	if tool.Annotations.ReadOnlyHint == nil || !*tool.Annotations.ReadOnlyHint {
+		t.Fatal("expected read-only hint to be true")
+	}
+	if tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
+		t.Fatal("expected destructive hint to be false")
+	}
+	if tool.Annotations.IdempotentHint == nil || !*tool.Annotations.IdempotentHint {
+		t.Fatal("expected idempotent hint to be true")
+	}
+}
+
+func TestNewMutatingTool_setsAnnotations(t *testing.T) {
+	tool := NewMutatingTool("send_message", "Send message.")
+	if tool.Annotations.ReadOnlyHint == nil || *tool.Annotations.ReadOnlyHint {
+		t.Fatal("expected read-only hint to be false")
+	}
+	if tool.Annotations.DestructiveHint == nil || !*tool.Annotations.DestructiveHint {
+		t.Fatal("expected destructive hint to be true")
+	}
+	if tool.Annotations.IdempotentHint == nil || *tool.Annotations.IdempotentHint {
+		t.Fatal("expected idempotent hint to be false")
+	}
+}
+
+func TestRequireStringArgument_missing(t *testing.T) {
+	value, result := RequireStringArgument(mcp.CallToolRequest{}, "query", `{"query":"family dinner"}`)
+	if value != "" {
+		t.Fatalf("expected empty value, got %q", value)
+	}
+	if result == nil || !result.IsError {
+		t.Fatal("expected MCP error result")
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `query parameter is required`) {
+		t.Fatalf("expected missing parameter text, got %s", text)
+	}
+	if !strings.Contains(text, `{\"query\":\"family dinner\"}`) {
+		t.Fatalf("expected example arguments in error, got %s", text)
+	}
+}
+
+func TestRequireStringArgument_missingWithoutExample(t *testing.T) {
+	_, result := RequireStringArgument(mcp.CallToolRequest{}, "query", "")
+	if result == nil || !result.IsError {
+		t.Fatal("expected MCP error result")
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	if !strings.Contains(string(data), `query parameter is required`) {
+		t.Fatalf("expected missing parameter text, got %s", string(data))
+	}
+}
+
+func TestRequireStringArgument_success(t *testing.T) {
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"query": "family dinner"}
+	value, result := RequireStringArgument(req, "query", `{"query":"family dinner"}`)
+	if value != "family dinner" {
+		t.Fatalf("expected argument value, got %q", value)
+	}
+	if result != nil {
+		t.Fatal("expected nil error result")
+	}
+}
+
+func TestRequireNumberArgument_success(t *testing.T) {
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"limit": float64(7)}
+	value, result := RequireNumberArgument(req, "limit", `{"limit":7}`)
+	if value != 7 {
+		t.Fatalf("expected numeric argument value, got %v", value)
+	}
+	if result != nil {
+		t.Fatal("expected nil error result")
+	}
+}
+
+func TestRequireNumberArgument_missing(t *testing.T) {
+	_, result := RequireNumberArgument(mcp.CallToolRequest{}, "limit", `{"limit":7}`)
+	if result == nil || !result.IsError {
+		t.Fatal("expected MCP error result")
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `limit parameter is required`) {
+		t.Fatalf("expected missing parameter text, got %s", text)
+	}
+	if !strings.Contains(text, `{\"limit\":7}`) {
+		t.Fatalf("expected example arguments in error, got %s", text)
+	}
+}
+
+func TestRequireIntArgument_success(t *testing.T) {
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"days": float64(14)}
+	value, result := RequireIntArgument(req, "days", `{"days":14}`)
+	if value != 14 {
+		t.Fatalf("expected integer argument value, got %d", value)
+	}
+	if result != nil {
+		t.Fatal("expected nil error result")
+	}
+}
+
+func TestRequireBoolArgument_success(t *testing.T) {
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"include_raw": true}
+	value, result := RequireBoolArgument(req, "include_raw", `{"include_raw":true}`)
+	if !value {
+		t.Fatal("expected bool argument value to be true")
+	}
+	if result != nil {
+		t.Fatal("expected nil error result")
+	}
+}
+
+func TestRequireBoolArgument_missing(t *testing.T) {
+	_, result := RequireBoolArgument(mcp.CallToolRequest{}, "include_raw", `{"include_raw":true}`)
+	if result == nil || !result.IsError {
+		t.Fatal("expected MCP error result")
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `include_raw parameter is required`) {
+		t.Fatalf("expected missing parameter text, got %s", text)
+	}
+	if !strings.Contains(text, `{\"include_raw\":true}`) {
+		t.Fatalf("expected example arguments in error, got %s", text)
 	}
 }
 

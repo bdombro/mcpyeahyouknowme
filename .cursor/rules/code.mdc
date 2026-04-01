@@ -6,28 +6,9 @@ alwaysApply: true
 
 # Code Standards
 
-## File splitting
-
-- **`<name>.go`** — testable business logic: methods, helpers, pure functions.
-- **`<name>_init.go`** — untestable: constructors (`New*`), OS/filesystem setup, panic-recovery wrappers, schema init. Excluded from coverage.
-
-## `// nocov` annotation
-
-For error branches that can't be triggered without replacing the SQL driver:
-
-```go
-if err != nil { // nocov
-```
-
-`scripts/test.sh` auto-excludes uncovered blocks containing `// nocov`. Covered blocks are unaffected.
-
-## Rules
-
-1. No business logic in `*_init.go`.
-2. `// nocov` must be on a line within the uncovered block.
-3. Prefer dependency injection (interfaces) over concrete types.
-4. Verify `// nocov` paths truly can't be exercised in tests.
-
-## Data source packages
-
-Source-specific file conventions are in `datasources.mdc`. The `<name>.go` / `<name>_init.go` split applies within each source package under `src/sources/<name>/`.
+- `<name>.go`: testable business logic.
+- `<name>_init.go`: constructors, OS/filesystem setup, panic-recovery wrappers, schema init. Excluded from coverage.
+- No business logic in `*_init.go`.
+- Put `// nocov` on a line inside the uncovered block, and only for paths that truly cannot be tested.
+- Prefer dependency injection (interfaces) over concrete types.
+- Source-package-specific structure lives in `datasources.mdc`.

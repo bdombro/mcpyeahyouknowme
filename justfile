@@ -16,41 +16,42 @@
 #   - Homebrew (for ONNX Runtime, macOS only)
 #   - macOS (for daemon features)
 
-# Variables
-root := justfile_directory()
-
 # Default recipe shows help
 default:
     @just --list
 
 # Build mcpyeahyouknowme (FTS5) into mcpyeahyouknowme.bin at repo root
 build:
-    @{{root}}/scripts/build.sh
+    @scripts/build.sh
 
 # Bootstrap required Google Cloud APIs and Places key
 google-project-setup project_id:
-    @{{root}}/scripts/google-project-setup.sh {{project_id}}
+    @scripts/google-project-setup.sh {{project_id}}
 
 # Build, install binary, and restart daemon if binary changed (idempotent)
 install:
-    @{{root}}/scripts/install.sh
+    @scripts/install.sh
 
 # Run tests and generate coverage reports
 test:
-    @{{root}}/scripts/test.sh
+    @scripts/test.sh
 
 # Smoke-test MCP stdio: initialize, initialized, tools/call search
 test-mcp:
-    @{{root}}/scripts/test-mcp.sh
+    @scripts/test-mcp.sh
+
+# Launch MCP Inspector against `mcpyeahyouknowme mcp`
+mcp-browser:
+    @scripts/mcp-browser.sh
 
 # mcpyeahyouknowme reset && mcpyeahyouknowme login
 reset:
-    @{{root}}/scripts/reset.sh
+    @scripts/reset.sh
 
 # Kill all mcpyeahyouknowme processes and clean up database locks
 kill:
-    @{{root}}/scripts/kill.sh
+    @scripts/kill.sh
 
 # Kill all processes, remove daemon, data, completions, and binary
 uninstall:
-    @{{root}}/scripts/uninstall.sh
+    @scripts/uninstall.sh

@@ -98,3 +98,30 @@ func TestMCP_upstreamError(t *testing.T) {
 		t.Fatalf("unexpected error: %q", text)
 	}
 }
+
+func TestMCP_missingRequiredArgs(t *testing.T) {
+	src := newTestSource(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("unexpected upstream call")
+	})
+	s := buildMCPServer(t, src)
+
+	tests := []struct {
+		name string
+		tool string
+		want string
+	}{
+		{"search_places", "google_places_search_places", "query parameter is required"},
+		{"get_place", "google_places_get_place", "place_id parameter is required"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			text, isErr := callTool(t, s, tc.tool, map[string]interface{}{})
+			if !isErr {
+				t.Fatalf("expected error result, got %q", text)
+			}
+			if !strings.Contains(text, tc.want) {
+				t.Fatalf("expected %q in %q", tc.want, text)
+			}
+		})
+	}
+}

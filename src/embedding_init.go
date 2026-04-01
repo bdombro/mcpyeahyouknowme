@@ -17,13 +17,12 @@ func onnxLibPath() string {
 	return "/usr/local/lib/libonnxruntime.dylib"
 }
 
-// NewEmbedder creates an Embedder by looking for the ONNX runtime library
-// in the app-local lib directory. Returns (nil, nil) if ONNX is not installed,
-// allowing the caller to fall back to BM25-only search.
+// NewEmbedder creates an Embedder by looking for the ONNX runtime library.
+// Returns an error if ONNX Runtime is not installed.
 func NewEmbedder(cacheDir string) (emb *Embedder, err error) {
 	libPath := onnxLibPath()
 	if _, statErr := os.Stat(libPath); os.IsNotExist(statErr) {
-		return nil, nil
+		return nil, fmt.Errorf("ONNX Runtime not found at %s (install with: brew install onnxruntime)", libPath)
 	}
 
 	os.Setenv("ONNX_PATH", libPath)

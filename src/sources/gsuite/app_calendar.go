@@ -234,21 +234,21 @@ func parseEventTimes(ev *calendar.Event) (start, end string, allDay int) {
 }
 
 func registerCalendarTools(src *Source, prefix string, s toolAdder) {
-	s.AddTool(mcp.NewTool(prefix+"calendar_search",
-		mcp.WithDescription("Search across Google Calendar events"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"calendar_search",
+		core.ToolDescription("Search across Google Calendar events", `{"query":"dentist","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleCalendarSearch(src, ctx, req)
 	})
-	s.AddTool(mcp.NewTool(prefix+"calendar_get_event",
-		mcp.WithDescription("Get details of a specific calendar event by ID"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"calendar_get_event",
+		core.ToolDescription("Get details of a specific calendar event by ID", `{"event_id":"abc123"}`),
 		mcp.WithString("event_id", mcp.Required(), mcp.Description("Calendar event ID")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleCalendarGetEvent(src, ctx, req)
 	})
-	s.AddTool(mcp.NewTool(prefix+"calendar_list_upcoming",
-		mcp.WithDescription("List upcoming calendar events"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"calendar_list_upcoming",
+		core.ToolDescription("List upcoming calendar events", `{"days":14,"limit":10}`),
 		mcp.WithNumber("days", mcp.Description("Number of days ahead to look (default 7)")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 20)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
@@ -257,7 +257,10 @@ func registerCalendarTools(src *Source, prefix string, s toolAdder) {
 }
 
 func handleCalendarSearch(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, _ := req.RequireString("query")
+	query, errResult := core.RequireStringArgument(req, "query", `{"query":"dentist","limit":5}`)
+	if errResult != nil {
+		return errResult, nil
+	}
 	limit := core.IntArg(req.GetArguments(), "limit", 10)
 	if src.db == nil {
 		return mcp.NewToolResultText("[]"), nil
@@ -289,7 +292,10 @@ func handleCalendarSearch(src *Source, ctx context.Context, req mcp.CallToolRequ
 }
 
 func handleCalendarGetEvent(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	eventID, _ := req.RequireString("event_id")
+	eventID, errResult := core.RequireStringArgument(req, "event_id", `{"event_id":"abc123"}`)
+	if errResult != nil {
+		return errResult, nil
+	}
 	if src.db == nil {
 		return mcp.NewToolResultError("Database not available"), nil
 	}

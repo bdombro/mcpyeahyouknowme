@@ -199,15 +199,15 @@ func deleteOrphanedRowsByResourceName(db *sql.DB, table string, remoteIDs map[st
 }
 
 func registerContactsTools(src *Source, prefix string, s toolAdder) {
-	s.AddTool(mcp.NewTool(prefix+"contacts_search",
-		mcp.WithDescription("Search across Google Contacts"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"contacts_search",
+		core.ToolDescription("Search across Google Contacts", `{"query":"Alice Smith","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleContactsSearch(src, ctx, req)
 	})
-	s.AddTool(mcp.NewTool(prefix+"contacts_list",
-		mcp.WithDescription("List all contacts"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"contacts_list",
+		core.ToolDescription("List all contacts", `{"limit":25}`),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 50)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleContactsList(src, ctx, req)
@@ -215,7 +215,10 @@ func registerContactsTools(src *Source, prefix string, s toolAdder) {
 }
 
 func handleContactsSearch(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, _ := req.RequireString("query")
+	query, errResult := core.RequireStringArgument(req, "query", `{"query":"Alice Smith","limit":5}`)
+	if errResult != nil {
+		return errResult, nil
+	}
 	limit := core.IntArg(req.GetArguments(), "limit", 10)
 	if src.db == nil {
 		return mcp.NewToolResultText("[]"), nil

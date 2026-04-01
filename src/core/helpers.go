@@ -62,6 +62,101 @@ func JsonResult(v interface{}) (*mcp.CallToolResult, error) {
 	return mcp.NewToolResultText(string(data)), nil
 }
 
+// ToolDescription appends a compact example argument shape when provided.
+func ToolDescription(summary, example string) string {
+	if example == "" {
+		return summary
+	}
+	return fmt.Sprintf("%s Example arguments: %s", summary, example)
+}
+
+// NewReadOnlyTool creates a read-only MCP tool with accurate annotations.
+func NewReadOnlyTool(name, description string, opts ...mcp.ToolOption) mcp.Tool {
+	toolOpts := []mcp.ToolOption{
+		mcp.WithDescription(description),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+	}
+	return mcp.NewTool(name, append(toolOpts, opts...)...)
+}
+
+// NewMutatingTool creates a mutating MCP tool with accurate annotations.
+func NewMutatingTool(name, description string, opts ...mcp.ToolOption) mcp.Tool {
+	toolOpts := []mcp.ToolOption{
+		mcp.WithDescription(description),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(true),
+		mcp.WithIdempotentHintAnnotation(false),
+	}
+	return mcp.NewTool(name, append(toolOpts, opts...)...)
+}
+
+func missingArgumentResult(key, example string) *mcp.CallToolResult {
+	msg := fmt.Sprintf("%s parameter is required", key)
+	if example != "" {
+		msg = fmt.Sprintf("%s; call with arguments: %s", msg, example)
+	}
+	return mcp.NewToolResultError(msg)
+}
+
+// RequireStringArgument returns an actionable MCP error when a required string
+// argument is missing or not a string.
+func RequireStringArgument(req mcp.CallToolRequest, key, example string) (string, *mcp.CallToolResult) {
+	value, err := req.RequireString(key)
+	if err == nil {
+		return value, nil
+	}
+	return "", missingArgumentResult(key, example)
+}
+
+// RequireNumberArgument returns an actionable MCP error when a required number
+// argument is missing or not numeric.
+func RequireNumberArgument(req mcp.CallToolRequest, key, example string) (float64, *mcp.CallToolResult) {
+	value, ok := req.GetArguments()[key]
+	if !ok {
+		return 0, missingArgumentResult(key, example)
+	}
+	switch n := value.(type) {
+	case float64:
+		return n, nil
+	case float32:
+		return float64(n), nil
+	case int:
+		return float64(n), nil
+	case int32:
+		return float64(n), nil
+	case int64:
+		return float64(n), nil
+	default:
+		return 0, missingArgumentResult(key, example)
+	}
+}
+
+// RequireIntArgument returns an actionable MCP error when a required integer
+// argument is missing or not numeric.
+func RequireIntArgument(req mcp.CallToolRequest, key, example string) (int, *mcp.CallToolResult) {
+	value, errResult := RequireNumberArgument(req, key, example)
+	if errResult != nil {
+		return 0, errResult
+	}
+	return int(value), nil
+}
+
+// RequireBoolArgument returns an actionable MCP error when a required boolean
+// argument is missing or not a bool.
+func RequireBoolArgument(req mcp.CallToolRequest, key, example string) (bool, *mcp.CallToolResult) {
+	value, ok := req.GetArguments()[key]
+	if !ok {
+		return false, missingArgumentResult(key, example)
+	}
+	b, ok := value.(bool)
+	if !ok {
+		return false, missingArgumentResult(key, example)
+	}
+	return b, nil
+}
+
 // RegisterKnownSource records a source name so config normalization can keep a
 // stable entry for it even when disabled.
 func RegisterKnownSource(name string) {

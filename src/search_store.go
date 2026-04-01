@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -17,12 +19,13 @@ type SearchEntry = core.SearchEntry
 
 // SearchResult is returned by the global search MCP tool.
 type SearchResult struct {
-	Source      string          `json:"source"`
-	ContentType string          `json:"content_type"`
-	Title       string          `json:"title"`
-	Content     string          `json:"content"`
-	Score       float64         `json:"score"`
-	Metadata    json.RawMessage `json:"metadata,omitempty"`
+	Source       string          `json:"source"`
+	ContentType  string          `json:"content_type"`
+	Title        string          `json:"title"`
+	Content      string          `json:"content"`
+	Score        float64         `json:"score"`
+	Metadata     json.RawMessage `json:"metadata,omitempty"`
+	MetadataHint string          `json:"metadata_hint,omitempty"`
 }
 
 // Hierarchy weights: name matches are most valuable, then participants, then content.
@@ -58,6 +61,30 @@ var hierarchyWeights = map[string]float64{
 	"presentation_content": 1.0,
 }
 
+var searchMetadataHints = map[string]string{
+	"whatsapp:chat_name":                `metadata contains {"jid","is_group"}`,
+	"whatsapp:participant":              `metadata contains {"jid","groups"}; use jid with whatsapp_get_chat`,
+	"whatsapp:message":                  `metadata contains {"message_id","chat_jid","sender","timestamp"}; use message_id with whatsapp_get_message_context`,
+	"gsuite:document_title":             `metadata contains {"document_id","modified_time"}; use document_id with gsuite_docs_get_document`,
+	"gsuite:document_owner":             `metadata contains {"document_id","modified_time"}; use document_id with gsuite_docs_get_document`,
+	"gsuite:document_content":           `metadata contains {"document_id","modified_time"}; use document_id with gsuite_docs_get_document`,
+	"gsuite:spreadsheet_title":          `metadata contains {"spreadsheet_id","modified_time"}; use spreadsheet_id with gsuite_sheets_get_spreadsheet`,
+	"gsuite:spreadsheet_owner":          `metadata contains {"spreadsheet_id","modified_time"}; use spreadsheet_id with gsuite_sheets_get_spreadsheet`,
+	"gsuite:spreadsheet_content":        `metadata contains {"spreadsheet_id","modified_time"}; use spreadsheet_id with gsuite_sheets_get_spreadsheet`,
+	"gsuite:email_thread_subject":       `metadata contains {"thread_id","participants","last_date"}; use thread_id with gsuite_gmail_get_thread`,
+	"gsuite:email_thread_participants":  `metadata contains {"thread_id","participants","last_date"}; use thread_id with gsuite_gmail_get_thread`,
+	"gsuite:email_thread_content":       `metadata contains {"thread_id","participants","last_date"}; use thread_id with gsuite_gmail_get_thread`,
+	"gsuite:email_subject":              `metadata contains {"message_id","from","date","folder"}; use message_id with gsuite_gmail_get_message`,
+	"gsuite:email_content":              `metadata contains {"message_id","from","date","folder"}; use message_id with gsuite_gmail_get_message`,
+	"gsuite:calendar_event":             `metadata contains {"event_id","start_time","end_time"}; use event_id with gsuite_calendar_get_event`,
+	"gsuite:calendar_event_description": `metadata contains {"event_id","start_time","end_time"}; use event_id with gsuite_calendar_get_event`,
+	"gsuite:task":                       `metadata contains {"task_id","status","due"}`,
+	"gsuite:contact":                    `metadata contains {"resource_name","emails","phones"}`,
+	"gsuite:presentation_title":         `metadata contains {"presentation_id","modified_time"}; use presentation_id with gsuite_slides_get_presentation`,
+	"gsuite:presentation_owner":         `metadata contains {"presentation_id","modified_time"}; use presentation_id with gsuite_slides_get_presentation`,
+	"gsuite:presentation_content":       `metadata contains {"presentation_id","modified_time"}; use presentation_id with gsuite_slides_get_presentation`,
+}
+
 const rrfK = 60 // constant for Reciprocal Rank Fusion
 
 // EmbedderInterface abstracts embedding operations for testability.
@@ -70,7 +97,7 @@ type EmbedderInterface interface {
 // SearchStore manages the combined search index across all data sources.
 type SearchStore struct {
 	db       *sql.DB
-	embedder EmbedderInterface // nil = BM25-only mode
+	embedder EmbedderInterface
 }
 
 // Close releases the search database connection.
@@ -138,23 +165,45 @@ func (s *SearchStore) rebuildFTSIfNeeded() {
 	}
 }
 
-// computeEmbeddings generates embeddings for entries that don't have one yet.
+const embeddingChunkSize = 200
+
+// computeEmbeddings generates embeddings for entries that don't have one yet,
+// processing in chunks with per-chunk commits and adaptive batch sizing.
 func (s *SearchStore) computeEmbeddings() error {
+	batchSize := adaptiveBatchSize()
+	for {
+		n, err := s.embedChunk(batchSize, embeddingChunkSize)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+type pendingEmbed struct {
+	id   int64
+	text string
+}
+
+// embedChunk processes the next page of entries missing embeddings.
+// Returns the number of entries found (0 means done).
+func (s *SearchStore) embedChunk(batchSize, limit int) (int, error) {
 	rows, err := s.db.Query(`
 		SELECT e.id, e.title, e.content
 		FROM search_entries e
 		LEFT JOIN search_embeddings se ON e.id = se.entry_id
-		WHERE se.entry_id IS NULL`)
+		WHERE se.entry_id IS NULL
+		ORDER BY e.id
+		LIMIT ?`, limit)
 	if err != nil { // nocov
-		return err
+		return 0, err
 	}
 	defer rows.Close()
 
-	type pending struct {
-		id   int64
-		text string
-	}
-	var batch []pending
+	var chunk []pendingEmbed
 	for rows.Next() {
 		var id int64
 		var title, content string
@@ -168,50 +217,52 @@ func (s *SearchStore) computeEmbeddings() error {
 			}
 			text += content
 		}
-		// Skip empty texts to avoid tokenizer crashes
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
-		batch = append(batch, pending{id: id, text: text})
+		chunk = append(chunk, pendingEmbed{id: id, text: text})
 	}
 
-	if len(batch) == 0 {
-		return nil
+	if len(chunk) == 0 {
+		return 0, nil
 	}
 
-	texts := make([]string, len(batch))
-	for i, p := range batch {
+	texts := make([]string, len(chunk))
+	for i, p := range chunk {
 		texts[i] = p.text
 	}
 
-	embeddings, err := s.embedder.EmbedTexts(texts, 64)
+	embeddings, err := s.embedder.EmbedTexts(texts, batchSize)
 	if err != nil {
-		return fmt.Errorf("embed texts: %w", err)
+		return 0, fmt.Errorf("embed texts: %w", err)
 	}
 
 	tx, err := s.db.Begin()
 	if err != nil { // nocov
-		return err
+		return 0, err
 	}
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare("INSERT OR REPLACE INTO search_embeddings (entry_id, embedding) VALUES (?, ?)")
 	if err != nil { // nocov
-		return err
+		return 0, err
 	}
 	defer stmt.Close()
 
 	for i, emb := range embeddings {
-		// Skip entries that had empty text (nil embedding)
-		if emb == nil || len(emb) == 0 {
-			continue
+		blob := []byte{}
+		if emb != nil && len(emb) > 0 {
+			blob = float32sToBytes(emb)
 		}
-		blob := float32sToBytes(emb)
-		if _, err := stmt.Exec(batch[i].id, blob); err != nil { // nocov
-			return err
+		if _, err := stmt.Exec(chunk[i].id, blob); err != nil { // nocov
+			return 0, err
 		}
 	}
-	return tx.Commit()
+
+	if err := tx.Commit(); err != nil { // nocov
+		return 0, err
+	}
+	return len(chunk), nil
 }
 
 // UpdateSourceTimestamp records when a source was last indexed.
@@ -341,6 +392,9 @@ func (s *SearchStore) vectorSearch(query string, limit int, sourceFilter, typeFi
 		if rows.Scan(&id, &blob) != nil { // nocov
 			continue
 		}
+		if len(blob) == 0 {
+			continue
+		}
 		emb := bytesToFloat32s(blob)
 		sim := cosineSimilarity(queryEmb, emb)
 		all = append(all, scored{id: id, score: sim})
@@ -419,12 +473,13 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 		}
 
 		resultMap[id] = SearchResult{
-			Source:      source,
-			ContentType: contentType,
-			Title:       title,
-			Content:     content,
-			Score:       scoreMap[id] * weight,
-			Metadata:    meta,
+			Source:       source,
+			ContentType:  contentType,
+			Title:        title,
+			Content:      content,
+			Score:        scoreMap[id] * weight,
+			Metadata:     meta,
+			MetadataHint: searchMetadataHint(source, contentType),
 		}
 	}
 
@@ -437,6 +492,41 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 
 	sort.Slice(results, func(i, j int) bool { return results[i].Score > results[j].Score })
 	return results, nil
+}
+
+func searchMetadataHint(source, contentType string) string {
+	return searchMetadataHints[source+":"+contentType]
+}
+
+// SearchIndexStats holds summary statistics for the search index.
+type SearchIndexStats struct {
+	Entries  int
+	Embedded int
+}
+
+// IndexStats returns summary statistics about the search index.
+func (s *SearchStore) IndexStats() SearchIndexStats {
+	stats := SearchIndexStats{}
+	s.db.QueryRow("SELECT COUNT(*) FROM search_entries").Scan(&stats.Entries)
+	s.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&stats.Embedded)
+	return stats
+}
+
+// ReadOnlySearchIndexStats opens search.db read-only and returns index stats
+// without needing an embedder. Returns zero stats if the DB doesn't exist.
+func ReadOnlySearchIndexStats(dir string) SearchIndexStats {
+	dbPath := filepath.Join(dir, "search.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return SearchIndexStats{}
+	}
+	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro", dbPath))
+	if err != nil { // nocov
+		return SearchIndexStats{}
+	}
+	defer db.Close()
+
+	store := &SearchStore{db: db}
+	return store.IndexStats()
 }
 
 // ---------- Vector math helpers ----------

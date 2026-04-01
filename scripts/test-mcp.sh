@@ -57,9 +57,12 @@ main() {
 		exit 1
 	fi
 
-	step_1_run_case "Search for 'Meeeeee'" "search" '{"query":"Meeeeee","limit":5}'
-	step_1_run_case "Search for 'Missing Cat'" "search" '{"query":"Missing Cat","limit":5}'
-	step_1_run_case "Google Places search for 'Blue Bottle Coffee Oakland'" "google_places_search_places" '{"query":"Blue Bottle Coffee Oakland","max_results":1}'
+	# step_1_run_case "Search for 'Meeeeee'" "search" '{"query":"Meeeeee","limit":5}'
+	# step_1_run_case "Search for 'Missing Cat'" "search" '{"query":"Missing Cat","limit":5}'
+	# step_1_run_case "Search for 'Crashed ship' - should match shipwreck" "search" '{"query":"Crashed ship","limit":5}'
+	# step_1_run_case "Search for 'malt beverage' - should match beer" "search" '{"query":"malt beverage","limit":5}'
+	step_1_run_case "Search for 'squarespace holidays'" "search" '{"query":"squarespace holidays","limit":5}'
+	# step_1_run_case "Google Places search for 'Blue Bottle Coffee Oakland'" "google_places_search_places" '{"query":"Blue Bottle Coffee Oakland","max_results":1}'
 }
 
 main

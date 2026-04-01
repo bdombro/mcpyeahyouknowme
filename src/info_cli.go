@@ -40,11 +40,13 @@ func renderInfo() string {
 
 	writeLine("\u2699\ufe0f  Core Daemon")
 	plist := plistPath()
+	daemonRunning := false
 	if _, err := os.Stat(plist); err == nil {
 		ctxLC, cancelLC := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancelLC()
 		out, err := exec.CommandContext(ctxLC, "launchctl", "list", plistName).Output()
 		if err == nil && len(out) > 0 {
+			daemonRunning = true
 			writeLine("   Status:     running")
 		} else {
 			writeLine("   Status:     installed (not running)")
@@ -70,11 +72,37 @@ func renderInfo() string {
 	}
 	writeLine("")
 
+	writeSearchIndexSection(&b, dDir, daemonRunning)
+
 	writeSourceSection(&b, "\U0001f4f2 WhatsApp", "whatsapp", dDir, whatsapp.InfoLines)
 	writeSourceSection(&b, "\U0001f537 Google Suite", "gsuite", dDir, gsuite.InfoLines)
 	writeSourceSection(&b, "\U0001f4cd Google Places", "google_places", dDir, google_places.InfoLines)
 
 	return b.String()
+}
+
+func writeSearchIndexSection(b *strings.Builder, dataDir string, daemonRunning bool) {
+	fmt.Fprintln(b, "\U0001f50d Search Index")
+	stats := ReadOnlySearchIndexStats(dataDir)
+	if stats.Entries == 0 && stats.Embedded == 0 {
+		fmt.Fprintln(b, "   Status:     not indexed (start daemon or run 'mcpyeahyouknowme reindex')")
+		fmt.Fprintln(b)
+		return
+	}
+	pct := 0
+	if stats.Entries > 0 {
+		pct = stats.Embedded * 100 / stats.Entries
+	}
+	fmt.Fprintf(b, "   Entries:    %d\n", stats.Entries)
+	fmt.Fprintf(b, "   Indexed:    %d (%d%%)\n", stats.Embedded, pct)
+	if stats.Embedded < stats.Entries {
+		if daemonRunning {
+			fmt.Fprintln(b, "   Status:     indexing in progress")
+		} else {
+			fmt.Fprintln(b, "   Status:     daemon not running")
+		}
+	}
+	fmt.Fprintln(b)
 }
 
 func writeSourceSection(b *strings.Builder, title, sourceName, dataDir string, infoLines func(string) []string) {

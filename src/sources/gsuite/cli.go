@@ -341,8 +341,7 @@ func formatSyncStatus(syncStatus string, lastSync time.Time, count int) string {
 	if lastSync.IsZero() {
 		return fmt.Sprintf("%d synced", count)
 	}
-	ago := time.Since(lastSync).Truncate(time.Second)
-	return fmt.Sprintf("%d synced — idle (last sync: %s ago)", count, ago)
+	return fmt.Sprintf("%d synced", count)
 }
 
 func generateCodeVerifier() string {

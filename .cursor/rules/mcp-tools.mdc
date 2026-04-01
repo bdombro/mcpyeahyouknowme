@@ -1,0 +1,17 @@
+---
+description: MCP tool resilience conventions for Go handlers and tests
+globs: src/**/*.go
+alwaysApply: false
+---
+
+# MCP Tool Resilience
+
+When adding or changing MCP tools:
+
+- Use `core.NewReadOnlyTool()` or `core.NewMutatingTool()` instead of raw `mcp.NewTool()`.
+- Use `core.ToolDescription()` with one compact JSON `arguments` example.
+- For required args, return actionable retryable errors via `core.RequireStringArgument()`, `core.RequireNumberArgument()`, `core.RequireIntArgument()`, or `core.RequireBoolArgument()`.
+- Add or update tests for both success and required-argument failure paths.
+- For important tools, verify `tools/list` still exposes the expected schema and annotations.
+
+Keep descriptions short. Put follow-up usage detail in response payloads or docs, not long tool descriptions.

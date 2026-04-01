@@ -40,6 +40,15 @@ func (n *nilSlotEmbedder) EmbedTexts(texts []string, batchSize int) ([][]float32
 	}
 	return out, nil
 }
+
+func TestSearchMetadataHint_knownAndUnknown(t *testing.T) {
+	if got := searchMetadataHint("whatsapp", "message"); !strings.Contains(got, "message_id") {
+		t.Fatalf("expected whatsapp message hint, got %q", got)
+	}
+	if got := searchMetadataHint("unknown", "type"); got != "" {
+		t.Fatalf("expected empty hint for unknown content, got %q", got)
+	}
+}
 func (n *nilSlotEmbedder) EmbedQuery(query string) ([]float32, error) {
 	return n.mock.hashEmbed(query), nil
 }
@@ -608,9 +617,31 @@ func TestSearchStore_computeEmbeddings_nilEmbedding(t *testing.T) {
 
 	var count int
 	store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&count)
-	expected := len(entries) - 1
+	expected := len(entries)
 	if count != expected {
-		t.Errorf("expected %d embeddings (first nil skipped), got %d", expected, count)
+		t.Errorf("expected %d embedding rows including empty sentinel, got %d", expected, count)
+	}
+
+	var emptyCount int
+	store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings WHERE length(embedding) = 0").Scan(&emptyCount)
+	if emptyCount != 1 {
+		t.Errorf("expected 1 empty sentinel embedding row, got %d", emptyCount)
+	}
+}
+
+func TestSearchStore_Search_skipsEmptyEmbeddingSentinel(t *testing.T) {
+	emb := &nilSlotEmbedder{mock: &mockEmbedder{dim: 16}}
+	store := newTestSearchStore(t, emb)
+	if err := store.IndexEntries(seedSearchEntries()); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
+	results, err := store.Search("Family", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected results with empty sentinel embedding present")
 	}
 }
 
@@ -659,6 +690,86 @@ func TestCosineSimilarity_zeroVector(t *testing.T) {
 	sim := cosineSimilarity(a, b)
 	if sim != 0 {
 		t.Errorf("expected 0 for zero vector, got %f", sim)
+	}
+}
+
+// ---------- Chunked embeddings ----------
+
+func TestSearchStore_chunkedEmbeddings_commitsPerChunk(t *testing.T) {
+	emb := &mockEmbedder{dim: 8}
+	store := newTestSearchStore(t, emb)
+
+	entries := make([]SearchEntry, embeddingChunkSize*2+25)
+	for i := range entries {
+		entries[i] = SearchEntry{
+			Source: "test", SourceID: fmt.Sprintf("chunk%d", i),
+			ContentType: "message", Title: fmt.Sprintf("doc %d", i),
+			Content: fmt.Sprintf("content number %d for chunked test", i),
+		}
+	}
+	store.IndexEntries(entries)
+
+	var count int
+	store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&count)
+	if count != len(entries) {
+		t.Errorf("expected %d embeddings, got %d", len(entries), count)
+	}
+}
+
+func TestSearchStore_embedChunk_returnsZeroWhenDone(t *testing.T) {
+	emb := &mockEmbedder{dim: 8}
+	store := newTestSearchStore(t, emb)
+	store.IndexEntries(seedSearchEntries())
+
+	n, err := store.embedChunk(16, embeddingChunkSize)
+	if err != nil {
+		t.Fatalf("embedChunk: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 (all already embedded), got %d", n)
+	}
+}
+
+// ---------- IndexStats ----------
+
+func TestSearchStore_IndexStats(t *testing.T) {
+	emb := &mockEmbedder{dim: 8}
+	store := newTestSearchStore(t, emb)
+	entries := seedSearchEntries()
+	store.IndexEntries(entries)
+
+	stats := store.IndexStats()
+	if stats.Entries != len(entries) {
+		t.Errorf("Entries = %d, want %d", stats.Entries, len(entries))
+	}
+	if stats.Embedded != len(entries) {
+		t.Errorf("Embedded = %d, want %d", stats.Embedded, len(entries))
+	}
+}
+
+func TestReadOnlySearchIndexStats_noDB(t *testing.T) {
+	stats := ReadOnlySearchIndexStats(t.TempDir())
+	if stats.Entries != 0 {
+		t.Errorf("expected 0 entries for non-existent DB, got %d", stats.Entries)
+	}
+}
+
+func TestReadOnlySearchIndexStats_withDB(t *testing.T) {
+	dir := t.TempDir()
+	emb := &mockEmbedder{dim: 8}
+	store, err := NewSearchStore(dir, emb)
+	if err != nil {
+		t.Fatalf("NewSearchStore: %v", err)
+	}
+	store.IndexEntries(seedSearchEntries())
+	store.Close()
+
+	stats := ReadOnlySearchIndexStats(dir)
+	if stats.Entries == 0 {
+		t.Error("expected non-zero entries")
+	}
+	if stats.Embedded == 0 {
+		t.Error("expected non-zero embedded")
 	}
 }
 

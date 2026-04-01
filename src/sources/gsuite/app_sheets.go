@@ -184,21 +184,21 @@ func extractSpreadsheetText(ss *sheets.Spreadsheet) string {
 }
 
 func registerSheetsTools(src *Source, prefix string, s toolAdder) {
-	s.AddTool(mcp.NewTool(prefix+"sheets_search",
-		mcp.WithDescription("Search across all Google Sheets"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"sheets_search",
+		core.ToolDescription("Search across all Google Sheets", `{"query":"headcount","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleSheetsSearch(src, ctx, req)
 	})
-	s.AddTool(mcp.NewTool(prefix+"sheets_get_spreadsheet",
-		mcp.WithDescription("Get full content of a specific Google Sheet by ID"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"sheets_get_spreadsheet",
+		core.ToolDescription("Get full content of a specific Google Sheet by ID", `{"spreadsheet_id":"1AbcDefGhIj"}`),
 		mcp.WithString("spreadsheet_id", mcp.Required(), mcp.Description("Google Spreadsheet ID")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleSheetsGetSpreadsheet(src, ctx, req)
 	})
-	s.AddTool(mcp.NewTool(prefix+"sheets_list_recent",
-		mcp.WithDescription("List recently modified Google Sheets"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"sheets_list_recent",
+		core.ToolDescription("List recently modified Google Sheets", `{"limit":10}`),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 20)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleSheetsListRecent(src, ctx, req)
@@ -206,7 +206,10 @@ func registerSheetsTools(src *Source, prefix string, s toolAdder) {
 }
 
 func handleSheetsSearch(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, _ := req.RequireString("query")
+	query, errResult := core.RequireStringArgument(req, "query", `{"query":"headcount","limit":5}`)
+	if errResult != nil {
+		return errResult, nil
+	}
 	limit := core.IntArg(req.GetArguments(), "limit", 10)
 	if src.db == nil {
 		return mcp.NewToolResultText("[]"), nil
@@ -237,7 +240,10 @@ func handleSheetsSearch(src *Source, ctx context.Context, req mcp.CallToolReques
 }
 
 func handleSheetsGetSpreadsheet(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	sheetID, _ := req.RequireString("spreadsheet_id")
+	sheetID, errResult := core.RequireStringArgument(req, "spreadsheet_id", `{"spreadsheet_id":"1AbcDefGhIj"}`)
+	if errResult != nil {
+		return errResult, nil
+	}
 	if src.db == nil {
 		return mcp.NewToolResultError("Database not available"), nil
 	}

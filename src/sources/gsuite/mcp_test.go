@@ -545,6 +545,37 @@ func TestSlidesListRecent(t *testing.T) {
 	}
 }
 
+func TestRequiredArgs_Missing(t *testing.T) {
+	s := buildMCPServer(t)
+	tests := []struct {
+		name string
+		tool string
+		want string
+	}{
+		{"docs_search", "gsuite_docs_search", "query parameter is required"},
+		{"docs_get_document", "gsuite_docs_get_document", "document_id parameter is required"},
+		{"sheets_search", "gsuite_sheets_search", "query parameter is required"},
+		{"sheets_get_spreadsheet", "gsuite_sheets_get_spreadsheet", "spreadsheet_id parameter is required"},
+		{"gmail_search", "gsuite_gmail_search", "query parameter is required"},
+		{"gmail_get_message", "gsuite_gmail_get_message", "message_id parameter is required"},
+		{"gmail_get_thread", "gsuite_gmail_get_thread", "thread_id parameter is required"},
+		{"calendar_search", "gsuite_calendar_search", "query parameter is required"},
+		{"calendar_get_event", "gsuite_calendar_get_event", "event_id parameter is required"},
+		{"tasks_search", "gsuite_tasks_search", "query parameter is required"},
+		{"contacts_search", "gsuite_contacts_search", "query parameter is required"},
+		{"slides_search", "gsuite_slides_search", "query parameter is required"},
+		{"slides_get_presentation", "gsuite_slides_get_presentation", "presentation_id parameter is required"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			text := callTool(t, s, tc.tool, map[string]interface{}{})
+			if !strings.Contains(text, tc.want) {
+				t.Fatalf("expected %q in %q", tc.want, text)
+			}
+		})
+	}
+}
+
 // --- DisabledApp tests ---
 
 func TestDisabledApp_ToolsNotRegistered(t *testing.T) {

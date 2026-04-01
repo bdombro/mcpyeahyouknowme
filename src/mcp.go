@@ -4,23 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/registry"
 
 	"github.com/mark3labs/mcp-go/server"
 )
-
-type activeSource struct {
-	desc registry.Descriptor
-	src  core.DataSource
-}
-
-type sourceIndexer interface {
-	IndexEntries(entries []core.SearchEntry) error
-	UpdateSourceTimestamp(source string, ts time.Time)
-}
 
 func runMcp() {
 	dir := core.DataDir()
@@ -60,33 +49,17 @@ func runMcp() {
 
 	embedder, err := NewEmbedder(filepath.Join(dir, "models"))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: embedding init failed: %v (falling back to BM25-only)\n", err)
-		embedder = nil
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
-	if embedder == nil {
-		fmt.Fprintf(os.Stderr, "Info: ONNX Runtime not found; semantic search disabled. Run 'brew install onnxruntime' to enable.\n")
-	}
+	defer embedder.Close()
 
-	var indexEmbedder EmbedderInterface
-	if os.Getenv("MCP_ENABLE_EMBEDDINGS") == "1" {
-		indexEmbedder = embedder
-	} else {
-		if embedder != nil {
-			fmt.Fprintf(os.Stderr, "Info: Embeddings disabled during indexing (use MCP_ENABLE_EMBEDDINGS=1 to enable)\n")
-		}
-		indexEmbedder = nil
-	}
-	if embedder != nil {
-		defer embedder.Close()
-	}
-
-	searchStore, err := NewSearchStore(dir, indexEmbedder)
+	searchStore, err := NewSearchStore(dir, embedder)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: search index unavailable: %v\n", err)
 	}
 	if searchStore != nil {
 		defer searchStore.Close()
-		indexSources(searchStore, activeSources)
 	}
 
 	s := server.NewMCPServer(
@@ -106,24 +79,5 @@ func runMcp() {
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
 		os.Exit(1)
-	}
-}
-
-// indexSources populates the search index from all data sources.
-func indexSources(store sourceIndexer, sources []activeSource) {
-	for _, active := range sources {
-		if !active.desc.IndexGlobally {
-			continue
-		}
-		entries, err := active.src.SearchEntries()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to get search entries from %s: %v\n", active.src.Name(), err)
-			continue
-		}
-		if err := store.IndexEntries(entries); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to index %s entries: %v\n", active.src.Name(), err)
-			continue
-		}
-		store.UpdateSourceTimestamp(active.src.Name(), time.Now())
 	}
 }

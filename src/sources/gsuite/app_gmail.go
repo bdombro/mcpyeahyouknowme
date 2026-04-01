@@ -472,35 +472,35 @@ func primaryFolder(labelIDs []string) string {
 }
 
 func registerGmailTools(src *Source, prefix string, s toolAdder) {
-	s.AddTool(mcp.NewTool(prefix+"gmail_search",
-		mcp.WithDescription("Search across all Gmail messages (excluding trash)"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"gmail_search",
+		core.ToolDescription("Search across all Gmail messages (excluding trash)", `{"query":"invoice overdue","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleGmailSearch(src, ctx, req)
 	})
-	s.AddTool(mcp.NewTool(prefix+"gmail_get_message",
-		mcp.WithDescription("Get full content of a specific Gmail message by ID"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"gmail_get_message",
+		core.ToolDescription("Get full content of a specific Gmail message by ID", `{"message_id":"190a2b3c4d"}`),
 		mcp.WithString("message_id", mcp.Required(), mcp.Description("Gmail message ID")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleGmailGetMessage(src, ctx, req)
 	})
-	s.AddTool(mcp.NewTool(prefix+"gmail_get_thread",
-		mcp.WithDescription("Get a reconstructed Gmail thread by thread ID"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"gmail_get_thread",
+		core.ToolDescription("Get a reconstructed Gmail thread by thread ID", `{"thread_id":"190a2b3c4d","include_raw":false}`),
 		mcp.WithString("thread_id", mcp.Required(), mcp.Description("Gmail thread ID")),
 		mcp.WithBoolean("include_raw", mcp.Description("Include raw unstripped message bodies")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleGmailGetThread(src, ctx, req)
 	})
-	s.AddTool(mcp.NewTool(prefix+"gmail_list_recent",
-		mcp.WithDescription("List recent Gmail messages"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"gmail_list_recent",
+		core.ToolDescription("List recent Gmail messages", `{"folder":"INBOX","limit":10}`),
 		mcp.WithString("folder", mcp.Description("Filter by folder (INBOX, SENT, DRAFT, etc.)")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 20)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleGmailListRecent(src, ctx, req)
 	})
-	s.AddTool(mcp.NewTool(prefix+"gmail_download_attachment",
-		mcp.WithDescription("Download a Gmail attachment on-demand (not cached locally)"),
+	s.AddTool(core.NewReadOnlyTool(prefix+"gmail_download_attachment",
+		core.ToolDescription("Download a Gmail attachment on-demand (not cached locally)", `{"message_id":"190a2b3c4d","attachment_id":"ANGjdJ..."}`),
 		mcp.WithString("message_id", mcp.Required(), mcp.Description("Gmail message ID")),
 		mcp.WithString("attachment_id", mcp.Required(), mcp.Description("Attachment ID")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
@@ -509,7 +509,10 @@ func registerGmailTools(src *Source, prefix string, s toolAdder) {
 }
 
 func handleGmailSearch(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, _ := req.RequireString("query")
+	query, errResult := core.RequireStringArgument(req, "query", `{"query":"invoice overdue","limit":5}`)
+	if errResult != nil {
+		return errResult, nil
+	}
 	limit := core.IntArg(req.GetArguments(), "limit", 10)
 	if src.db == nil {
 		return mcp.NewToolResultText("[]"), nil
@@ -542,7 +545,10 @@ func handleGmailSearch(src *Source, ctx context.Context, req mcp.CallToolRequest
 }
 
 func handleGmailGetMessage(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	msgID, _ := req.RequireString("message_id")
+	msgID, errResult := core.RequireStringArgument(req, "message_id", `{"message_id":"190a2b3c4d"}`)
+	if errResult != nil {
+		return errResult, nil
+	}
 	if src.db == nil {
 		return mcp.NewToolResultError("Database not available"), nil
 	}
@@ -566,7 +572,10 @@ func handleGmailGetMessage(src *Source, ctx context.Context, req mcp.CallToolReq
 }
 
 func handleGmailGetThread(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	threadID, _ := req.RequireString("thread_id")
+	threadID, errResult := core.RequireStringArgument(req, "thread_id", `{"thread_id":"190a2b3c4d","include_raw":false}`)
+	if errResult != nil {
+		return errResult, nil
+	}
 	includeRaw := core.BoolArg(req.GetArguments(), "include_raw", false)
 	if src.db == nil {
 		return mcp.NewToolResultError("Database not available"), nil
@@ -657,8 +666,14 @@ func handleGmailListRecent(src *Source, ctx context.Context, req mcp.CallToolReq
 // handleGmailDownloadAttachment fetches an attachment on-demand via the Gmail API.
 // This is an intentional exception to the "reads from local DB only" rule.
 func handleGmailDownloadAttachment(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-	msgID, _ := req.RequireString("message_id")
-	attachID, _ := req.RequireString("attachment_id")
+	msgID, errResult := core.RequireStringArgument(req, "message_id", `{"message_id":"190a2b3c4d","attachment_id":"ANGjdJ..."}`)
+	if errResult != nil {
+		return errResult, nil
+	}
+	attachID, errResult := core.RequireStringArgument(req, "attachment_id", `{"message_id":"190a2b3c4d","attachment_id":"ANGjdJ..."}`)
+	if errResult != nil {
+		return errResult, nil
+	}
 	if !src.isAuthenticated() {
 		return mcp.NewToolResultError("Not authenticated — run 'mcpyeahyouknowme gsuite login'"), nil
 	}
