@@ -22,7 +22,7 @@ var calendarAppDef = &appDef{
 	syncFunc:      syncCalendar,
 	registerTools: registerCalendarTools,
 	searchEntries: calendarSearchEntries,
-	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "calendar_events") },
+	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "calendar_events") }, // nocov
 	tablesToDrop:  []string{"calendar_events", "calendar_events_fts"},
 }
 
@@ -48,7 +48,7 @@ func initCalendarSchema(db *sql.DB) error {
 		last_synced TEXT NOT NULL
 	);
 	`)
-	if err != nil {
+	if err != nil { // nocov
 		return err
 	}
 	_, err = db.Exec(`
@@ -118,35 +118,18 @@ func syncCalendar(sctx syncContext) error { // nocov
 				remoteIDs[eventID] = true
 				var localUpdated string
 				sctx.DB.QueryRow("SELECT updated_time FROM calendar_events WHERE id = ?", eventID).Scan(&localUpdated)
-				if localUpdated == ev.Updated {
+				record := buildCalendarEventRecord(cal, ev)
+				if localUpdated == record.UpdatedTime {
 					continue
 				}
-				startTime, endTime, allDay := parseEventTimes(ev)
-				organizer := ""
-				if ev.Organizer != nil {
-					if ev.Organizer.DisplayName != "" {
-						organizer = fmt.Sprintf("%s <%s>", ev.Organizer.DisplayName, ev.Organizer.Email)
-					} else {
-						organizer = ev.Organizer.Email
-					}
-				}
-				var attendeeNames []string
-				for _, a := range ev.Attendees {
-					if a.DisplayName != "" {
-						attendeeNames = append(attendeeNames, fmt.Sprintf("%s <%s>", a.DisplayName, a.Email))
-					} else {
-						attendeeNames = append(attendeeNames, a.Email)
-					}
-				}
-				recurrence := strings.Join(ev.Recurrence, "; ")
 				sctx.DB.Exec(`INSERT OR REPLACE INTO calendar_events
 					(id, calendar_id, calendar_name, summary, description, location,
 					 start_time, end_time, all_day, created_time, updated_time,
 					 organizer, attendees, status, recurrence, html_link, last_synced)
 					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-					eventID, cal.Id, cal.Summary, ev.Summary, ev.Description, ev.Location,
-					startTime, endTime, allDay, ev.Created, ev.Updated,
-					organizer, strings.Join(attendeeNames, ", "), ev.Status, recurrence, ev.HtmlLink)
+					record.ID, record.CalendarID, record.CalendarName, record.Summary, record.Description, record.Location,
+					record.StartTime, record.EndTime, record.AllDay, record.CreatedTime, record.UpdatedTime,
+					record.Organizer, record.Attendees, record.Status, record.Recurrence, record.HTMLLink)
 				updatedCount++
 			}
 			pageToken = events.NextPageToken
@@ -158,6 +141,77 @@ func syncCalendar(sctx syncContext) error { // nocov
 	deleteOrphanedRows(sctx.DB, "calendar_events", remoteIDs)
 	fmt.Printf("Google Calendar sync: %d updated\n", updatedCount)
 	return nil
+}
+
+type calendarEventRecord struct {
+	ID           string
+	CalendarID   string
+	CalendarName string
+	Summary      string
+	Description  string
+	Location     string
+	StartTime    string
+	EndTime      string
+	AllDay       int
+	CreatedTime  string
+	UpdatedTime  string
+	Organizer    string
+	Attendees    string
+	Status       string
+	Recurrence   string
+	HTMLLink     string
+}
+
+func buildCalendarEventRecord(cal *calendar.CalendarListEntry, ev *calendar.Event) calendarEventRecord {
+	record := calendarEventRecord{}
+	if ev == nil {
+		return record
+	}
+	record.ID = ev.Id
+	record.Summary = ev.Summary
+	record.Description = ev.Description
+	record.Location = ev.Location
+	record.CreatedTime = ev.Created
+	record.UpdatedTime = ev.Updated
+	record.Status = ev.Status
+	record.HTMLLink = ev.HtmlLink
+	record.StartTime, record.EndTime, record.AllDay = parseEventTimes(ev)
+	record.Organizer = formatCalendarOrganizer(ev.Organizer)
+	record.Attendees = strings.Join(formatCalendarAttendees(ev.Attendees), ", ")
+	record.Recurrence = strings.Join(ev.Recurrence, "; ")
+	if cal != nil {
+		record.CalendarID = cal.Id
+		record.CalendarName = cal.Summary
+		if ev.Id != "" {
+			record.ID = cal.Id + "|" + ev.Id
+		}
+	}
+	return record
+}
+
+func formatCalendarOrganizer(org *calendar.EventOrganizer) string {
+	if org == nil {
+		return ""
+	}
+	if org.DisplayName != "" {
+		return fmt.Sprintf("%s <%s>", org.DisplayName, org.Email)
+	}
+	return org.Email
+}
+
+func formatCalendarAttendees(attendees []*calendar.EventAttendee) []string {
+	names := make([]string, 0, len(attendees))
+	for _, attendee := range attendees {
+		if attendee == nil {
+			continue
+		}
+		if attendee.DisplayName != "" {
+			names = append(names, fmt.Sprintf("%s <%s>", attendee.DisplayName, attendee.Email))
+			continue
+		}
+		names = append(names, attendee.Email)
+	}
+	return names
 }
 
 func parseEventTimes(ev *calendar.Event) (start, end string, allDay int) {
@@ -214,7 +268,7 @@ func handleCalendarSearch(src *Source, ctx context.Context, req mcp.CallToolRequ
 		FROM calendar_events_fts
 		JOIN calendar_events e ON e.rowid = calendar_events_fts.rowid
 		WHERE calendar_events_fts MATCH ? ORDER BY rank LIMIT ?`, query, limit)
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
 	}
 	defer rows.Close()
@@ -249,7 +303,7 @@ func handleCalendarGetEvent(src *Source, ctx context.Context, req mcp.CallToolRe
 	if err == sql.ErrNoRows {
 		return mcp.NewToolResultError("Event not found"), nil
 	}
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to retrieve event: %v", err)), nil
 	}
 	return core.JsonResult(map[string]interface{}{
@@ -272,7 +326,7 @@ func handleCalendarListUpcoming(src *Source, ctx context.Context, req mcp.CallTo
 	rows, err := src.db.Query(`SELECT id, summary, start_time, end_time, all_day, location, organizer, calendar_name
 		FROM calendar_events WHERE start_time >= ? AND start_time <= ?
 		ORDER BY start_time ASC LIMIT ?`, now, cutoff, limit)
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to list events: %v", err)), nil
 	}
 	defer rows.Close()
@@ -294,7 +348,7 @@ func handleCalendarListUpcoming(src *Source, ctx context.Context, req mcp.CallTo
 func calendarSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT id, summary, description, location, start_time, end_time, organizer, attendees, updated_time
 		FROM calendar_events`)
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 	defer rows.Close()

@@ -2,9 +2,172 @@ package gsuite
 
 import (
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"google.golang.org/api/gmail/v1"
 )
+
+func b64(s string) string {
+	return base64.URLEncoding.EncodeToString([]byte(s))
+}
+
+func TestMergeGmailMessageBodyFields(t *testing.T) {
+	nextText, nextRaw, nextVis, changed := mergeGmailMessageBodyFields("hello", "", "")
+	if !changed || nextRaw != "hello" || nextVis != "hello" || nextText != "hello" {
+		t.Fatalf("expected fill from body_text, got text=%q raw=%q vis=%q changed=%v", nextText, nextRaw, nextVis, changed)
+	}
+	_, _, _, same := mergeGmailMessageBodyFields("a", "a", "a")
+	if same {
+		t.Fatal("expected no update when all fields already match")
+	}
+}
+
+func TestBuildGmailStoredRecord(t *testing.T) {
+	rec := buildGmailStoredRecord(&gmail.Message{
+		Id:           "m1",
+		ThreadId:     "t1",
+		LabelIds:     []string{"INBOX", "UNREAD"},
+		Snippet:      "snip",
+		SizeEstimate: 99,
+		Payload: &gmail.MessagePart{
+			MimeType: "multipart/alternative",
+			Parts: []*gmail.MessagePart{
+				{
+					MimeType: "text/plain",
+					Body:     &gmail.MessagePartBody{Data: b64("Hi")},
+				},
+			},
+			Headers: []*gmail.MessagePartHeader{
+				{Name: "Subject", Value: "Hello"},
+				{Name: "From", Value: "a@b.com"},
+				{Name: "To", Value: "c@d.com"},
+				{Name: "Date", Value: "Mon, 1 Apr 2024 10:00:00 +0000"},
+			},
+		},
+	})
+	if rec.ID != "m1" || rec.ThreadID != "t1" || rec.Folder != "INBOX" {
+		t.Fatalf("unexpected record: %#v", rec)
+	}
+	if rec.Subject != "Hello" || rec.BodyRaw != "Hi" || rec.BodyVisible != "Hi" {
+		t.Fatalf("unexpected headers/body: %#v", rec)
+	}
+	if rec.HasAttachments != 0 {
+		t.Fatalf("expected no attachments, got %#v", rec)
+	}
+}
+
+func TestExtractGmailBody_plainInPartAndHTMLFallback(t *testing.T) {
+	got := extractGmailBody(&gmail.MessagePart{
+		MimeType: "multipart/mixed",
+		Parts: []*gmail.MessagePart{
+			{MimeType: "text/plain", Body: &gmail.MessagePartBody{Data: b64("plain body")}},
+		},
+	})
+	if got != "plain body" {
+		t.Fatalf("expected plain from nested part, got %q", got)
+	}
+	htmlGot := extractGmailBody(&gmail.MessagePart{
+		MimeType: "text/html",
+		Body:     &gmail.MessagePartBody{Data: b64("<p>x<b>y</b></p>")},
+	})
+	if htmlGot != "xy" {
+		t.Fatalf("expected stripped html, got %q", htmlGot)
+	}
+	if extractGmailBody(&gmail.MessagePart{MimeType: "text/plain", Body: &gmail.MessagePartBody{Data: "!!!"}}) != "" {
+		t.Fatal("expected invalid base64 to yield empty string")
+	}
+}
+
+func TestHasGmailAttachments_nested(t *testing.T) {
+	if hasGmailAttachments(nil) {
+		t.Fatal("nil payload should have no attachments")
+	}
+	tree := &gmail.MessagePart{
+		Parts: []*gmail.MessagePart{
+			{
+				Parts: []*gmail.MessagePart{
+					{
+						Filename: "a.pdf",
+						Body:     &gmail.MessagePartBody{AttachmentId: "att1"},
+					},
+				},
+			},
+		},
+	}
+	if !hasGmailAttachments(tree) {
+		t.Fatal("expected nested attachment")
+	}
+}
+
+func TestParseGmailHeaders(t *testing.T) {
+	h := parseGmailHeaders(&gmail.Message{
+		Payload: &gmail.MessagePart{
+			Headers: []*gmail.MessagePartHeader{
+				{Name: "Subject", Value: "S"},
+				{Name: "X-Other", Value: "ignore"},
+				{Name: "From", Value: "f@e.com"},
+			},
+		},
+	})
+	if h["Subject"] != "S" || h["From"] != "f@e.com" || h["X-Other"] != "" {
+		t.Fatalf("unexpected headers map: %#v", h)
+	}
+	if len(parseGmailHeaders(&gmail.Message{})) != 0 {
+		t.Fatal("expected empty map for nil payload")
+	}
+}
+
+func TestFormatThreadTranscriptEntry_placeholders(t *testing.T) {
+	s := formatThreadTranscriptEntry(gmailMessageRecord{BodyVisible: "x"})
+	if !strings.Contains(s, "unknown date") || !strings.Contains(s, "unknown sender") {
+		t.Fatalf("expected placeholders, got %q", s)
+	}
+}
+
+func TestGmailSearchEntriesForThread(t *testing.T) {
+	msgs := []gmailMessageRecord{
+		{ID: "a", ThreadID: "t1", Subject: "Subj", From: "a@b.com", BodyVisible: "one"},
+		{ID: "b", ThreadID: "t1", From: "c@d.com", BodyVisible: "two"},
+	}
+	entries := gmailSearchEntriesForThread("gsuite", gmailThreadSearchSummary{
+		threadID:     "t1",
+		subject:      "Subj",
+		participants: "a@b.com, c@d.com",
+		messageCount: 2,
+		firstDate:    "2024-01-01",
+		lastDate:     "2024-01-02",
+	}, msgs)
+	var types []string
+	for _, e := range entries {
+		types = append(types, e.ContentType)
+	}
+	if len(types) < 3 {
+		t.Fatalf("expected subject + participants + at least one chunk, got %#v", types)
+	}
+	if types[0] != "email_thread_subject" || types[1] != "email_thread_participants" {
+		t.Fatalf("unexpected entry order/types: %#v", types)
+	}
+	foundContent := false
+	for _, e := range entries {
+		if e.ContentType == "email_thread_content" {
+			foundContent = true
+			if !strings.Contains(e.Content, "one") {
+				t.Fatalf("expected chunk to include message body, got %q", e.Content)
+			}
+		}
+	}
+	if !foundContent {
+		t.Fatal("expected email_thread_content entry")
+	}
+	// Metadata should parse as JSON
+	var meta map[string]interface{}
+	if err := json.Unmarshal(entries[0].Metadata, &meta); err != nil {
+		t.Fatalf("metadata json: %v", err)
+	}
+}
 
 func TestDeriveVisibleBody_stripsQuotedReply(t *testing.T) {
 	raw := "Yes, that works for me.\n\nOn Fri, Mar 1, 2024 at 10:00 AM Alice <alice@example.com> wrote:\n> Can you make the meeting tomorrow?"
@@ -163,6 +326,356 @@ func TestInitGmailSchema_backfillsLegacyRowsAndBuildsThreads(t *testing.T) {
 	}
 	if meta.threadID != "thread1" {
 		t.Fatalf("expected thread1 metadata, got %#v", meta)
+	}
+}
+
+func TestStoreGmailMessage_direct(t *testing.T) {
+	db := newTestDB(t)
+	storeGmailMessage(db, &gmail.Message{
+		Id:       "direct1",
+		ThreadId: "t99",
+		LabelIds: []string{"INBOX"},
+		Snippet:  "hello world",
+		Payload: &gmail.MessagePart{
+			MimeType: "text/plain",
+			Body:     &gmail.MessagePartBody{Data: b64("Hello from direct store")},
+			Headers: []*gmail.MessagePartHeader{
+				{Name: "Subject", Value: "Direct"},
+				{Name: "From", Value: "x@y.com"},
+				{Name: "Date", Value: "Mon, 1 Apr 2024 10:00:00 +0000"},
+			},
+		},
+	})
+	var subject, bodyRaw string
+	err := db.QueryRow(`SELECT subject, body_raw FROM gmail_messages WHERE id = 'direct1'`).Scan(&subject, &bodyRaw)
+	if err != nil {
+		t.Fatalf("query stored row: %v", err)
+	}
+	if subject != "Direct" || bodyRaw != "Hello from direct store" {
+		t.Fatalf("unexpected stored values: subject=%q bodyRaw=%q", subject, bodyRaw)
+	}
+}
+
+func TestBuildGmailStoredRecord_nil(t *testing.T) {
+	r := buildGmailStoredRecord(nil)
+	if r.ID != "" {
+		t.Fatalf("expected zero record for nil msg, got %#v", r)
+	}
+}
+
+func TestBuildGmailStoredRecord_withAttachments(t *testing.T) {
+	rec := buildGmailStoredRecord(&gmail.Message{
+		Id: "att1",
+		Payload: &gmail.MessagePart{
+			MimeType: "multipart/mixed",
+			Parts: []*gmail.MessagePart{
+				{MimeType: "text/plain", Body: &gmail.MessagePartBody{Data: b64("body")}},
+				{Filename: "report.pdf", Body: &gmail.MessagePartBody{AttachmentId: "a1"}},
+			},
+		},
+	})
+	if rec.HasAttachments != 1 {
+		t.Fatalf("expected has_attachments=1, got %d", rec.HasAttachments)
+	}
+}
+
+func TestMergeGmailMessageBodyFields_emptyBodyText(t *testing.T) {
+	nextText, nextRaw, nextVis, changed := mergeGmailMessageBodyFields("", "raw content", "")
+	if !changed || nextText != "raw content" || nextRaw != "raw content" || nextVis != "raw content" {
+		t.Fatalf("expected fill from body_raw when body_text empty, got text=%q raw=%q vis=%q changed=%v",
+			nextText, nextRaw, nextVis, changed)
+	}
+}
+
+func TestExtractGmailBody_nestedHTMLPart(t *testing.T) {
+	got := extractGmailBody(&gmail.MessagePart{
+		MimeType: "multipart/mixed",
+		Parts: []*gmail.MessagePart{
+			{MimeType: "text/html", Body: &gmail.MessagePartBody{Data: b64("<b>bold</b>")}},
+		},
+	})
+	if got != "bold" {
+		t.Fatalf("expected nested html stripped, got %q", got)
+	}
+}
+
+func TestExtractGmailBody_deepRecursion(t *testing.T) {
+	got := extractGmailBody(&gmail.MessagePart{
+		MimeType: "multipart/mixed",
+		Parts: []*gmail.MessagePart{
+			{
+				MimeType: "multipart/alternative",
+				Parts: []*gmail.MessagePart{
+					{MimeType: "text/plain", Body: &gmail.MessagePartBody{Data: b64("deep")}},
+				},
+			},
+		},
+	})
+	if got != "deep" {
+		t.Fatalf("expected deep recursion to find plain text, got %q", got)
+	}
+}
+
+func TestExtractGmailBody_empty(t *testing.T) {
+	got := extractGmailBody(&gmail.MessagePart{MimeType: "application/octet-stream"})
+	if got != "" {
+		t.Fatalf("expected empty for non-text payload, got %q", got)
+	}
+	if extractGmailBody(nil) != "" {
+		t.Fatal("expected empty for nil payload")
+	}
+}
+
+func TestDeriveVisibleBody_empty(t *testing.T) {
+	if deriveVisibleBody("") != "" {
+		t.Fatal("expected empty output for empty input")
+	}
+	if deriveVisibleBody("  \n  ") != "" {
+		t.Fatal("expected empty output for whitespace-only input")
+	}
+}
+
+func TestDeriveVisibleBody_forwardedMessage(t *testing.T) {
+	raw := "FYI see below.\n\n---------- Forwarded message ----------\nFrom: alice@example.com\nDate: 2024-03-01\nSubject: Info"
+	got := deriveVisibleBody(raw)
+	if strings.Contains(got, "Forwarded message") {
+		t.Fatalf("expected forwarded boundary to be stripped, got %q", got)
+	}
+	if got != "FYI see below." {
+		t.Fatalf("expected authored text, got %q", got)
+	}
+}
+
+func TestShouldFallbackToRaw_aggressiveStripping(t *testing.T) {
+	longRaw := strings.Repeat("a", 500)
+	shortVisible := "hi"
+	if !shouldFallbackToRaw(longRaw, shortVisible) {
+		t.Fatal("expected fallback when visible is <2% of long raw")
+	}
+	medRaw := strings.Repeat("a", 200)
+	tinyVis := "x"
+	if !shouldFallbackToRaw(medRaw, tinyVis) {
+		t.Fatal("expected fallback when raw>=200 and visible<20")
+	}
+	if shouldFallbackToRaw("short", "short") {
+		t.Fatal("expected no fallback for same-length content")
+	}
+	if shouldFallbackToRaw("", "") {
+		t.Fatal("expected no fallback for empty raw")
+	}
+	if !shouldFallbackToRaw("has content", "") {
+		t.Fatal("expected fallback when visible is empty but raw is not")
+	}
+}
+
+func TestIsQuotedHeaderBlock_edgeCases(t *testing.T) {
+	blankThenHeaders := []string{"", "From: alice", "To: bob", "Subject: hi"}
+	if !isQuotedHeaderBlock(blankThenHeaders, 0) {
+		t.Fatal("expected blank line before headers to still match")
+	}
+	singleHeader := []string{"From: alice"}
+	if isQuotedHeaderBlock(singleHeader, 0) {
+		t.Fatal("expected single header to not match (need >=2)")
+	}
+	nonHeaderBreak := []string{"From: alice", "random text", "To: bob"}
+	if isQuotedHeaderBlock(nonHeaderBreak, 0) {
+		t.Fatal("expected non-header line to break matching")
+	}
+	headersThenBlank := []string{"From: alice", "To: bob", "", "Subject: hi"}
+	if !isQuotedHeaderBlock(headersThenBlank, 0) {
+		t.Fatal("expected blank line after matched headers to still count >=2")
+	}
+}
+
+func TestTrimTrailingQuotedBlock_authoredThenQuoted(t *testing.T) {
+	lines := []string{"Hello there", "", "> quoted reply", "> more quoted"}
+	result := trimTrailingQuotedBlock(lines)
+	if len(result) != 1 || result[0] != "Hello there" {
+		t.Fatalf("expected authored content kept, trailing quoted removed, got %v", result)
+	}
+}
+
+func TestHasAuthoredContent_allQuoted(t *testing.T) {
+	lines := []string{"> quoted", "> also quoted", ""}
+	if hasAuthoredContent(lines) {
+		t.Fatal("expected no authored content in all-quoted lines")
+	}
+}
+
+func TestTrimTrailingMobileSignature_noBlankBefore(t *testing.T) {
+	lines := []string{"text", "Sent from my iPhone"}
+	result := trimTrailingMobileSignature(lines)
+	if len(result) != 2 {
+		t.Fatalf("expected no trimming when blank line missing before signature, got %v", result)
+	}
+}
+
+func TestTrimTrailingQuotedBlock_noQuotes(t *testing.T) {
+	lines := []string{"Hello", "World", ""}
+	result := trimTrailingQuotedBlock(lines)
+	if len(result) != 2 || result[0] != "Hello" || result[1] != "World" {
+		t.Fatalf("expected trailing blanks trimmed, no quoted removal, got %v", result)
+	}
+}
+
+func TestTrimTrailingQuotedBlock_allEmpty(t *testing.T) {
+	result := trimTrailingQuotedBlock([]string{"", "  ", ""})
+	if len(result) != 0 {
+		t.Fatalf("expected all-empty to yield empty, got %v", result)
+	}
+}
+
+func TestTrimTrailingQuotedBlock_allQuoted(t *testing.T) {
+	lines := []string{"> a", "> b", "> c"}
+	result := trimTrailingQuotedBlock(lines)
+	if len(result) != 0 {
+		t.Fatalf("expected all-quoted block to be trimmed entirely, got %v", result)
+	}
+}
+
+func TestBuildGmailThreadChunks_overflowEntry(t *testing.T) {
+	hugeBody := strings.Repeat("word ", 1200)
+	messages := []gmailMessageRecord{
+		{ID: "big", ThreadID: "t1", Subject: "S", From: "a@b.com", Date: "2024-01-01", BodyVisible: hugeBody},
+	}
+	chunks := buildGmailThreadChunks("S", "a@b.com", messages)
+	if len(chunks) < 2 {
+		t.Fatalf("expected huge single-message entry to produce multiple chunks, got %d", len(chunks))
+	}
+}
+
+func TestBuildGmailThreadChunks_emptyBodySkipped(t *testing.T) {
+	messages := []gmailMessageRecord{
+		{ID: "empty", ThreadID: "t1", BodyVisible: "", BodyRaw: ""},
+	}
+	chunks := buildGmailThreadChunks("S", "p", messages)
+	if len(chunks) != 0 {
+		t.Fatalf("expected empty-body message to be skipped, got %d chunks", len(chunks))
+	}
+}
+
+func TestFormatThreadChunkHeader_empty(t *testing.T) {
+	h := formatThreadChunkHeader("", "")
+	if h != "" {
+		t.Fatalf("expected empty header for no subject/participants, got %q", h)
+	}
+}
+
+func TestFormatThreadTranscriptEntry_emptyBody(t *testing.T) {
+	s := formatThreadTranscriptEntry(gmailMessageRecord{BodyVisible: "", BodyRaw: ""})
+	if s != "" {
+		t.Fatalf("expected empty string for no-body message, got %q", s)
+	}
+}
+
+func TestFormatThreadTranscriptEntry_fallbackToRaw(t *testing.T) {
+	s := formatThreadTranscriptEntry(gmailMessageRecord{BodyVisible: "", BodyRaw: "raw content", From: "x@y.com", Date: "2024-01-01"})
+	if !strings.Contains(s, "raw content") {
+		t.Fatalf("expected raw fallback, got %q", s)
+	}
+}
+
+func TestBuildGmailThreadRecords_skipsEmptyThreadID(t *testing.T) {
+	records := buildGmailThreadRecords([]gmailMessageRecord{
+		{ID: "orphan", ThreadID: "", Subject: "S"},
+	})
+	if len(records) != 0 {
+		t.Fatalf("expected empty thread_id to be skipped, got %d records", len(records))
+	}
+}
+
+func TestBuildThreadRecord_emptyMessages(t *testing.T) {
+	r := buildThreadRecord(nil)
+	if r.threadID != "" {
+		t.Fatalf("expected zero record for empty messages, got %#v", r)
+	}
+}
+
+func TestJoinParticipants_dedups(t *testing.T) {
+	msgs := []gmailMessageRecord{
+		{From: "a@b.com, c@d.com", To: "a@b.com"},
+	}
+	got := joinParticipants(msgs)
+	if strings.Count(got, "a@b.com") != 1 {
+		t.Fatalf("expected deduplication, got %q", got)
+	}
+}
+
+func TestSplitLongThreadEntry_fitsInLimit(t *testing.T) {
+	parts := splitLongThreadEntry("short", 100)
+	if len(parts) != 1 || parts[0] != "short" {
+		t.Fatalf("expected single part, got %#v", parts)
+	}
+}
+
+func TestSplitLongThreadEntry_noNewlineBreak(t *testing.T) {
+	entry := strings.Repeat("x", 200)
+	parts := splitLongThreadEntry(entry, 50)
+	if len(parts) < 2 {
+		t.Fatalf("expected multiple parts for long no-newline entry, got %d", len(parts))
+	}
+}
+
+func TestDeleteOrphanedRowsByResourceName(t *testing.T) {
+	db := newTestDB(t)
+	seedContacts(t, db)
+	before, _ := countTable(db, "contacts_people")
+	if before == 0 {
+		t.Fatal("expected seeded contacts")
+	}
+	deleteOrphanedRowsByResourceName(db, "contacts_people", map[string]bool{})
+	after, _ := countTable(db, "contacts_people")
+	if after != 0 {
+		t.Fatalf("expected all orphaned rows deleted, got %d", after)
+	}
+}
+
+func TestGmailFTSIndexesBodyVisible(t *testing.T) {
+	db := newTestDB(t)
+	if !gmailFTSIndexesBodyVisible(db) {
+		t.Fatal("expected FTS to index body_visible after full schema init")
+	}
+}
+
+func TestGmailThreadsPopulated(t *testing.T) {
+	db := newTestDB(t)
+	if gmailThreadsPopulated(db) {
+		t.Fatal("expected no threads in empty DB")
+	}
+	seedGmail(t, db)
+	if !gmailThreadsPopulated(db) {
+		t.Fatal("expected threads after seeding")
+	}
+}
+
+func TestTableHasColumn(t *testing.T) {
+	db := newTestDB(t)
+	has, err := tableHasColumn(db, "gmail_messages", "subject")
+	if err != nil || !has {
+		t.Fatalf("expected gmail_messages to have subject column")
+	}
+	has, err = tableHasColumn(db, "gmail_messages", "nonexistent_col")
+	if err != nil || has {
+		t.Fatalf("expected nonexistent column to return false")
+	}
+}
+
+func TestGmailMessageLess_oneHasDate(t *testing.T) {
+	withDate := gmailMessageRecord{ID: "b", Date: "2024-01-01T00:00:00Z"}
+	withoutDate := gmailMessageRecord{ID: "a", Date: ""}
+	if !gmailMessageLess(withDate, withoutDate) {
+		t.Fatal("expected message with date to sort before message without date")
+	}
+	if gmailMessageLess(withoutDate, withDate) {
+		t.Fatal("expected message without date to sort after message with date")
+	}
+}
+
+func TestGmailMessageLess_differentDateStrings(t *testing.T) {
+	a := gmailMessageRecord{ID: "x", Date: "aaa"}
+	b := gmailMessageRecord{ID: "y", Date: "bbb"}
+	if !gmailMessageLess(a, b) {
+		t.Fatal("expected lexicographic fallback on unparseable date strings")
 	}
 }
 

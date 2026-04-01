@@ -157,6 +157,14 @@ func TestGetPlace_errorPaths(t *testing.T) {
 		}
 	})
 
+	t.Run("empty place id", func(t *testing.T) {
+		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {})
+		_, err := client.GetPlace(context.Background(), "  ")
+		if err == nil || !strings.Contains(err.Error(), "place_id is required") {
+			t.Fatalf("err = %v, want place_id required", err)
+		}
+	})
+
 	t.Run("http error", func(t *testing.T) {
 		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
@@ -167,4 +175,42 @@ func TestGetPlace_errorPaths(t *testing.T) {
 			t.Fatalf("err = %v, want place not found", err)
 		}
 	})
+}
+
+func TestSearchPlaces_emptyQuery(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {})
+	_, err := client.SearchPlaces(context.Background(), "  ", 1)
+	if err == nil || !strings.Contains(err.Error(), "query is required") {
+		t.Fatalf("err = %v, want query required", err)
+	}
+}
+
+func TestSearchPlaces_maxResultsClamping(t *testing.T) {
+	var receivedPageSize int
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req searchTextRequest
+		json.Unmarshal(body, &req)
+		receivedPageSize = req.PageSize
+		io.WriteString(w, `{"places":[]}`)
+	})
+	client.SearchPlaces(context.Background(), "coffee", 0)
+	if receivedPageSize != 5 {
+		t.Fatalf("expected default pageSize=5 for 0, got %d", receivedPageSize)
+	}
+	client.SearchPlaces(context.Background(), "coffee", 20)
+	if receivedPageSize != 10 {
+		t.Fatalf("expected capped pageSize=10 for 20, got %d", receivedPageSize)
+	}
+}
+
+func TestApiError_emptyBody(t *testing.T) {
+	err := apiError(http.StatusBadGateway, []byte(""))
+	if !strings.Contains(err.Error(), "Bad Gateway") {
+		t.Fatalf("expected status text fallback, got %v", err)
+	}
+	err = apiError(http.StatusBadGateway, []byte("raw error text"))
+	if !strings.Contains(err.Error(), "raw error text") {
+		t.Fatalf("expected raw body in error, got %v", err)
+	}
 }

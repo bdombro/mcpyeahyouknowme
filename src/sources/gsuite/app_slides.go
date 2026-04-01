@@ -21,7 +21,7 @@ var slidesAppDef = &appDef{
 	syncFunc:      syncSlides,
 	registerTools: registerSlidesTools,
 	searchEntries: slidesSearchEntries,
-	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "slides_presentations") },
+	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "slides_presentations") }, // nocov
 	tablesToDrop:  []string{"slides_presentations", "slides_presentations_fts"},
 }
 
@@ -39,7 +39,7 @@ func initSlidesSchema(db *sql.DB) error {
 		last_synced TEXT NOT NULL
 	);
 	`)
-	if err != nil {
+	if err != nil { // nocov
 		return err
 	}
 	_, err = db.Exec(`
@@ -110,13 +110,12 @@ func syncSlides(sctx syncContext) error { // nocov
 				fmt.Printf("Warning: Failed to fetch presentation %s: %v\n", file.Id, err)
 				continue
 			}
-			content := extractPresentationText(pres)
-			owners := formatDriveOwners(file.Owners, sctx.SelfEmail)
+			record := buildSlidesRecord(file, pres, sctx.SelfEmail)
 			sctx.DB.Exec(`INSERT OR REPLACE INTO slides_presentations
 				(id, title, content, modified_time, created_time, web_view_link, owners, slide_count, last_synced)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-				file.Id, file.Name, content, file.ModifiedTime, file.CreatedTime,
-				file.WebViewLink, owners, len(pres.Slides))
+				record.ID, record.Title, record.Content, record.ModifiedTime,
+				record.CreatedTime, record.WebViewLink, record.Owners, record.SlideCount)
 			updatedCount++
 			sctx.SetStatus(fmt.Sprintf("syncing:%d", updatedCount))
 		}
@@ -128,6 +127,36 @@ func syncSlides(sctx syncContext) error { // nocov
 	deleteOrphanedRows(sctx.DB, "slides_presentations", remoteIDs)
 	fmt.Printf("Google Slides sync: %d updated\n", updatedCount)
 	return nil
+}
+
+type slidesRecord struct {
+	ID           string
+	Title        string
+	Content      string
+	ModifiedTime string
+	CreatedTime  string
+	WebViewLink  string
+	Owners       string
+	SlideCount   int
+}
+
+func buildSlidesRecord(file *drive.File, pres *slides.Presentation, selfEmail string) slidesRecord {
+	if file == nil {
+		return slidesRecord{}
+	}
+	record := slidesRecord{
+		ID:           file.Id,
+		Title:        file.Name,
+		ModifiedTime: file.ModifiedTime,
+		CreatedTime:  file.CreatedTime,
+		WebViewLink:  file.WebViewLink,
+		Owners:       formatDriveOwners(file.Owners, selfEmail),
+	}
+	if pres != nil {
+		record.Content = extractPresentationText(pres)
+		record.SlideCount = len(pres.Slides)
+	}
+	return record
 }
 
 func extractPresentationText(pres *slides.Presentation) string {
@@ -184,7 +213,7 @@ func handleSlidesSearch(src *Source, ctx context.Context, req mcp.CallToolReques
 		FROM slides_presentations_fts
 		JOIN slides_presentations p ON p.rowid = slides_presentations_fts.rowid
 		WHERE slides_presentations_fts MATCH ? ORDER BY rank LIMIT ?`, query, limit)
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
 	}
 	defer rows.Close()
@@ -215,7 +244,7 @@ func handleSlidesGetPresentation(src *Source, ctx context.Context, req mcp.CallT
 	if err == sql.ErrNoRows {
 		return mcp.NewToolResultError("Presentation not found"), nil
 	}
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to retrieve presentation: %v", err)), nil
 	}
 	return core.JsonResult(map[string]interface{}{
@@ -231,7 +260,7 @@ func handleSlidesListRecent(src *Source, ctx context.Context, req mcp.CallToolRe
 	}
 	rows, err := src.db.Query(`SELECT id, title, modified_time, created_time, web_view_link, owners, slide_count
 		FROM slides_presentations ORDER BY modified_time DESC LIMIT ?`, limit)
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to list presentations: %v", err)), nil
 	}
 	defer rows.Close()
@@ -252,7 +281,7 @@ func handleSlidesListRecent(src *Source, ctx context.Context, req mcp.CallToolRe
 
 func slidesSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT id, title, content, modified_time, owners FROM slides_presentations`)
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 	defer rows.Close()

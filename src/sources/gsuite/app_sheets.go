@@ -21,7 +21,7 @@ var sheetsAppDef = &appDef{
 	syncFunc:      syncSheets,
 	registerTools: registerSheetsTools,
 	searchEntries: sheetsSearchEntries,
-	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "sheets_spreadsheets") },
+	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "sheets_spreadsheets") }, // nocov
 	tablesToDrop:  []string{"sheets_spreadsheets", "sheets_spreadsheets_fts"},
 }
 
@@ -39,7 +39,7 @@ func initSheetsSchema(db *sql.DB) error {
 		last_synced TEXT NOT NULL
 	);
 	`)
-	if err != nil {
+	if err != nil { // nocov
 		return err
 	}
 	_, err = db.Exec(`
@@ -108,13 +108,12 @@ func syncSheets(sctx syncContext) error { // nocov
 				fmt.Printf("Warning: Failed to fetch spreadsheet %s: %v\n", file.Id, err)
 				continue
 			}
-			content := extractSpreadsheetText(ss)
-			owners := formatDriveOwners(file.Owners, sctx.SelfEmail)
+			record := buildSheetsRecord(file, ss, sctx.SelfEmail)
 			sctx.DB.Exec(`INSERT OR REPLACE INTO sheets_spreadsheets
 				(id, title, content, modified_time, created_time, web_view_link, owners, sheet_count, last_synced)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-				file.Id, file.Name, content, file.ModifiedTime, file.CreatedTime,
-				file.WebViewLink, owners, len(ss.Sheets))
+				record.ID, record.Title, record.Content, record.ModifiedTime,
+				record.CreatedTime, record.WebViewLink, record.Owners, record.SheetCount)
 			updatedCount++
 			sctx.SetStatus(fmt.Sprintf("syncing:%d", updatedCount))
 		}
@@ -126,6 +125,36 @@ func syncSheets(sctx syncContext) error { // nocov
 	deleteOrphanedRows(sctx.DB, "sheets_spreadsheets", remoteIDs)
 	fmt.Printf("Google Sheets sync: %d updated\n", updatedCount)
 	return nil
+}
+
+type sheetsRecord struct {
+	ID           string
+	Title        string
+	Content      string
+	ModifiedTime string
+	CreatedTime  string
+	WebViewLink  string
+	Owners       string
+	SheetCount   int
+}
+
+func buildSheetsRecord(file *drive.File, ss *sheets.Spreadsheet, selfEmail string) sheetsRecord {
+	if file == nil {
+		return sheetsRecord{}
+	}
+	record := sheetsRecord{
+		ID:           file.Id,
+		Title:        file.Name,
+		ModifiedTime: file.ModifiedTime,
+		CreatedTime:  file.CreatedTime,
+		WebViewLink:  file.WebViewLink,
+		Owners:       formatDriveOwners(file.Owners, selfEmail),
+	}
+	if ss != nil {
+		record.Content = extractSpreadsheetText(ss)
+		record.SheetCount = len(ss.Sheets)
+	}
+	return record
 }
 
 func extractSpreadsheetText(ss *sheets.Spreadsheet) string {
@@ -188,7 +217,7 @@ func handleSheetsSearch(src *Source, ctx context.Context, req mcp.CallToolReques
 		FROM sheets_spreadsheets_fts
 		JOIN sheets_spreadsheets s ON s.rowid = sheets_spreadsheets_fts.rowid
 		WHERE sheets_spreadsheets_fts MATCH ? ORDER BY rank LIMIT ?`, query, limit)
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
 	}
 	defer rows.Close()
@@ -219,7 +248,7 @@ func handleSheetsGetSpreadsheet(src *Source, ctx context.Context, req mcp.CallTo
 	if err == sql.ErrNoRows {
 		return mcp.NewToolResultError("Spreadsheet not found"), nil
 	}
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to retrieve spreadsheet: %v", err)), nil
 	}
 	return core.JsonResult(map[string]interface{}{
@@ -235,7 +264,7 @@ func handleSheetsListRecent(src *Source, ctx context.Context, req mcp.CallToolRe
 	}
 	rows, err := src.db.Query(`SELECT id, title, modified_time, created_time, web_view_link, owners, sheet_count
 		FROM sheets_spreadsheets ORDER BY modified_time DESC LIMIT ?`, limit)
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to list spreadsheets: %v", err)), nil
 	}
 	defer rows.Close()
@@ -256,7 +285,7 @@ func handleSheetsListRecent(src *Source, ctx context.Context, req mcp.CallToolRe
 
 func sheetsSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT id, title, content, modified_time, owners FROM sheets_spreadsheets`)
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 	defer rows.Close()

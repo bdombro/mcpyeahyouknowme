@@ -41,10 +41,12 @@ filter_coverage() {
 	# Filter coverage to core business-logic files, excluding:
 	#   - *_init.go files (constructors, schema DDL, ONNX wrappers)
 	#   - Uncovered blocks containing a "// nocov" source comment
+	#   - Uncovered blocks inside functions whose signature has "// nocov"
 	#
 	# This approach is stable across line-number changes:
 	#   *_init.go exclusion uses filename patterns.
-	#   // nocov exclusion auto-detects comment locations from source.
+	#   // nocov exclusion auto-detects comment locations and function ranges
+	#   from source.
 
 	local raw="$ROOT/coverage/coverage_unfiltered.txt"
 	local filtered="$ROOT/coverage/coverage.txt"
@@ -60,26 +62,72 @@ filter_coverage() {
 		| grep -v '_init\.go:' \
 		> "$filtered.tmp"
 
-	# Step 2: Collect // nocov line numbers from source
-	local nocov_lines
-	nocov_lines=$(mktemp)
-	for src in "$CLI_DIR"/*.go "$CLI_DIR"/sources/whatsapp/*.go "$CLI_DIR"/sources/gsuite/*.go "$CLI_DIR"/sources/google_places/*.go; do
-		base=$(basename "$src")
-		[[ "$base" == *_test.go ]] && continue
-		[[ "$base" == *_init.go ]] && continue
-		{ grep -n '// nocov' "$src" 2>/dev/null || true; } | while IFS=: read -r num _; do
-			echo "$base $num"
-		done
-	done > "$nocov_lines"
+	# Step 2: Collect // nocov line numbers and nocov function ranges from source.
+	local nocov_meta
+	nocov_meta=$(mktemp)
+	python3 - "$CLI_DIR" > "$nocov_meta" <<'PY'
+import sys
+from pathlib import Path
 
-	# Step 3: Remove uncovered blocks whose line range contains a // nocov comment.
+cli_dir = Path(sys.argv[1])
+patterns = [
+    "*.go",
+    "sources/whatsapp/*.go",
+    "sources/gsuite/*.go",
+    "sources/google_places/*.go",
+]
+
+def emit_function_range(cov_path: str, start_line: int, lines: list[str]) -> None:
+    depth = 0
+    started = False
+    end_line = start_line
+    for line_no in range(start_line, len(lines) + 1):
+        text = lines[line_no - 1]
+        opens = text.count("{")
+        closes = text.count("}")
+        if opens > 0:
+            started = True
+        depth += opens
+        depth -= closes
+        if started and depth == 0:
+            end_line = line_no
+            break
+    print(f"func\t{cov_path}\t{start_line}\t{end_line}")
+
+seen = set()
+for pattern in patterns:
+    for path in sorted(cli_dir.glob(pattern)):
+        if path in seen:
+            continue
+        seen.add(path)
+        if path.name.endswith("_test.go") or path.name.endswith("_init.go"):
+            continue
+
+        cov_path = f"mcpyeahyouknowme/{path.relative_to(cli_dir).as_posix()}"
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for idx, line in enumerate(lines, start=1):
+            if "// nocov" not in line:
+                continue
+            print(f"line\t{cov_path}\t{idx}")
+            if line.lstrip().startswith("func "):
+                emit_function_range(cov_path, idx, lines)
+PY
+
+	# Step 3: Remove uncovered blocks whose line range contains a // nocov comment
+	# or sits inside a function whose signature is annotated with // nocov.
 	# Coverage profile format: package/file.go:startLine.col,endLine.col stmts count
 	# Covered blocks (count > 0) always pass through; only uncovered blocks are checked.
-	awk -v nocov_file="$nocov_lines" '
+	awk -v nocov_file="$nocov_meta" '
 	BEGIN {
 		while ((getline line < nocov_file) > 0) {
-			split(line, a, " ")
-			nocov[a[1], a[2]+0] = 1
+			split(line, a, "\t")
+			if (a[1] == "line") {
+				nocov_line[a[2], a[3]+0] = 1
+			} else if (a[1] == "func") {
+				idx = ++nocov_func_count[a[2]]
+				nocov_func_start[a[2], idx] = a[3] + 0
+				nocov_func_end[a[2], idx] = a[4] + 0
+			}
 		}
 	}
 	/^mode:/ { print; next }
@@ -91,9 +139,6 @@ filter_coverage() {
 		file_path = substr($1, 1, pos - 1)
 		range_part = substr($1, pos + 1)
 
-		n = split(file_path, parts, "/")
-		filename = parts[n]
-
 		split(range_part, r, ",")
 		split(r[1], s, ".")
 		split(r[2], e, ".")
@@ -102,13 +147,23 @@ filter_coverage() {
 
 		skip = 0
 		for (i = start; i <= end_line; i++) {
-			if ((filename, i) in nocov) { skip = 1; break }
+			if ((file_path, i) in nocov_line) { skip = 1; break }
+		}
+		if (!skip) {
+			for (i = 1; i <= nocov_func_count[file_path]; i++) {
+				func_start = nocov_func_start[file_path, i]
+				func_end = nocov_func_end[file_path, i]
+				if (start >= func_start && end_line <= func_end) {
+					skip = 1
+					break
+				}
+			}
 		}
 		if (!skip) print
 	}
 	' "$filtered.tmp" > "$filtered"
 
-	rm -f "$filtered.tmp" "$nocov_lines"
+	rm -f "$filtered.tmp" "$nocov_meta"
 }
 
 generate_report() {

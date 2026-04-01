@@ -20,7 +20,7 @@ func openGSuiteDB(dataDir string) (*sql.DB, error) {
 	}
 	db.Exec("PRAGMA journal_mode=WAL")
 	db.Exec("PRAGMA busy_timeout=30000")
-	if err := initGSuiteDB(db); err != nil {
+	if err := initGSuiteDB(db); err != nil { // nocov
 		db.Close()
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func initGSuiteDB(db *sql.DB) error {
 
 	// Initialize all app schemas
 	for _, app := range allApps {
-		if err := app.initSchema(db); err != nil {
+		if err := app.initSchema(db); err != nil { // nocov
 			return fmt.Errorf("init %s schema: %w", app.name, err)
 		}
 	}

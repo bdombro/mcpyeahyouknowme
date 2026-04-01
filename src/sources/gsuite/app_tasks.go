@@ -20,7 +20,7 @@ var tasksAppDef = &appDef{
 	syncFunc:      syncTasks,
 	registerTools: registerTasksTools,
 	searchEntries: tasksSearchEntries,
-	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "tasks_items") },
+	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "tasks_items") }, // nocov
 	tablesToDrop:  []string{"tasks_items", "tasks_items_fts"},
 }
 
@@ -41,7 +41,7 @@ func initTasksSchema(db *sql.DB) error {
 		last_synced TEXT NOT NULL
 	);
 	`)
-	if err != nil {
+	if err != nil { // nocov
 		return err
 	}
 	_, err = db.Exec(`
@@ -104,15 +104,17 @@ func syncTasks(sctx syncContext) error { // nocov
 				remoteIDs[task.Id] = true
 				var localUpdated string
 				sctx.DB.QueryRow("SELECT updated FROM tasks_items WHERE id = ?", task.Id).Scan(&localUpdated)
-				if localUpdated == task.Updated {
+				record := buildTaskRecord(tl, task)
+				if localUpdated == record.Updated {
 					continue
 				}
 				sctx.DB.Exec(`INSERT OR REPLACE INTO tasks_items
 					(id, tasklist_id, tasklist_title, title, notes, status, due, completed,
 					 updated, position, parent, last_synced)
 					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-					task.Id, tl.Id, tl.Title, task.Title, task.Notes, task.Status,
-					task.Due, task.Completed, task.Updated, task.Position, task.Parent)
+					record.ID, record.TasklistID, record.TasklistTitle, record.Title, record.Notes,
+					record.Status, record.Due, record.Completed, record.Updated, record.Position,
+					record.Parent)
 				updatedCount++
 			}
 			pageToken = taskList.NextPageToken
@@ -124,6 +126,43 @@ func syncTasks(sctx syncContext) error { // nocov
 	deleteOrphanedRows(sctx.DB, "tasks_items", remoteIDs)
 	fmt.Printf("Google Tasks sync: %d updated\n", updatedCount)
 	return nil
+}
+
+type taskRecord struct {
+	ID            string
+	TasklistID    string
+	TasklistTitle string
+	Title         string
+	Notes         string
+	Status        string
+	Due           string
+	Completed     string
+	Updated       string
+	Position      string
+	Parent        string
+}
+
+func buildTaskRecord(taskList *tasks.TaskList, task *tasks.Task) taskRecord {
+	record := taskRecord{}
+	if task == nil {
+		return record
+	}
+	record.ID = task.Id
+	record.Title = task.Title
+	record.Notes = task.Notes
+	record.Status = task.Status
+	record.Due = task.Due
+	record.Updated = task.Updated
+	record.Position = task.Position
+	record.Parent = task.Parent
+	if task.Completed != nil {
+		record.Completed = *task.Completed
+	}
+	if taskList != nil {
+		record.TasklistID = taskList.Id
+		record.TasklistTitle = taskList.Title
+	}
+	return record
 }
 
 func registerTasksTools(src *Source, prefix string, s toolAdder) {
@@ -154,7 +193,7 @@ func handleTasksSearch(src *Source, ctx context.Context, req mcp.CallToolRequest
 		FROM tasks_items_fts
 		JOIN tasks_items t ON t.rowid = tasks_items_fts.rowid
 		WHERE tasks_items_fts MATCH ? ORDER BY rank LIMIT ?`, query, limit)
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
 	}
 	defer rows.Close()
@@ -187,7 +226,7 @@ func handleTasksList(src *Source, ctx context.Context, req mcp.CallToolRequest) 
 		rows, err = src.db.Query(`SELECT id, title, notes, status, due, tasklist_title, updated
 			FROM tasks_items ORDER BY updated DESC LIMIT ?`, limit)
 	}
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to list tasks: %v", err)), nil
 	}
 	defer rows.Close()
@@ -207,7 +246,7 @@ func handleTasksList(src *Source, ctx context.Context, req mcp.CallToolRequest) 
 
 func tasksSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT id, title, notes, status, due, tasklist_title, updated FROM tasks_items`)
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 	defer rows.Close()

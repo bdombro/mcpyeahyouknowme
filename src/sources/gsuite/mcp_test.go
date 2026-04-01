@@ -294,6 +294,30 @@ func TestGmailGetThread_NotFound(t *testing.T) {
 	}
 }
 
+func TestGmailGetThread_NoThreadMetadata(t *testing.T) {
+	src := newTestSource(t)
+	src.db.Exec(`INSERT INTO gmail_messages
+		(id, thread_id, labels, folder, subject, from_addr, to_addrs, cc_addrs, bcc_addrs,
+		 date, snippet, body_text, body_raw, body_visible, has_attachments, size_estimate, last_synced)
+		VALUES ('orphan1', 'orphan_thread', 'INBOX', 'INBOX', 'Orphan', 'a@b.com', 'c@d.com', '', '',
+		 '2024-01-01', 'snip', 'raw only', 'raw only', '', 0, 100, datetime('now'))`)
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_gmail_get_thread", map[string]interface{}{"thread_id": "orphan_thread"})
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &result); err != nil {
+		t.Fatalf("parse: %v\ntext: %s", err, text)
+	}
+	if result["subject"] != "Orphan" {
+		t.Errorf("expected subject from fallback buildThreadRecord, got %v", result["subject"])
+	}
+	msgs := result["messages"].([]interface{})
+	firstMsg := msgs[0].(map[string]interface{})
+	if firstMsg["body"] != "raw only" {
+		t.Errorf("expected body fallback to raw, got %v", firstMsg["body"])
+	}
+}
+
 func TestGmailGetThread_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -674,6 +698,126 @@ func TestContactsSearchEntries(t *testing.T) {
 	}
 	if len(entries) == 0 {
 		t.Error("expected contact entries")
+	}
+}
+
+func TestDocsListRecent_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_docs_list_recent", map[string]interface{}{})
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+func TestSheetsSearch_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_sheets_search", map[string]interface{}{"query": "anything"})
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+func TestSheetsListRecent_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_sheets_list_recent", map[string]interface{}{})
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+func TestGmailSearch_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_gmail_search", map[string]interface{}{"query": "anything"})
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+func TestGmailListRecent_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_gmail_list_recent", map[string]interface{}{})
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+func TestCalendarSearch_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_calendar_search", map[string]interface{}{"query": "anything"})
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+func TestCalendarListUpcoming_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_calendar_list_upcoming", map[string]interface{}{})
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+func TestTasksSearch_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_tasks_search", map[string]interface{}{"query": "anything"})
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+func TestTasksList_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_tasks_list", map[string]interface{}{})
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+func TestSlidesSearch_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_slides_search", map[string]interface{}{"query": "anything"})
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+func TestSlidesListRecent_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_slides_list_recent", map[string]interface{}{})
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+func TestContactsSearch_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_contacts_search", map[string]interface{}{"query": "anything"})
+	if text == "" {
+		t.Fatal("expected non-empty response")
 	}
 }
 

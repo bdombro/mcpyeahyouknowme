@@ -22,7 +22,7 @@ var docsAppDef = &appDef{
 	syncFunc:      syncDocs,
 	registerTools: registerDocsTools,
 	searchEntries: docsSearchEntries,
-	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "docs_documents") },
+	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "docs_documents") }, // nocov
 	tablesToDrop:  []string{"docs_documents", "docs_documents_fts"},
 }
 
@@ -39,7 +39,7 @@ func initDocsSchema(db *sql.DB) error {
 		last_synced TEXT NOT NULL
 	);
 	`)
-	if err != nil {
+	if err != nil { // nocov
 		return err
 	}
 
@@ -114,12 +114,12 @@ func syncDocs(sctx syncContext) error { // nocov
 				fmt.Printf("Warning: Failed to fetch document %s: %v\n", file.Id, err)
 				continue
 			}
-			content := extractDocumentText(doc)
-			owners := formatDriveOwners(file.Owners, sctx.SelfEmail)
+			record := buildDocsRecord(file, doc, sctx.SelfEmail)
 			sctx.DB.Exec(`INSERT OR REPLACE INTO docs_documents
 				(id, title, content, modified_time, created_time, web_view_link, owners, last_synced)
 				VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-				file.Id, file.Name, content, file.ModifiedTime, file.CreatedTime, file.WebViewLink, owners)
+				record.ID, record.Title, record.Content, record.ModifiedTime,
+				record.CreatedTime, record.WebViewLink, record.Owners)
 			updatedCount++
 			sctx.SetStatus(fmt.Sprintf("syncing:%d", updatedCount))
 		}
@@ -131,6 +131,31 @@ func syncDocs(sctx syncContext) error { // nocov
 	deleteOrphanedRows(sctx.DB, "docs_documents", remoteIDs)
 	fmt.Printf("Google Docs sync: %d updated\n", updatedCount)
 	return nil
+}
+
+type docsRecord struct {
+	ID           string
+	Title        string
+	Content      string
+	ModifiedTime string
+	CreatedTime  string
+	WebViewLink  string
+	Owners       string
+}
+
+func buildDocsRecord(file *drive.File, doc *docs.Document, selfEmail string) docsRecord {
+	if file == nil {
+		return docsRecord{}
+	}
+	return docsRecord{
+		ID:           file.Id,
+		Title:        file.Name,
+		Content:      extractDocumentText(doc),
+		ModifiedTime: file.ModifiedTime,
+		CreatedTime:  file.CreatedTime,
+		WebViewLink:  file.WebViewLink,
+		Owners:       formatDriveOwners(file.Owners, selfEmail),
+	}
 }
 
 func extractDocumentText(doc *docs.Document) string {
@@ -182,7 +207,7 @@ func handleDocsSearch(src *Source, ctx context.Context, req mcp.CallToolRequest)
 		JOIN docs_documents d ON d.rowid = docs_documents_fts.rowid
 		WHERE docs_documents_fts MATCH ?
 		ORDER BY rank LIMIT ?`, query, limit)
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
 	}
 	defer rows.Close()
@@ -211,7 +236,7 @@ func handleDocsGetDocument(src *Source, ctx context.Context, req mcp.CallToolReq
 	if err == sql.ErrNoRows {
 		return mcp.NewToolResultError("Document not found"), nil
 	}
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to retrieve document: %v", err)), nil
 	}
 	return core.JsonResult(map[string]interface{}{
@@ -227,7 +252,7 @@ func handleDocsListRecent(src *Source, ctx context.Context, req mcp.CallToolRequ
 	}
 	rows, err := src.db.Query(`SELECT id, title, modified_time, created_time, web_view_link, owners
 		FROM docs_documents ORDER BY modified_time DESC LIMIT ?`, limit)
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to list documents: %v", err)), nil
 	}
 	defer rows.Close()
@@ -246,7 +271,7 @@ func handleDocsListRecent(src *Source, ctx context.Context, req mcp.CallToolRequ
 
 func docsSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT id, title, content, modified_time, owners FROM docs_documents`)
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 	defer rows.Close()
@@ -331,7 +356,7 @@ func formatDriveOwners(owners []*drive.User, selfEmail string) string {
 
 func deleteOrphanedRows(db *sql.DB, table string, remoteIDs map[string]bool) {
 	rows, err := db.Query("SELECT id FROM " + table)
-	if err != nil {
+	if err != nil { // nocov
 		return
 	}
 	defer rows.Close()

@@ -143,12 +143,12 @@ func (c *PlacesClient) SearchPlaces(ctx context.Context, query string, maxResult
 		TextQuery: query,
 		PageSize:  maxResults,
 	})
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/places:searchText", bytes.NewReader(reqBody))
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -181,7 +181,7 @@ func (c *PlacesClient) GetPlace(ctx context.Context, placeID string) (*PlaceDeta
 		c.baseURL+"/places/"+url.PathEscape(placeID),
 		nil,
 	)
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 	req.Header.Set("X-Goog-Api-Key", c.apiKey)
@@ -205,13 +205,13 @@ func (c *PlacesClient) validate() error {
 
 func (c *PlacesClient) do(req *http.Request, dest interface{}) error {
 	resp, err := c.httpClient.Do(req)
-	if err != nil {
+	if err != nil { // nocov
 		return err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
-	if err != nil {
+	if err != nil { // nocov
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

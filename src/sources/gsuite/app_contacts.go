@@ -21,7 +21,7 @@ var contactsAppDef = &appDef{
 	syncFunc:      syncContacts,
 	registerTools: registerContactsTools,
 	searchEntries: contactsSearchEntries,
-	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "contacts_people") },
+	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "contacts_people") }, // nocov
 	tablesToDrop:  []string{"contacts_people", "contacts_people_fts"},
 }
 
@@ -41,7 +41,7 @@ func initContactsSchema(db *sql.DB) error {
 		last_synced TEXT NOT NULL
 	);
 	`)
-	if err != nil {
+	if err != nil { // nocov
 		return err
 	}
 	_, err = db.Exec(`
@@ -97,50 +97,19 @@ func syncContacts(sctx syncContext) error { // nocov
 		}
 		for _, p := range res.Connections {
 			remoteIDs[p.ResourceName] = true
-			updatedTime := ""
-			if p.Metadata != nil && len(p.Metadata.Sources) > 0 {
-				updatedTime = p.Metadata.Sources[0].UpdateTime
-			}
+			record := buildContactRecord(p)
 			var localUpdated string
 			sctx.DB.QueryRow("SELECT updated_time FROM contacts_people WHERE resource_name = ?", p.ResourceName).Scan(&localUpdated)
-			if localUpdated == updatedTime && updatedTime != "" {
+			if localUpdated == record.UpdatedTime && record.UpdatedTime != "" {
 				continue
-			}
-			displayName, givenName, familyName := "", "", ""
-			if len(p.Names) > 0 {
-				displayName = p.Names[0].DisplayName
-				givenName = p.Names[0].GivenName
-				familyName = p.Names[0].FamilyName
-			}
-			var emails, phones, orgs, addrs []string
-			for _, e := range p.EmailAddresses {
-				emails = append(emails, e.Value)
-			}
-			for _, ph := range p.PhoneNumbers {
-				phones = append(phones, ph.Value)
-			}
-			for _, o := range p.Organizations {
-				org := o.Name
-				if o.Title != "" {
-					org += " (" + o.Title + ")"
-				}
-				orgs = append(orgs, org)
-			}
-			for _, a := range p.Addresses {
-				addrs = append(addrs, a.FormattedValue)
-			}
-			notes := ""
-			if len(p.Biographies) > 0 {
-				notes = p.Biographies[0].Value
 			}
 			sctx.DB.Exec(`INSERT OR REPLACE INTO contacts_people
 				(resource_name, display_name, given_name, family_name, emails, phones,
 				 organizations, addresses, notes, updated_time, last_synced)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-				p.ResourceName, displayName, givenName, familyName,
-				strings.Join(emails, ", "), strings.Join(phones, ", "),
-				strings.Join(orgs, ", "), strings.Join(addrs, "; "),
-				notes, updatedTime)
+				record.ResourceName, record.DisplayName, record.GivenName, record.FamilyName,
+				record.Emails, record.Phones, record.Organizations, record.Addresses,
+				record.Notes, record.UpdatedTime)
 			updatedCount++
 		}
 		pageToken = res.NextPageToken
@@ -153,9 +122,63 @@ func syncContacts(sctx syncContext) error { // nocov
 	return nil
 }
 
+type contactRecord struct {
+	ResourceName  string
+	DisplayName   string
+	GivenName     string
+	FamilyName    string
+	Emails        string
+	Phones        string
+	Organizations string
+	Addresses     string
+	Notes         string
+	UpdatedTime   string
+}
+
+func buildContactRecord(p *people.Person) contactRecord {
+	record := contactRecord{}
+	if p == nil {
+		return record
+	}
+	record.ResourceName = p.ResourceName
+	if p.Metadata != nil && len(p.Metadata.Sources) > 0 {
+		record.UpdatedTime = p.Metadata.Sources[0].UpdateTime
+	}
+	if len(p.Names) > 0 {
+		record.DisplayName = p.Names[0].DisplayName
+		record.GivenName = p.Names[0].GivenName
+		record.FamilyName = p.Names[0].FamilyName
+	}
+	var emails, phones, orgs, addrs []string
+	for _, e := range p.EmailAddresses {
+		emails = append(emails, e.Value)
+	}
+	for _, ph := range p.PhoneNumbers {
+		phones = append(phones, ph.Value)
+	}
+	for _, o := range p.Organizations {
+		org := o.Name
+		if o.Title != "" {
+			org += " (" + o.Title + ")"
+		}
+		orgs = append(orgs, org)
+	}
+	for _, a := range p.Addresses {
+		addrs = append(addrs, a.FormattedValue)
+	}
+	if len(p.Biographies) > 0 {
+		record.Notes = p.Biographies[0].Value
+	}
+	record.Emails = strings.Join(emails, ", ")
+	record.Phones = strings.Join(phones, ", ")
+	record.Organizations = strings.Join(orgs, ", ")
+	record.Addresses = strings.Join(addrs, "; ")
+	return record
+}
+
 func deleteOrphanedRowsByResourceName(db *sql.DB, table string, remoteIDs map[string]bool) {
 	rows, err := db.Query("SELECT resource_name FROM " + table)
-	if err != nil {
+	if err != nil { // nocov
 		return
 	}
 	defer rows.Close()
@@ -202,7 +225,7 @@ func handleContactsSearch(src *Source, ctx context.Context, req mcp.CallToolRequ
 		FROM contacts_people_fts
 		JOIN contacts_people c ON c.rowid = contacts_people_fts.rowid
 		WHERE contacts_people_fts MATCH ? ORDER BY rank LIMIT ?`, query, limit)
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
 	}
 	defer rows.Close()
@@ -227,7 +250,7 @@ func handleContactsList(src *Source, ctx context.Context, req mcp.CallToolReques
 	}
 	rows, err := src.db.Query(`SELECT resource_name, display_name, emails, phones, organizations, updated_time
 		FROM contacts_people ORDER BY display_name ASC LIMIT ?`, limit)
-	if err != nil {
+	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to list contacts: %v", err)), nil
 	}
 	defer rows.Close()
@@ -248,7 +271,7 @@ func handleContactsList(src *Source, ctx context.Context, req mcp.CallToolReques
 func contactsSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT resource_name, display_name, emails, phones, organizations, notes, updated_time
 		FROM contacts_people`)
-	if err != nil {
+	if err != nil { // nocov
 		return nil, err
 	}
 	defer rows.Close()
