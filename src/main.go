@@ -11,6 +11,7 @@ import (
 
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/googledocs"
+	"mcpyeahyouknowme/sources/googlesheets"
 	"mcpyeahyouknowme/sources/whatsapp"
 )
 
@@ -41,6 +42,10 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "Google Docs:")
 	fmt.Fprintln(os.Stderr, "  googledocs login             Authenticate with Google OAuth")
 	fmt.Fprintln(os.Stderr, "  googledocs reset             Clear Google Docs data and token")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Google Sheets:")
+	fmt.Fprintln(os.Stderr, "  googlesheets login           Authenticate with Google OAuth")
+	fmt.Fprintln(os.Stderr, "  googlesheets reset           Clear Google Sheets data and token")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Maintenance:")
 	fmt.Fprintln(os.Stderr, "  uninstall                Instructions for proper uninstall (use ./scripts/uninstall.sh)")
@@ -97,6 +102,27 @@ func main() {
 			return
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown googledocs subcommand: %s\n\n", subcmd)
+			printUsage()
+			os.Exit(1)
+		}
+	}
+
+	if cmd == "googlesheets" {
+		if len(args) == 0 {
+			fmt.Fprintln(os.Stderr, "Error: googlesheets subcommand required")
+			printUsage()
+			os.Exit(1)
+		}
+		subcmd := args[0]
+		switch subcmd {
+		case "login":
+			googlesheets.RunLogin(core.DataDir())
+			return
+		case "reset":
+			googlesheets.RunReset(core.DataDir())
+			return
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown googlesheets subcommand: %s\n\n", subcmd)
 			printUsage()
 			os.Exit(1)
 		}
@@ -203,6 +229,8 @@ func constructSource(name, dir string) core.DataSource {
 		return whatsapp.NewSource(dir)
 	case "googledocs":
 		return googledocs.NewSource(dir)
+	case "googlesheets":
+		return googlesheets.NewSource(dir)
 	default:
 		return nil
 	}
@@ -256,14 +284,22 @@ func isSourceAuthenticated(src core.DataSource) bool {
 			_ = gd // isAuthenticated is unexported; RequiresAuth checks state
 		}
 		// Check by loading token
-		return googledocs.NewSource(core.DataDir()).RequiresAuth() && tokenExists()
+		return googledocs.NewSource(core.DataDir()).RequiresAuth() && googleDocsTokenExists()
+	case "googlesheets":
+		return googlesheets.NewSource(core.DataDir()).RequiresAuth() && googleSheetsTokenExists()
 	default:
 		return true
 	}
 }
 
-func tokenExists() bool {
+func googleDocsTokenExists() bool {
 	tokenPath := filepath.Join(core.DataDir(), "googledocs_token.json")
+	_, err := os.Stat(tokenPath)
+	return err == nil
+}
+
+func googleSheetsTokenExists() bool {
+	tokenPath := filepath.Join(core.DataDir(), "googlesheets_token.json")
 	_, err := os.Stat(tokenPath)
 	return err == nil
 }
@@ -273,5 +309,6 @@ func LoadSources(dir string) []core.DataSource {
 	return []core.DataSource{
 		whatsapp.NewSource(dir),
 		googledocs.NewSource(dir),
+		googlesheets.NewSource(dir),
 	}
 }

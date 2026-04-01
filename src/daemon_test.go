@@ -24,18 +24,19 @@ func TestPlistPath(t *testing.T) {
 
 func TestCommandsListCompleteness(t *testing.T) {
 	expected := map[string]bool{
-		"mcp":         true,
-		"info":        true,
-		"completions": true,
-		"core":        true,
-		"start":       true,
-		"stop":        true,
-		"restart":     true,
-		"uninstall":   true,
-		"whatsapp":    true,
-		"googledocs":  true,
-		"login":       true,
-		"reset":       true,
+		"mcp":          true,
+		"info":         true,
+		"completions":  true,
+		"core":         true,
+		"start":        true,
+		"stop":         true,
+		"restart":      true,
+		"uninstall":    true,
+		"whatsapp":     true,
+		"googledocs":   true,
+		"googlesheets": true,
+		"login":        true,
+		"reset":        true,
 	}
 
 	for _, cmd := range commands {

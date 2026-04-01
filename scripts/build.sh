@@ -49,5 +49,7 @@ cd "$CLI_DIR" && go build -tags "sqlite_fts5" \
 		-X 'main.BuildTime=$build_time' \
 		-X 'main.BuildVersion=1.0.0' \
 		-X 'mcpyeahyouknowme/sources/googledocs.GoogleClientID=$GOOGLE_CLIENT_ID' \
-		-X 'mcpyeahyouknowme/sources/googledocs.GoogleClientSecret=$GOOGLE_CLIENT_SECRET'" \
+		-X 'mcpyeahyouknowme/sources/googledocs.GoogleClientSecret=$GOOGLE_CLIENT_SECRET' \
+		-X 'mcpyeahyouknowme/sources/googlesheets.GoogleClientID=$GOOGLE_CLIENT_ID' \
+		-X 'mcpyeahyouknowme/sources/googlesheets.GoogleClientSecret=$GOOGLE_CLIENT_SECRET'" \
 	-o "$ROOT/mcpyeahyouknowme.bin" .

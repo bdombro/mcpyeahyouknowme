@@ -105,14 +105,16 @@ func indexSources(store *SearchStore, sources []core.DataSource) {
 
 // registerSearchTool adds the global search MCP tool.
 func registerSearchTool(s *server.MCPServer, store *SearchStore) {
-	searchDesc := `Search across all connected data sources (WhatsApp, etc.) by name, participant, or message content. ` +
+	searchDesc := `Search across all connected data sources (WhatsApp, Google Docs, Google Sheets, etc.) by name, participant, or message content. ` +
 		`Returns results ranked by relevance using hybrid BM25 keyword + semantic vector search with hierarchy weighting ` +
 		`(chat/contact names ranked highest, then participants, then message content).
 
 Result metadata varies by source and content_type:
 - WhatsApp chat_name: {"jid", "is_group"}
 - WhatsApp participant: {"jid", "groups"} — use jid with whatsapp_get_chat or whatsapp_list_messages
-- WhatsApp message: {"message_id", "chat_jid", "sender", "timestamp", "is_from_me"} — use message_id with whatsapp_get_message_context`
+- WhatsApp message: {"message_id", "chat_jid", "sender", "timestamp", "is_from_me"} — use message_id with whatsapp_get_message_context
+- Google Docs document_title/content: {"document_id", "modified_time"} — use document_id with googledocs_get_document
+- Google Sheets spreadsheet_title/content: {"spreadsheet_id", "modified_time"} — use spreadsheet_id with googlesheets_get_spreadsheet`
 
 	s.AddTool(mcp.NewTool("search",
 		mcp.WithDescription(searchDesc),

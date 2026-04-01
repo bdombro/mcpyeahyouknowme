@@ -1,6 +1,6 @@
 # Product Spec
 
-A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)) and **Google Docs** (via Google Docs/Drive APIs with OAuth 2.0), with the architecture designed to support additional sources like Gmail, Google Drive, and others.
+A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Docs** (via Google Docs/Drive APIs with OAuth 2.0), and **Google Sheets** (via Google Sheets/Drive APIs with OAuth 2.0), with the architecture designed to support additional sources like Gmail, Google Drive, and others.
 
 ## Building
 
@@ -8,7 +8,7 @@ A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.
 ./scripts/build.sh
 ```
 
-The build script sources `.env` from the repository root (if present) and bakes `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` into the binary via `-ldflags`. Copy `.env.example` to `.env` and fill in the values before building. If `.env` is missing, the binary still builds but Google Docs features will require the environment variables at runtime.
+The build script sources `.env` from the repository root (if present) and bakes `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` into the binary via `-ldflags` for both Google Docs and Google Sheets. Copy `.env.example` to `.env` and fill in the values before building. If `.env` is missing, the binary still builds but Google features will require the environment variables at runtime.
 
 CGO must be enabled (default on macOS/Linux) since `go-sqlite3` requires it. On Windows, install a C compiler via [MSYS2](https://www.msys2.org/) and run `go env -w CGO_ENABLED=1` first.
 
@@ -35,13 +35,21 @@ mcpyeahyouknowme googledocs login
 
 Authenticates with Google using OAuth 2.0. Opens the default browser to authorize access to Google Docs and Google Drive APIs. OAuth client credentials are baked into the binary at build time from `.env` via `-ldflags` (see **Building**). The OAuth token is saved to `googledocs_token.json` for subsequent daemon runs.
 
+### Google Sheets Login
+
+```
+mcpyeahyouknowme googlesheets login
+```
+
+Authenticates with Google using OAuth 2.0. Opens the default browser to authorize access to Google Sheets and Google Drive APIs. Uses the same OAuth client credentials as Google Docs (baked into the binary from `.env`). The OAuth token is saved to `googlesheets_token.json` for subsequent daemon runs. Uses port 8086 for the local OAuth callback (Google Docs uses 8085).
+
 ### Core — Data Source Services
 
 ```
 mcpyeahyouknowme core
 ```
 
-Runs all available data source core services. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on port 8080. For Google Docs: syncs documents every 5 minutes via the Google Docs/Drive APIs. Requires authentication for each source.
+Runs all available data source core services. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on port 8080. For Google Docs: syncs documents every 5 minutes via the Google Docs/Drive APIs. For Google Sheets: syncs spreadsheets every 5 minutes via the Google Sheets/Drive APIs. Requires authentication for each source.
 
 Re-authentication may be required after ~20 days for WhatsApp. Google Docs OAuth tokens refresh automatically as long as the refresh token is valid.
 
@@ -379,6 +387,16 @@ Metadata shapes per WhatsApp content type:
 | `googledocs_get_document` | Get the full content of a specific Google Doc by ID. Returns title, content, modification time, and web link. |
 | `googledocs_list_recent` | List recently modified Google Docs, sorted by modification time descending. Accepts `limit` parameter (default 20). |
 
+### Google Sheets Tools
+
+**Read path**: Queries `googlesheets.db` directly via SQLite. Spreadsheets are synced by the core daemon every 5 minutes. Each sync cycle lists all Google Sheets (including shared drives) via the Drive API, fetches content only for new or modified spreadsheets, and deletes local rows for spreadsheets that have been trashed or deleted remotely. The core daemon does not need to be running for read-only operations. Spreadsheet content is stored as plain text: each sheet is rendered with a `## SheetName` header followed by tab-separated cell values.
+
+| Tool | Description |
+|------|-------------|
+| `googlesheets_search` | Full-text search across all Google Sheets using FTS5. Returns spreadsheet snippets with highlighted matches, modification times, sheet counts, and web links. Accepts `query` (required) and `limit` (default 10) parameters. |
+| `googlesheets_get_spreadsheet` | Get the full content of a specific Google Sheet by ID. Returns title, content, modification time, sheet count, and web link. |
+| `googlesheets_list_recent` | List recently modified Google Sheets, sorted by modification time descending. Accepts `limit` parameter (default 20). |
+
 ---
 
 ## Search
@@ -395,13 +413,16 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 | `document_title` | Google Docs | Document titles (prefixed with owner names when present) |
 | `document_owner` | Google Docs | Document owner names and emails |
 | `document_content` | Google Docs | Document text content (prefixed with owner names, chunked at 5000 chars) |
+| `spreadsheet_title` | Google Sheets | Spreadsheet titles (prefixed with owner names when present) |
+| `spreadsheet_owner` | Google Sheets | Spreadsheet owner names and emails |
+| `spreadsheet_content` | Google Sheets | Spreadsheet cell content (prefixed with owner names, chunked at 5000 chars) |
 
 **Search algorithm:**
 
 1. **BM25** — FTS5 full-text search on the `search_fts` virtual table
 2. **Vector** (when ONNX installed) — embed the query with BGE-Small-EN-v1.5, compute cosine similarity against stored embeddings
 3. **Reciprocal Rank Fusion (RRF)** — combine BM25 and vector ranked lists: `score(d) = sum(1/(k+rank_i))` with k=60
-4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `message` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x)
+4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `message` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x)
 
 When ONNX Runtime is not installed, vector search is disabled and the system falls back to BM25-only. This is transparent to the caller.
 

@@ -30,6 +30,10 @@ func TestCommandRouting(t *testing.T) {
 		{"googledocs reset", "googledocs", []string{"reset"}, true, "should route to Google Docs reset"},
 		{"googledocs no subcommand", "googledocs", []string{}, false, "should error on missing subcommand"},
 		{"googledocs invalid", "googledocs", []string{"invalid"}, false, "should error on invalid subcommand"},
+		{"googlesheets login", "googlesheets", []string{"login"}, true, "should route to Google Sheets login"},
+		{"googlesheets reset", "googlesheets", []string{"reset"}, true, "should route to Google Sheets reset"},
+		{"googlesheets no subcommand", "googlesheets", []string{}, false, "should error on missing subcommand"},
+		{"googlesheets invalid", "googlesheets", []string{"invalid"}, false, "should error on invalid subcommand"},
 		{"legacy login", "login", []string{}, true, "should route to legacy login"},
 		{"legacy reset", "reset", []string{}, true, "should route to legacy reset"},
 		{"unknown command", "unknown", []string{}, false, "should error on unknown command"},
@@ -42,13 +46,13 @@ func TestCommandRouting(t *testing.T) {
 				"mcp": true, "info": true, "completions": true,
 				"core": true, "start": true, "stop": true, "restart": true,
 				"uninstall": true, "whatsapp": true, "googledocs": true,
-				"login": true, "reset": true,
+				"googlesheets": true, "login": true, "reset": true,
 			}
 
 			isValid := validCommands[tt.cmd]
 
 			// For subcommands, check the subcommand is valid
-			if tt.cmd == "whatsapp" || tt.cmd == "googledocs" {
+			if tt.cmd == "whatsapp" || tt.cmd == "googledocs" || tt.cmd == "googlesheets" {
 				if len(tt.args) == 0 {
 					isValid = false
 				} else {
@@ -68,7 +72,7 @@ func TestCommandsList(t *testing.T) {
 	// Verify the commands list contains expected commands
 	expectedCommands := []string{
 		"mcp", "info", "completions", "core", "start", "stop",
-		"restart", "uninstall", "whatsapp", "googledocs", "login", "reset",
+		"restart", "uninstall", "whatsapp", "googledocs", "googlesheets", "login", "reset",
 	}
 
 	commandMap := make(map[string]bool)

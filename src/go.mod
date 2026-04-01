@@ -9,7 +9,7 @@ require (
 	github.com/mdp/qrterminal v1.0.1
 	go.mau.fi/whatsmeow v0.0.0-20260129212019-7787ab952245
 	golang.org/x/oauth2 v0.36.0
-	google.golang.org/api v0.273.0
+	google.golang.org/api v0.273.1
 	google.golang.org/protobuf v1.36.11
 )
 

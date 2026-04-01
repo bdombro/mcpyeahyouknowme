@@ -113,6 +113,7 @@ var commands = []string{
 	"uninstall",
 	"whatsapp",
 	"googledocs",
+	"googlesheets",
 	// Legacy (backward compatibility)
 	"login",
 	"reset",
@@ -137,7 +138,7 @@ func printBashCompletions() {
     local subcmd="${COMP_WORDS[2]}"
 
     if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "mcp info completions core start stop restart uninstall whatsapp googledocs login reset" -- "$cur") )
+        COMPREPLY=( $(compgen -W "mcp info completions core start stop restart uninstall whatsapp googledocs googlesheets login reset" -- "$cur") )
         return
     fi
 
@@ -147,6 +148,9 @@ func printBashCompletions() {
                 COMPREPLY=( $(compgen -W "login reset" -- "$cur") )
                 ;;
             googledocs)
+                COMPREPLY=( $(compgen -W "login reset" -- "$cur") )
+                ;;
+            googlesheets)
                 COMPREPLY=( $(compgen -W "login reset" -- "$cur") )
                 ;;
             completions)
@@ -174,6 +178,7 @@ func printZshCompletions() {
         'uninstall:Remove daemon, data, and binaries'
         'whatsapp:WhatsApp commands'
         'googledocs:Google Docs commands'
+        'googlesheets:Google Sheets commands'
     )
     wa_cmds=(
         'login:Log in to WhatsApp (scan QR code)'
@@ -182,6 +187,10 @@ func printZshCompletions() {
     gd_cmds=(
         'login:Authenticate with Google OAuth'
         'reset:Clear Google Docs data and token'
+    )
+    gs_cmds=(
+        'login:Authenticate with Google OAuth'
+        'reset:Clear Google Sheets data and token'
     )
     comp_args=(
         'bash:Bash completions'
@@ -194,6 +203,8 @@ func printZshCompletions() {
         _describe -t wa_commands 'whatsapp command' wa_cmds
     elif (( CURRENT == 3 )) && [[ "${words[2]}" == googledocs ]]; then
         _describe -t gd_commands 'googledocs command' gd_cmds
+    elif (( CURRENT == 3 )) && [[ "${words[2]}" == googlesheets ]]; then
+        _describe -t gs_commands 'googlesheets command' gs_cmds
     else
         case "${words[2]}" in
             completions)

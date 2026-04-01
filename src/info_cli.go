@@ -10,6 +10,7 @@ import (
 
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/googledocs"
+	"mcpyeahyouknowme/sources/googlesheets"
 	"mcpyeahyouknowme/sources/whatsapp"
 )
 
@@ -43,6 +44,12 @@ func runInfo() {
 
 	fmt.Println("\U0001f4c4 Google Docs")
 	for _, line := range googledocs.InfoLines(dDir) {
+		fmt.Println(line)
+	}
+	fmt.Println()
+
+	fmt.Println("\U0001f4ca Google Sheets")
+	for _, line := range googlesheets.InfoLines(dDir) {
 		fmt.Println(line)
 	}
 	fmt.Println()
