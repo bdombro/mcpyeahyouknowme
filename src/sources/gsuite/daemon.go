@@ -62,6 +62,10 @@ func (g *Source) syncAllApps(ctx context.Context) error { // nocov
 		}
 	}
 
+	// Reload app selection from config so CLI toggles are picked up by the
+	// long-running daemon without requiring a manual restart.
+	g.apps = g.loadAppsConfig()
+
 	oauthConfig := g.getOAuthConfig()
 	syncToken := *g.token
 	if syncToken.Expiry.IsZero() {
