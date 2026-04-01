@@ -68,4 +68,5 @@ func runInfo() {
 	for _, line := range gsuite.InfoLines(dDir) {
 		fmt.Println(line)
 	}
+	fmt.Println()
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"mcpyeahyouknowme/core"
 )
@@ -102,22 +103,6 @@ func runUninstall() {
 	fmt.Println("  6. sudo rm /usr/local/bin/mcpyeahyouknowme")
 }
 
-var commands = []string{
-	"mcp",
-	"info",
-	"completions",
-	"core",
-	"start",
-	"stop",
-	"restart",
-	"uninstall",
-	"whatsapp",
-	"gsuite",
-	// Legacy (backward compatibility)
-	"login",
-	"reset",
-}
-
 func runCompletions(shell string) {
 	switch shell {
 	case "bash":
@@ -131,61 +116,52 @@ func runCompletions(shell string) {
 }
 
 func printBashCompletions() {
-	fmt.Print(`_mcpyeahyouknowme() {
+	topLevel := strings.Join(commandNames(topLevelCommands()), " ")
+	whatsAppSubs := strings.Join(commandNames(findCommand(topLevelCommands(), "whatsapp").Subcommands), " ")
+	gsuiteSubs := strings.Join(commandNames(findCommand(topLevelCommands(), "gsuite").Subcommands), " ")
+
+	fmt.Printf(`_mcpyeahyouknowme() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local cmd="${COMP_WORDS[1]}"
 
     if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "mcp info completions core start stop restart uninstall whatsapp gsuite login reset" -- "$cur") )
+        COMPREPLY=( $(compgen -W "%s" -- "$cur") )
         return
     fi
 
     if [[ $COMP_CWORD -eq 2 ]]; then
         case "$cmd" in
             whatsapp)
-                COMPREPLY=( $(compgen -W "login reset" -- "$cur") )
+                COMPREPLY=( $(compgen -W "%s" -- "$cur") )
                 ;;
             gsuite)
-                COMPREPLY=( $(compgen -W "login apps reset" -- "$cur") )
+                COMPREPLY=( $(compgen -W "%s" -- "$cur") )
                 ;;
             completions)
-                COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") )
+                COMPREPLY=( $(compgen -W "%s" -- "$cur") )
                 ;;
         esac
     fi
 }
 complete -o nospace -F _mcpyeahyouknowme mcpyeahyouknowme
-`)
+`, topLevel, whatsAppSubs, gsuiteSubs, shellCompletionWords())
 }
 
 func printZshCompletions() {
-	fmt.Print(`_mcpyeahyouknowme() {
+	fmt.Printf(`_mcpyeahyouknowme() {
     local -a cmds wa_cmds gs_cmds comp_args
 
     cmds=(
-        'mcp:Start the MCP server (stdio transport)'
-        'info:Show install status and data locations'
-        'completions:Print shell completions (bash or zsh)'
-        'core:Run the daemon process directly (used by LaunchAgent)'
-        'start:Start the core daemon'
-        'stop:Stop the core daemon'
-        'restart:Restart the core daemon'
-        'uninstall:Remove daemon, data, and binaries'
-        'whatsapp:WhatsApp commands'
-        'gsuite:Google Suite commands'
+%s
     )
     wa_cmds=(
-        'login:Log in to WhatsApp (scan QR code)'
-        'reset:Wipe WhatsApp data and session'
+%s
     )
     gs_cmds=(
-        'login:Authenticate with Google (all apps)'
-        'apps:View/toggle enabled Google apps'
-        'reset:Clear all Google Suite data and token'
+%s
     )
     comp_args=(
-        'bash:Bash completions'
-        'zsh:Zsh completions'
+%s
     )
 
     if (( CURRENT == 2 )); then
@@ -207,5 +183,24 @@ if (( ! $+functions[compdef] )); then
     autoload -Uz compinit && compinit -C
 fi
 compdef _mcpyeahyouknowme mcpyeahyouknowme
-`)
+`, zshEntries(topLevelCommands()),
+		zshEntries(findCommand(topLevelCommands(), "whatsapp").Subcommands),
+		zshEntries(findCommand(topLevelCommands(), "gsuite").Subcommands),
+		zshChoiceEntries(findCommand(topLevelCommands(), "completions").ArgChoices))
+}
+
+func zshEntries(commands []Command) string {
+	lines := make([]string, 0, len(commands))
+	for _, cmd := range commands {
+		lines = append(lines, fmt.Sprintf("        '%s:%s'", cmd.Name, cmd.Summary))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func zshChoiceEntries(choices []Choice) string {
+	lines := make([]string, 0, len(choices))
+	for _, choice := range choices {
+		lines = append(lines, fmt.Sprintf("        '%s:%s'", choice.Value, choice.Summary))
+	}
+	return strings.Join(lines, "\n")
 }

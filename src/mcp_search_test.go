@@ -4,15 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/mark3labs/mcp-go/server"
+	_ "github.com/mattn/go-sqlite3"
 	"mcpyeahyouknowme/sources/whatsapp"
 )
+
+type failingSearchStore struct{}
+
+func (failingSearchStore) Search(query string, limit int, sourceFilter, typeFilter string) ([]SearchResult, error) {
+	return nil, errors.New("search failed")
+}
 
 // buildTestMCPServerWithSearch creates an MCP server with the global search tool,
 // seeded with WhatsApp fixture data.
@@ -53,7 +61,7 @@ func buildTestMCPServerWithSearch(t *testing.T) *server.MCPServer {
 
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
 	ws.RegisterTools(s)
-	registerSearchTool(s, searchStore)
+	RegisterSearchTool(s, searchStore)
 	return s
 }
 
@@ -167,7 +175,7 @@ func TestMCP_GlobalSearch_noKeywordMatch(t *testing.T) {
 
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
 	ws.RegisterTools(s)
-	registerSearchTool(s, searchStore)
+	RegisterSearchTool(s, searchStore)
 
 	text := callGlobalTool(t, s, "search", map[string]interface{}{"query": "zzzznonexistent"})
 	if text != "[]" {
@@ -182,6 +190,24 @@ func TestMCP_GlobalSearch_withLimit(t *testing.T) {
 	json.Unmarshal([]byte(text), &results)
 	if len(results) > 1 {
 		t.Errorf("expected at most 1 result with limit=1, got %d", len(results))
+	}
+}
+
+func TestMCP_GlobalSearch_missingQuery(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+	text := callSearchTool(t, s, map[string]interface{}{})
+	if text != "query parameter is required" {
+		t.Errorf("expected missing query error, got %q", text)
+	}
+}
+
+func TestMCP_GlobalSearch_storeError(t *testing.T) {
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	RegisterSearchTool(s, failingSearchStore{})
+
+	text := callGlobalTool(t, s, "search", map[string]interface{}{"query": "Family"})
+	if !strings.Contains(text, "search failed") {
+		t.Errorf("expected database error, got %q", text)
 	}
 }
 

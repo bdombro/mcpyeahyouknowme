@@ -17,9 +17,9 @@
 | `mcp.go` | 4 | 4 | 100.0% |
 | `search_store.go` | 205 | 205 | 100.0% |
 | `service.go` | 335 | 335 | 100.0% |
-| [`source.go`](#sourcego) | 64 | 68 | 94.1% |
+| [`source.go`](#sourcego) | 66 | 70 | 94.3% |
 | [`store.go`](#storego) | 110 | 113 | 97.3% |
-| **Total** | **1316** | **1672** | **78.7%** |
+| **Total** | **1318** | **1674** | **78.7%** |
 
 ## Uncovered Blocks
 
@@ -272,10 +272,10 @@
 
 ### [`source.go`](../src/source.go)
 
-- Lines 125–127 (1 stmt)
-- Lines 182–183 (1 stmt)
-- Lines 200–202 (1 stmt)
-- Lines 221–223 (1 stmt)
+- Lines 127–129 (1 stmt)
+- Lines 190–191 (1 stmt)
+- Lines 208–210 (1 stmt)
+- Lines 229–231 (1 stmt)
 
 ### [`store.go`](../src/store.go)
 

@@ -38,7 +38,7 @@ func TestCommandsListCompleteness(t *testing.T) {
 		"reset":       true,
 	}
 
-	for _, cmd := range commands {
+	for _, cmd := range commandNames(topLevelCommands()) {
 		if !expected[cmd] {
 			t.Errorf("Unexpected command in list: %q", cmd)
 		}

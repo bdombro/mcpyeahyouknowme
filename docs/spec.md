@@ -105,15 +105,20 @@ type CoreService interface {
 
 ```
 src/
-  core/          — shared interfaces, helpers (DataDir, IntArg, BoolArg, JsonResult),
-                   utilities (DefaultReset, RunPollLoop, OpenDB), config (LoadConfig, SaveConfig)
+  core/             — shared interfaces, helpers (DataDir, IntArg, BoolArg, JsonResult),
+                      utilities (DefaultReset, RunPollLoop, OpenDB), config (LoadConfig, SaveConfig)
   sources/
-    whatsapp/    — store, service, mcp, daemon, client, cli, helpers
-    googledocs/  — source, mcp, daemon, client, cli
-  config.go      — delegates to core.LoadConfig / core.SaveConfig + legacy migration
-  main.go        — CLI dispatch + runCore() polling loop
-  mcp.go         — MCP server setup + global search tool
-  search_store.go — cross-source search index
+    registry/       — source descriptors, constructors, auth checks
+    whatsapp/       — store, service, mcp, daemon, client, cli, helpers
+    gsuite/         — source, app_*, mcp, daemon, client, cli
+  cmd.go            — command table, usage output, command dispatch
+  config.go         — delegates to core.LoadConfig / core.SaveConfig
+  daemon.go         — LaunchAgent management + shell completion rendering
+  main.go           — thin entrypoint: sets env and delegates to cmd.go
+  runtime.go        — core daemon loop + source lifecycle orchestration
+  mcp.go            — MCP server setup and source wiring
+  search_store.go   — cross-source search index
+  search_mcp.go     — global MCP search tool registration
 ```
 
 ### Config-driven daemon
@@ -127,18 +132,18 @@ Login commands (`whatsapp login`, `googledocs login`) write `{enabled: true}` to
 
 On first run after upgrade from a pre-config version, the daemon auto-migrates existing auth artifacts (`whatsapp.db` session, `googledocs_token.json`) into config.json.
 
-`LoadSources()` in `main.go` returns all sources for MCP read access. To add a new source:
+`sources/registry` is the single source of truth for available sources. To add a new source:
 
 1. Create `src/sources/<name>/` implementing `core.DataSource` and `core.CoreService`
-2. Add it to `LoadSources()` in `main.go`
-3. Add it to `constructSource()` in `main.go`
+2. Add a descriptor to `src/sources/registry/registry.go`
+3. Expose any source-specific auth check used by the registry
 
 Current sources:
 
 | Source | Prefix | Package | Description |
 |--------|--------|---------|-------------|
 | WhatsApp | `whatsapp_` | `sources/whatsapp/` | Messages, chats, contacts via local SQLite + REST API |
-| Google Docs | `googledocs_` | `sources/googledocs/` | Documents via Google Docs/Drive APIs with 5-minute polling sync |
+| Google Suite | `gsuite_` | `sources/gsuite/` | Docs, Sheets, Gmail, Calendar, Tasks, Contacts, and Slides via Google APIs with periodic sync |
 
 ### Daemon Management
 

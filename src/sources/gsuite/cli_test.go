@@ -2,9 +2,23 @@ package gsuite
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestIsLoggedIn(t *testing.T) {
+	dir := t.TempDir()
+	if IsLoggedIn(dir) {
+		t.Fatal("expected false without token")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gsuite_token.json"), []byte(`{"access_token":"x"}`), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+	if !IsLoggedIn(dir) {
+		t.Fatal("expected true with token")
+	}
+}
 
 func TestInfoLines_NotLoggedIn_CLI(t *testing.T) {
 	dir := t.TempDir()

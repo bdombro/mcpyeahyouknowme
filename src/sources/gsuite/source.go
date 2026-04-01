@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"mcpyeahyouknowme/core"
 
@@ -129,6 +131,12 @@ func NewSource(dataDir string) *Source {
 	src.loadToken()
 	src.apps = src.loadAppsConfig()
 	return src
+}
+
+// IsLoggedIn returns true if a Google OAuth token exists.
+func IsLoggedIn(dataDir string) bool {
+	_, err := os.Stat(filepath.Join(dataDir, "gsuite_token.json"))
+	return err == nil
 }
 
 func (g *Source) Name() string        { return "gsuite" }

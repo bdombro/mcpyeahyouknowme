@@ -1,40 +1,35 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	"mcpyeahyouknowme/core"
-	"mcpyeahyouknowme/sources/whatsapp"
+	"mcpyeahyouknowme/sources/registry"
 
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
 func runMcp() {
 	dir := core.DataDir()
-	sources := LoadSources(dir)
+
+	// Only expose source tools when the source has usable credentials.
+	var enabledSources []core.DataSource
+	for _, desc := range registry.All {
+		if desc.IsAuthenticated != nil && !desc.IsAuthenticated(dir) {
+			fmt.Fprintf(os.Stderr, "Info: %s not logged in - %s MCP tools will not be available.\n", desc.Name, desc.Name)
+			fmt.Fprintf(os.Stderr, "      Run 'mcpyeahyouknowme %s login' to enable %s integration.\n", desc.Name, desc.Name)
+			continue
+		}
+		enabledSources = append(enabledSources, desc.New(dir))
+	}
 	defer func() {
-		for _, src := range sources {
+		for _, src := range enabledSources {
 			src.Close()
 		}
 	}()
-
-	// Filter sources: only include WhatsApp if logged in
-	var enabledSources []core.DataSource
-	for _, src := range sources {
-		if src.Name() == "whatsapp" {
-			if !whatsapp.IsLoggedIn(dir) {
-				fmt.Fprintf(os.Stderr, "Info: WhatsApp not logged in - WhatsApp MCP tools will not be available.\n")
-				fmt.Fprintf(os.Stderr, "      Run 'mcpyeahyouknowme whatsapp login' to enable WhatsApp integration.\n")
-				continue
-			}
-		}
-		enabledSources = append(enabledSources, src)
-	}
 
 	embedder, err := NewEmbedder(filepath.Join(dir, "models"))
 	if err != nil {
@@ -78,7 +73,7 @@ func runMcp() {
 	}
 
 	if searchStore != nil {
-		registerSearchTool(s, searchStore)
+		RegisterSearchTool(s, searchStore)
 	}
 
 	if err := server.ServeStdio(s); err != nil {
@@ -101,45 +96,4 @@ func indexSources(store *SearchStore, sources []core.DataSource) {
 		}
 		store.UpdateSourceTimestamp(src.Name(), time.Now())
 	}
-}
-
-// registerSearchTool adds the global search MCP tool.
-func registerSearchTool(s *server.MCPServer, store *SearchStore) {
-	searchDesc := `Search across all connected data sources (WhatsApp, Google Suite) by name, participant, or content. ` +
-		`Returns results ranked by relevance using hybrid BM25 keyword + semantic vector search with hierarchy weighting.
-
-Result metadata varies by source and content_type:
-- WhatsApp chat_name: {"jid", "is_group"}
-- WhatsApp participant: {"jid", "groups"} — use jid with whatsapp_get_chat
-- WhatsApp message: {"message_id", "chat_jid", "sender", "timestamp"}
-- Google Docs: {"document_id", "modified_time"} — use with gsuite_docs_get_document
-- Google Sheets: {"spreadsheet_id", "modified_time"} — use with gsuite_sheets_get_spreadsheet
-- Gmail: {"message_id", "from", "date", "folder"} — use with gsuite_gmail_get_message
-- Calendar: {"event_id", "start_time", "end_time"} — use with gsuite_calendar_get_event
-- Tasks: {"task_id", "status", "due"} — use with gsuite_tasks_search
-- Contacts: {"resource_name", "emails", "phones"} — use with gsuite_contacts_search
-- Slides: {"presentation_id", "modified_time"} — use with gsuite_slides_get_presentation`
-
-	s.AddTool(mcp.NewTool("search",
-		mcp.WithDescription(searchDesc),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
-		mcp.WithString("source", mcp.Description("Filter to a specific source (e.g. 'whatsapp')")),
-		mcp.WithString("content_type", mcp.Description("Filter by content type: 'chat_name', 'participant', or 'message'")),
-		mcp.WithNumber("limit", mcp.Description("Maximum results to return (default 20)")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
-		query, err := req.RequireString("query")
-		if err != nil {
-			return mcp.NewToolResultError("query parameter is required"), nil
-		}
-		source, _ := args["source"].(string)
-		contentType, _ := args["content_type"].(string)
-		limit := core.IntArg(args, "limit", 20)
-
-		results, err := store.Search(query, limit, source, contentType)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		return core.JsonResult(results)
-	})
 }
