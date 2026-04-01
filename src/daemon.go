@@ -112,8 +112,7 @@ var commands = []string{
 	"restart",
 	"uninstall",
 	"whatsapp",
-	"googledocs",
-	"googlesheets",
+	"gsuite",
 	// Legacy (backward compatibility)
 	"login",
 	"reset",
@@ -135,10 +134,9 @@ func printBashCompletions() {
 	fmt.Print(`_mcpyeahyouknowme() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local cmd="${COMP_WORDS[1]}"
-    local subcmd="${COMP_WORDS[2]}"
 
     if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "mcp info completions core start stop restart uninstall whatsapp googledocs googlesheets login reset" -- "$cur") )
+        COMPREPLY=( $(compgen -W "mcp info completions core start stop restart uninstall whatsapp gsuite login reset" -- "$cur") )
         return
     fi
 
@@ -147,11 +145,8 @@ func printBashCompletions() {
             whatsapp)
                 COMPREPLY=( $(compgen -W "login reset" -- "$cur") )
                 ;;
-            googledocs)
-                COMPREPLY=( $(compgen -W "login reset" -- "$cur") )
-                ;;
-            googlesheets)
-                COMPREPLY=( $(compgen -W "login reset" -- "$cur") )
+            gsuite)
+                COMPREPLY=( $(compgen -W "login apps reset" -- "$cur") )
                 ;;
             completions)
                 COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") )
@@ -165,32 +160,28 @@ complete -o nospace -F _mcpyeahyouknowme mcpyeahyouknowme
 
 func printZshCompletions() {
 	fmt.Print(`_mcpyeahyouknowme() {
-    local -a cmds wa_cmds gd_cmds comp_args
+    local -a cmds wa_cmds gs_cmds comp_args
 
     cmds=(
         'mcp:Start the MCP server (stdio transport)'
         'info:Show install status and data locations'
         'completions:Print shell completions (bash or zsh)'
-        'core:Start the core daemon (data source services)'
+        'core:Run the daemon process directly (used by LaunchAgent)'
         'start:Start the core daemon'
         'stop:Stop the core daemon'
         'restart:Restart the core daemon'
         'uninstall:Remove daemon, data, and binaries'
         'whatsapp:WhatsApp commands'
-        'googledocs:Google Docs commands'
-        'googlesheets:Google Sheets commands'
+        'gsuite:Google Suite commands'
     )
     wa_cmds=(
         'login:Log in to WhatsApp (scan QR code)'
         'reset:Wipe WhatsApp data and session'
     )
-    gd_cmds=(
-        'login:Authenticate with Google OAuth'
-        'reset:Clear Google Docs data and token'
-    )
     gs_cmds=(
-        'login:Authenticate with Google OAuth'
-        'reset:Clear Google Sheets data and token'
+        'login:Authenticate with Google (all apps)'
+        'apps:View/toggle enabled Google apps'
+        'reset:Clear all Google Suite data and token'
     )
     comp_args=(
         'bash:Bash completions'
@@ -201,10 +192,8 @@ func printZshCompletions() {
         _describe -t commands 'command' cmds
     elif (( CURRENT == 3 )) && [[ "${words[2]}" == whatsapp ]]; then
         _describe -t wa_commands 'whatsapp command' wa_cmds
-    elif (( CURRENT == 3 )) && [[ "${words[2]}" == googledocs ]]; then
-        _describe -t gd_commands 'googledocs command' gd_cmds
-    elif (( CURRENT == 3 )) && [[ "${words[2]}" == googlesheets ]]; then
-        _describe -t gs_commands 'googlesheets command' gs_cmds
+    elif (( CURRENT == 3 )) && [[ "${words[2]}" == gsuite ]]; then
+        _describe -t gs_commands 'gsuite command' gs_cmds
     else
         case "${words[2]}" in
             completions)

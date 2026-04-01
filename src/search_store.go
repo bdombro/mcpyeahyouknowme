@@ -25,17 +25,34 @@ type SearchResult struct {
 	Metadata    json.RawMessage `json:"metadata,omitempty"`
 }
 
-// Hierarchy weights: name matches are most valuable, then participants, then messages.
+// Hierarchy weights: name matches are most valuable, then participants, then content.
 var hierarchyWeights = map[string]float64{
-	"chat_name":           3.0,
-	"participant":         2.0,
-	"message":             1.0,
-	"document_title":      2.0,
-	"document_owner":      2.0,
-	"document_content":    1.0,
+	// WhatsApp
+	"chat_name":   3.0,
+	"participant": 2.0,
+	"message":     1.0,
+	// Google Docs
+	"document_title":   2.0,
+	"document_owner":   2.0,
+	"document_content": 1.0,
+	// Google Sheets
 	"spreadsheet_title":   2.0,
 	"spreadsheet_owner":   2.0,
 	"spreadsheet_content": 1.0,
+	// Gmail
+	"email_subject": 2.5,
+	"email_content": 1.0,
+	// Calendar
+	"calendar_event":             2.0,
+	"calendar_event_description": 1.0,
+	// Tasks
+	"task": 1.5,
+	// Contacts
+	"contact": 2.0,
+	// Slides
+	"presentation_title":   2.0,
+	"presentation_owner":   2.0,
+	"presentation_content": 1.0,
 }
 
 const rrfK = 60 // constant for Reciprocal Rank Fusion

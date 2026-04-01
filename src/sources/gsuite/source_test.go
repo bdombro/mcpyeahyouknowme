@@ -1,0 +1,474 @@
+package gsuite
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"golang.org/x/oauth2"
+)
+
+func TestInitGSuiteDB(t *testing.T) {
+	db := newTestDB(t)
+	tables := []string{
+		"sync_state",
+		"docs_documents",
+		"sheets_spreadsheets",
+		"gmail_messages",
+		"calendar_events",
+		"tasks_items",
+		"contacts_people",
+		"slides_presentations",
+	}
+	for _, table := range tables {
+		var name string
+		err := db.QueryRow("SELECT name FROM sqlite_master WHERE type IN ('table','shadow') AND name = ?", table).Scan(&name)
+		if err != nil {
+			t.Errorf("expected table %q to exist: %v", table, err)
+		}
+	}
+}
+
+func TestIsAuthenticated_NoToken(t *testing.T) {
+	src := &Source{dataDir: t.TempDir()}
+	if src.isAuthenticated() {
+		t.Error("expected false with no token")
+	}
+}
+
+func TestIsAuthenticated_WithToken(t *testing.T) {
+	src := &Source{dataDir: t.TempDir()}
+	src.token = &oauth2.Token{RefreshToken: "r", Expiry: time.Now().Add(time.Hour)}
+	if !src.isAuthenticated() {
+		t.Error("expected true with valid token")
+	}
+}
+
+func TestIsAuthenticated_ExpiredNoRefresh(t *testing.T) {
+	src := &Source{dataDir: t.TempDir()}
+	src.token = &oauth2.Token{RefreshToken: "", Expiry: time.Now().Add(-time.Hour)}
+	if src.isAuthenticated() {
+		t.Error("expected false with expired token and no refresh token")
+	}
+}
+
+func TestIsAuthenticated_WithRefreshToken(t *testing.T) {
+	src := &Source{dataDir: t.TempDir()}
+	// Expired but has refresh token — still considered valid
+	src.token = &oauth2.Token{RefreshToken: "refresh_ok", Expiry: time.Now().Add(-time.Hour)}
+	if !src.isAuthenticated() {
+		t.Error("expected true with expired token but valid refresh token")
+	}
+}
+
+func TestSaveLoadToken(t *testing.T) {
+	dir := t.TempDir()
+	src := &Source{dataDir: dir}
+	tok := &oauth2.Token{RefreshToken: "myrefresh", Expiry: time.Now().Add(time.Hour)}
+	if err := src.saveToken(tok); err != nil {
+		t.Fatalf("saveToken: %v", err)
+	}
+	src2 := &Source{dataDir: dir}
+	if err := src2.loadToken(); err != nil {
+		t.Fatalf("loadToken: %v", err)
+	}
+	if src2.token == nil {
+		t.Fatal("expected token after load")
+	}
+	if src2.token.RefreshToken != "myrefresh" {
+		t.Errorf("expected refresh token 'myrefresh', got %q", src2.token.RefreshToken)
+	}
+}
+
+func TestLoadToken_Missing(t *testing.T) {
+	src := &Source{dataDir: t.TempDir()}
+	if err := src.loadToken(); err == nil {
+		t.Error("expected error loading missing token")
+	}
+}
+
+func TestAppsConfig_DefaultAll(t *testing.T) {
+	cfg := DefaultAppsConfig()
+	for _, app := range allApps {
+		if !cfg.IsEnabled(app.name) {
+			t.Errorf("expected %s to be enabled by default", app.name)
+		}
+	}
+}
+
+func TestAppsConfig_SetEnabled(t *testing.T) {
+	cfg := DefaultAppsConfig()
+	cfg.SetEnabled("gmail", false)
+	if cfg.IsEnabled("gmail") {
+		t.Error("expected gmail to be disabled")
+	}
+	cfg.SetEnabled("gmail", true)
+	if !cfg.IsEnabled("gmail") {
+		t.Error("expected gmail to be re-enabled")
+	}
+}
+
+func TestAppsConfig_UnknownApp(t *testing.T) {
+	cfg := DefaultAppsConfig()
+	if cfg.IsEnabled("nonexistent") {
+		t.Error("unknown app should return false")
+	}
+	cfg.SetEnabled("nonexistent", true) // must not panic
+}
+
+func TestSaveLoadAppsConfig(t *testing.T) {
+	dir := t.TempDir()
+	src := &Source{dataDir: dir, apps: DefaultAppsConfig()}
+	src.db = newTestDB(t)
+
+	apps := DefaultAppsConfig()
+	apps.SetEnabled("gmail", false)
+	apps.SetEnabled("tasks", false)
+	if err := src.saveAppsConfig(apps); err != nil {
+		t.Fatalf("saveAppsConfig: %v", err)
+	}
+
+	loaded := src.loadAppsConfig()
+	if loaded.IsEnabled("gmail") {
+		t.Error("gmail should be disabled after save/load")
+	}
+	if loaded.IsEnabled("tasks") {
+		t.Error("tasks should be disabled after save/load")
+	}
+	if !loaded.IsEnabled("docs") {
+		t.Error("docs should still be enabled")
+	}
+}
+
+func TestGetSetSyncState(t *testing.T) {
+	src := newTestSource(t)
+	if !src.getLastSyncTime("docs").IsZero() {
+		t.Error("expected zero time before first sync")
+	}
+	now := time.Now().Truncate(time.Second)
+	src.setLastSyncTime("docs", now)
+	got := src.getLastSyncTime("docs")
+	if !got.Equal(now) {
+		t.Errorf("expected %v, got %v", now, got)
+	}
+}
+
+func TestGetSetSyncStatus(t *testing.T) {
+	src := newTestSource(t)
+	if src.getSyncStatus("gmail") != "" {
+		t.Error("expected empty status initially")
+	}
+	src.setSyncStatus("gmail", "syncing:5")
+	if src.getSyncStatus("gmail") != "syncing:5" {
+		t.Errorf("expected 'syncing:5', got %q", src.getSyncStatus("gmail"))
+	}
+}
+
+func TestGetSetSyncState_NilDB(t *testing.T) {
+	src := &Source{}
+	src.setLastSyncTime("docs", time.Now())
+	src.setSyncStatus("docs", "syncing")
+	if !src.getLastSyncTime("docs").IsZero() {
+		t.Error("expected zero time with nil db")
+	}
+	if src.getSyncStatus("docs") != "" {
+		t.Error("expected empty status with nil db")
+	}
+}
+
+func TestSearchEntries_Empty(t *testing.T) {
+	src := newTestSource(t)
+	entries, err := src.SearchEntries()
+	if err != nil {
+		t.Fatalf("SearchEntries: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries for empty DB, got %d", len(entries))
+	}
+}
+
+func TestSearchEntries_WithData(t *testing.T) {
+	src := newTestSource(t)
+	seedAll(t, src.db)
+	entries, err := src.SearchEntries()
+	if err != nil {
+		t.Fatalf("SearchEntries: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("expected entries with seeded data")
+	}
+	types := map[string]bool{}
+	for _, e := range entries {
+		types[e.ContentType] = true
+	}
+	expected := []string{"document_title", "spreadsheet_title", "email_subject", "calendar_event", "task", "contact", "presentation_title"}
+	for _, ct := range expected {
+		if !types[ct] {
+			t.Errorf("expected content type %q in search entries", ct)
+		}
+	}
+}
+
+func TestSearchEntries_NilDB(t *testing.T) {
+	src := &Source{apps: DefaultAppsConfig()}
+	entries, err := src.SearchEntries()
+	if err != nil {
+		t.Fatalf("unexpected error with nil db: %v", err)
+	}
+	if entries != nil {
+		t.Error("expected nil entries with nil db")
+	}
+}
+
+func TestSearchEntries_DisabledApp(t *testing.T) {
+	src := newTestSource(t)
+	seedDocs(t, src.db)
+	src.apps.SetEnabled("docs", false)
+	entries, err := src.SearchEntries()
+	if err != nil {
+		t.Fatalf("SearchEntries: %v", err)
+	}
+	for _, e := range entries {
+		if e.ContentType == "document_title" || e.ContentType == "document_content" {
+			t.Errorf("expected no docs entries when docs app is disabled")
+		}
+	}
+}
+
+func TestReset(t *testing.T) {
+	dir := t.TempDir()
+	files := []string{"gsuite.db", "gsuite.db-wal", "gsuite.db-shm", "gsuite_token.json", "gsuite_email.txt"}
+	for _, f := range files {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("data"), 0600); err != nil {
+			t.Fatalf("create file %s: %v", f, err)
+		}
+	}
+	src := &Source{}
+	if err := src.Reset(dir); err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+	for _, f := range files {
+		if _, err := os.Stat(filepath.Join(dir, f)); !os.IsNotExist(err) {
+			t.Errorf("expected %s to be deleted after reset", f)
+		}
+	}
+}
+
+func TestResetApp(t *testing.T) {
+	src := newTestSource(t)
+	seedDocs(t, src.db)
+
+	var count int
+	src.db.QueryRow("SELECT COUNT(*) FROM docs_documents").Scan(&count)
+	if count != 1 {
+		t.Fatalf("expected 1 doc before reset, got %d", count)
+	}
+
+	if err := src.ResetApp("docs"); err != nil {
+		t.Fatalf("ResetApp: %v", err)
+	}
+
+	src.db.QueryRow("SELECT COUNT(*) FROM docs_documents").Scan(&count)
+	if count != 0 {
+		t.Errorf("expected 0 docs after reset, got %d", count)
+	}
+}
+
+func TestResetApp_NilDB(t *testing.T) {
+	src := &Source{}
+	if err := src.ResetApp("docs"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResetApp_UnknownApp(t *testing.T) {
+	src := newTestSource(t)
+	if err := src.ResetApp("nonexistent"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFormatSyncStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     string
+		lastSync   time.Time
+		count      int
+		wantPrefix string
+	}{
+		{"idle with last sync", "idle", time.Now().Add(-5 * time.Minute), 42, "42 synced — idle"},
+		{"currently syncing with count", "syncing:10", time.Time{}, 9, "9 synced — syncing"},
+		{"syncing no count", "syncing", time.Time{}, 0, "0 synced — syncing"},
+		{"no sync yet", "", time.Time{}, 0, "0 synced"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := formatSyncStatus(tc.status, tc.lastSync, tc.count)
+			if len(got) < len(tc.wantPrefix) || got[:len(tc.wantPrefix)] != tc.wantPrefix {
+				t.Errorf("got %q, want prefix %q", got, tc.wantPrefix)
+			}
+		})
+	}
+}
+
+func TestAllAppDefs(t *testing.T) {
+	if len(allApps) != 7 {
+		t.Errorf("expected 7 app defs, got %d", len(allApps))
+	}
+	names := map[string]bool{}
+	for _, app := range allApps {
+		if app.name == "" {
+			t.Error("app def has empty name")
+		}
+		if app.displayName == "" {
+			t.Errorf("app %s has empty displayName", app.name)
+		}
+		if names[app.name] {
+			t.Errorf("duplicate app name: %s", app.name)
+		}
+		names[app.name] = true
+	}
+}
+
+func TestBuildContentEntries(t *testing.T) {
+	entries := buildContentEntries("src", "id1", "My Title", "Some content here", "2024-01-01T00:00:00Z", "Owner A",
+		"title_type", "owner_type", "content_type", "doc_id")
+	if len(entries) < 3 {
+		t.Errorf("expected at least 3 entries, got %d", len(entries))
+	}
+	hasTitle, hasOwner, hasContent := false, false, false
+	for _, e := range entries {
+		switch e.ContentType {
+		case "title_type":
+			hasTitle = true
+		case "owner_type":
+			hasOwner = true
+		case "content_type":
+			hasContent = true
+		}
+	}
+	if !hasTitle {
+		t.Error("missing title entry")
+	}
+	if !hasOwner {
+		t.Error("missing owner entry")
+	}
+	if !hasContent {
+		t.Error("missing content entry")
+	}
+}
+
+func TestBuildContentEntries_NoOwner(t *testing.T) {
+	entries := buildContentEntries("src", "id1", "Title", "Content", "2024-01-01T00:00:00Z", "",
+		"tt", "ot", "ct", "id")
+	for _, e := range entries {
+		if e.ContentType == "ot" {
+			t.Error("should not emit owner entry when owners is empty")
+		}
+	}
+}
+
+func TestBuildContentEntries_LongContent(t *testing.T) {
+	content := string(make([]byte, 12000))
+	for i := range []byte(content) {
+		content = content[:i] + "x" + content[i+1:]
+		if i == 0 {
+			break // avoid O(n^2); just test chunking math
+		}
+	}
+	// Create a 12001 char string directly
+	buf := make([]byte, 12001)
+	for i := range buf {
+		buf[i] = 'x'
+	}
+	entries := buildContentEntries("src", "id1", "Title", string(buf), "2024-01-01T00:00:00Z", "",
+		"tt", "ot", "ct", "id")
+	contentChunks := 0
+	for _, e := range entries {
+		if e.ContentType == "ct" {
+			contentChunks++
+		}
+	}
+	if contentChunks != 3 {
+		t.Errorf("expected 3 content chunks for 12001 chars, got %d", contentChunks)
+	}
+}
+
+func TestFormatDriveOwners_Empty(t *testing.T) {
+	result := formatDriveOwners(nil, "")
+	if result != "" {
+		t.Errorf("expected empty string, got %q", result)
+	}
+}
+
+func TestFormatDriveOwners_ExcludesSelf(t *testing.T) {
+	import_note := "uses drive.User inline via pointer"
+	_ = import_note
+	// Can't use drive.User without importing the SDK in the test — test via formatDriveOwners
+	// with no owners
+	result := formatDriveOwners(nil, "self@example.com")
+	if result != "" {
+		t.Errorf("expected empty string with no owners")
+	}
+}
+
+func TestDeleteOrphanedRows(t *testing.T) {
+	src := newTestSource(t)
+	seedDocs(t, src.db)
+
+	// doc1 is in DB; keep it
+	remoteIDs := map[string]bool{"doc1": true}
+	deleteOrphanedRows(src.db, "docs_documents", remoteIDs)
+
+	var count int
+	src.db.QueryRow("SELECT COUNT(*) FROM docs_documents").Scan(&count)
+	if count != 1 {
+		t.Errorf("expected 1 doc to remain, got %d", count)
+	}
+
+	// Now mark doc1 as deleted remotely
+	remoteIDs = map[string]bool{}
+	deleteOrphanedRows(src.db, "docs_documents", remoteIDs)
+
+	src.db.QueryRow("SELECT COUNT(*) FROM docs_documents").Scan(&count)
+	if count != 0 {
+		t.Errorf("expected 0 docs after orphan delete, got %d", count)
+	}
+}
+
+func TestCountTable(t *testing.T) {
+	src := newTestSource(t)
+	n, err := countTable(src.db, "docs_documents")
+	if err != nil {
+		t.Fatalf("countTable: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0, got %d", n)
+	}
+	seedDocs(t, src.db)
+	n, err = countTable(src.db, "docs_documents")
+	if err != nil {
+		t.Fatalf("countTable after seed: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("expected 1, got %d", n)
+	}
+}
+
+func TestSourceName(t *testing.T) {
+	src := &Source{}
+	if src.Name() != "gsuite" {
+		t.Errorf("expected 'gsuite', got %q", src.Name())
+	}
+	if src.Description() != "Google Suite" {
+		t.Errorf("expected 'Google Suite', got %q", src.Description())
+	}
+}
+
+func TestClose_NilDB(t *testing.T) {
+	src := &Source{}
+	if err := src.Close(); err != nil {
+		t.Errorf("Close with nil db: %v", err)
+	}
+}

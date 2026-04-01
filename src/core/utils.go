@@ -4,12 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// IsNetworkAvailable checks connectivity by dialing the Google API endpoint.
+func IsNetworkAvailable() bool {
+	conn, err := net.DialTimeout("tcp", "www.googleapis.com:443", 3*time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
 
 // DefaultReset removes a list of files (by relative path under dataDir).
 // Missing files are silently skipped. Returns the first non-missing error.
@@ -29,9 +40,14 @@ func DefaultReset(dataDir string, files []string) error {
 
 // RunPollLoop runs fn immediately then on every interval tick until ctx is done.
 // Errors from fn are printed but do not stop the loop.
+// When the network is unavailable, the tick is skipped.
 func RunPollLoop(ctx context.Context, interval time.Duration, fn func(context.Context) error) error {
-	if err := fn(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Sync error: %v\n", err)
+	if IsNetworkAvailable() {
+		if err := fn(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "Sync error: %v\n", err)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "Network unavailable, skipping initial sync\n")
 	}
 
 	ticker := time.NewTicker(interval)
@@ -42,6 +58,10 @@ func RunPollLoop(ctx context.Context, interval time.Duration, fn func(context.Co
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+			if !IsNetworkAvailable() {
+				fmt.Fprintf(os.Stderr, "Network unavailable, skipping sync\n")
+				continue
+			}
 			if err := fn(ctx); err != nil {
 				fmt.Fprintf(os.Stderr, "Sync error: %v\n", err)
 			}

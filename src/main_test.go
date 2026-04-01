@@ -26,14 +26,11 @@ func TestCommandRouting(t *testing.T) {
 		{"whatsapp reset", "whatsapp", []string{"reset"}, true, "should route to WhatsApp reset"},
 		{"whatsapp no subcommand", "whatsapp", []string{}, false, "should error on missing subcommand"},
 		{"whatsapp invalid", "whatsapp", []string{"invalid"}, false, "should error on invalid subcommand"},
-		{"googledocs login", "googledocs", []string{"login"}, true, "should route to Google Docs login"},
-		{"googledocs reset", "googledocs", []string{"reset"}, true, "should route to Google Docs reset"},
-		{"googledocs no subcommand", "googledocs", []string{}, false, "should error on missing subcommand"},
-		{"googledocs invalid", "googledocs", []string{"invalid"}, false, "should error on invalid subcommand"},
-		{"googlesheets login", "googlesheets", []string{"login"}, true, "should route to Google Sheets login"},
-		{"googlesheets reset", "googlesheets", []string{"reset"}, true, "should route to Google Sheets reset"},
-		{"googlesheets no subcommand", "googlesheets", []string{}, false, "should error on missing subcommand"},
-		{"googlesheets invalid", "googlesheets", []string{"invalid"}, false, "should error on invalid subcommand"},
+		{"gsuite login", "gsuite", []string{"login"}, true, "should route to Google Suite login"},
+		{"gsuite apps", "gsuite", []string{"apps"}, true, "should route to Google Suite apps"},
+		{"gsuite reset", "gsuite", []string{"reset"}, true, "should route to Google Suite reset"},
+		{"gsuite no subcommand", "gsuite", []string{}, false, "should error on missing subcommand"},
+		{"gsuite invalid", "gsuite", []string{"invalid"}, false, "should error on invalid subcommand"},
 		{"legacy login", "login", []string{}, true, "should route to legacy login"},
 		{"legacy reset", "reset", []string{}, true, "should route to legacy reset"},
 		{"unknown command", "unknown", []string{}, false, "should error on unknown command"},
@@ -41,22 +38,29 @@ func TestCommandRouting(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Test that command is in valid commands list or is a known subcommand
 			validCommands := map[string]bool{
 				"mcp": true, "info": true, "completions": true,
 				"core": true, "start": true, "stop": true, "restart": true,
-				"uninstall": true, "whatsapp": true, "googledocs": true,
-				"googlesheets": true, "login": true, "reset": true,
+				"uninstall": true, "whatsapp": true, "gsuite": true,
+				"login": true, "reset": true,
 			}
 
 			isValid := validCommands[tt.cmd]
 
-			// For subcommands, check the subcommand is valid
-			if tt.cmd == "whatsapp" || tt.cmd == "googledocs" || tt.cmd == "googlesheets" {
+			if tt.cmd == "whatsapp" {
 				if len(tt.args) == 0 {
 					isValid = false
 				} else {
 					validSubs := map[string]bool{"login": true, "reset": true}
+					isValid = validSubs[tt.args[0]]
+				}
+			}
+
+			if tt.cmd == "gsuite" {
+				if len(tt.args) == 0 {
+					isValid = false
+				} else {
+					validSubs := map[string]bool{"login": true, "apps": true, "reset": true}
 					isValid = validSubs[tt.args[0]]
 				}
 			}
@@ -69,10 +73,9 @@ func TestCommandRouting(t *testing.T) {
 }
 
 func TestCommandsList(t *testing.T) {
-	// Verify the commands list contains expected commands
 	expectedCommands := []string{
 		"mcp", "info", "completions", "core", "start", "stop",
-		"restart", "uninstall", "whatsapp", "googledocs", "googlesheets", "login", "reset",
+		"restart", "uninstall", "whatsapp", "gsuite", "login", "reset",
 	}
 
 	commandMap := make(map[string]bool)
@@ -105,8 +108,6 @@ func TestCompletionsShellValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.shell, func(t *testing.T) {
-			// We can't easily test runCompletions without mocking os.Exit,
-			// but we can verify the logic
 			validShells := map[string]bool{"bash": true, "zsh": true}
 			isValid := validShells[tt.shell]
 			shouldErr := !isValid

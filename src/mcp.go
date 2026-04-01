@@ -105,16 +105,20 @@ func indexSources(store *SearchStore, sources []core.DataSource) {
 
 // registerSearchTool adds the global search MCP tool.
 func registerSearchTool(s *server.MCPServer, store *SearchStore) {
-	searchDesc := `Search across all connected data sources (WhatsApp, Google Docs, Google Sheets, etc.) by name, participant, or message content. ` +
-		`Returns results ranked by relevance using hybrid BM25 keyword + semantic vector search with hierarchy weighting ` +
-		`(chat/contact names ranked highest, then participants, then message content).
+	searchDesc := `Search across all connected data sources (WhatsApp, Google Suite) by name, participant, or content. ` +
+		`Returns results ranked by relevance using hybrid BM25 keyword + semantic vector search with hierarchy weighting.
 
 Result metadata varies by source and content_type:
 - WhatsApp chat_name: {"jid", "is_group"}
-- WhatsApp participant: {"jid", "groups"} — use jid with whatsapp_get_chat or whatsapp_list_messages
-- WhatsApp message: {"message_id", "chat_jid", "sender", "timestamp", "is_from_me"} — use message_id with whatsapp_get_message_context
-- Google Docs document_title/content: {"document_id", "modified_time"} — use document_id with googledocs_get_document
-- Google Sheets spreadsheet_title/content: {"spreadsheet_id", "modified_time"} — use spreadsheet_id with googlesheets_get_spreadsheet`
+- WhatsApp participant: {"jid", "groups"} — use jid with whatsapp_get_chat
+- WhatsApp message: {"message_id", "chat_jid", "sender", "timestamp"}
+- Google Docs: {"document_id", "modified_time"} — use with gsuite_docs_get_document
+- Google Sheets: {"spreadsheet_id", "modified_time"} — use with gsuite_sheets_get_spreadsheet
+- Gmail: {"message_id", "from", "date", "folder"} — use with gsuite_gmail_get_message
+- Calendar: {"event_id", "start_time", "end_time"} — use with gsuite_calendar_get_event
+- Tasks: {"task_id", "status", "due"} — use with gsuite_tasks_search
+- Contacts: {"resource_name", "emails", "phones"} — use with gsuite_contacts_search
+- Slides: {"presentation_id", "modified_time"} — use with gsuite_slides_get_presentation`
 
 	s.AddTool(mcp.NewTool("search",
 		mcp.WithDescription(searchDesc),

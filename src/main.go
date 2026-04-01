@@ -10,8 +10,7 @@ import (
 	"time"
 
 	"mcpyeahyouknowme/core"
-	"mcpyeahyouknowme/sources/googledocs"
-	"mcpyeahyouknowme/sources/googlesheets"
+	"mcpyeahyouknowme/sources/gsuite"
 	"mcpyeahyouknowme/sources/whatsapp"
 )
 
@@ -30,7 +29,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  completions [shell]      Print shell completions (bash or zsh)")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Core Daemon:")
-	fmt.Fprintln(os.Stderr, "  core                     Start the core daemon (data source services)")
+	fmt.Fprintln(os.Stderr, "  core                     Run the daemon process directly (used by LaunchAgent)")
 	fmt.Fprintln(os.Stderr, "  start                    Start the core daemon")
 	fmt.Fprintln(os.Stderr, "  stop                     Stop the core daemon")
 	fmt.Fprintln(os.Stderr, "  restart                  Restart the core daemon")
@@ -39,13 +38,10 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  whatsapp login [--relogin]   Log in to WhatsApp (scan QR code)")
 	fmt.Fprintln(os.Stderr, "  whatsapp reset               Wipe WhatsApp data and session")
 	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Google Docs:")
-	fmt.Fprintln(os.Stderr, "  googledocs login             Authenticate with Google OAuth")
-	fmt.Fprintln(os.Stderr, "  googledocs reset             Clear Google Docs data and token")
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Google Sheets:")
-	fmt.Fprintln(os.Stderr, "  googlesheets login           Authenticate with Google OAuth")
-	fmt.Fprintln(os.Stderr, "  googlesheets reset           Clear Google Sheets data and token")
+	fmt.Fprintln(os.Stderr, "Google Suite:")
+	fmt.Fprintln(os.Stderr, "  gsuite login                 Authenticate with Google (all apps)")
+	fmt.Fprintln(os.Stderr, "  gsuite apps                  View/toggle enabled Google apps")
+	fmt.Fprintln(os.Stderr, "  gsuite reset                 Clear all Google Suite data and token")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Maintenance:")
 	fmt.Fprintln(os.Stderr, "  uninstall                Instructions for proper uninstall (use ./scripts/uninstall.sh)")
@@ -86,43 +82,25 @@ func main() {
 		}
 	}
 
-	if cmd == "googledocs" {
+	if cmd == "gsuite" {
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Error: googledocs subcommand required")
+			fmt.Fprintln(os.Stderr, "Error: gsuite subcommand required")
 			printUsage()
 			os.Exit(1)
 		}
 		subcmd := args[0]
 		switch subcmd {
 		case "login":
-			googledocs.RunLogin(core.DataDir())
+			gsuite.RunLogin(core.DataDir())
+			return
+		case "apps":
+			gsuite.RunApps(core.DataDir())
 			return
 		case "reset":
-			googledocs.RunReset(core.DataDir())
+			gsuite.RunReset(core.DataDir())
 			return
 		default:
-			fmt.Fprintf(os.Stderr, "Unknown googledocs subcommand: %s\n\n", subcmd)
-			printUsage()
-			os.Exit(1)
-		}
-	}
-
-	if cmd == "googlesheets" {
-		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Error: googlesheets subcommand required")
-			printUsage()
-			os.Exit(1)
-		}
-		subcmd := args[0]
-		switch subcmd {
-		case "login":
-			googlesheets.RunLogin(core.DataDir())
-			return
-		case "reset":
-			googlesheets.RunReset(core.DataDir())
-			return
-		default:
-			fmt.Fprintf(os.Stderr, "Unknown googlesheets subcommand: %s\n\n", subcmd)
+			fmt.Fprintf(os.Stderr, "Unknown gsuite subcommand: %s\n\n", subcmd)
 			printUsage()
 			os.Exit(1)
 		}
@@ -193,7 +171,6 @@ func runCore() {
 			return
 		case <-ticker.C:
 			newCfg := loadConfig(dir)
-			// Handle resets
 			for name, sc := range newCfg.Sources {
 				if sc.Reset {
 					if cancel, ok := running[name]; ok {
@@ -203,13 +180,11 @@ func runCore() {
 					handleReset(dir, name, &newCfg)
 				}
 			}
-			// Start newly-enabled sources
 			for name, sc := range newCfg.Sources {
 				if sc.Enabled && !sc.Reset && running[name] == nil {
 					startSource(dir, name, running)
 				}
 			}
-			// Stop removed/disabled sources
 			for name, cancel := range running {
 				sc, exists := newCfg.Sources[name]
 				if !exists || !sc.Enabled {
@@ -227,10 +202,8 @@ func constructSource(name, dir string) core.DataSource {
 	switch name {
 	case "whatsapp":
 		return whatsapp.NewSource(dir)
-	case "googledocs":
-		return googledocs.NewSource(dir)
-	case "googlesheets":
-		return googlesheets.NewSource(dir)
+	case "gsuite":
+		return gsuite.NewSource(dir)
 	default:
 		return nil
 	}
@@ -279,36 +252,19 @@ func isSourceAuthenticated(src core.DataSource) bool {
 	switch src.Name() {
 	case "whatsapp":
 		return whatsapp.IsLoggedIn(core.DataDir())
-	case "googledocs":
-		if gd, ok := src.(*googledocs.Source); ok {
-			_ = gd // isAuthenticated is unexported; RequiresAuth checks state
-		}
-		// Check by loading token
-		return googledocs.NewSource(core.DataDir()).RequiresAuth() && googleDocsTokenExists()
-	case "googlesheets":
-		return googlesheets.NewSource(core.DataDir()).RequiresAuth() && googleSheetsTokenExists()
+	case "gsuite":
+		tokenPath := filepath.Join(core.DataDir(), "gsuite_token.json")
+		_, err := os.Stat(tokenPath)
+		return err == nil
 	default:
 		return true
 	}
-}
-
-func googleDocsTokenExists() bool {
-	tokenPath := filepath.Join(core.DataDir(), "googledocs_token.json")
-	_, err := os.Stat(tokenPath)
-	return err == nil
-}
-
-func googleSheetsTokenExists() bool {
-	tokenPath := filepath.Join(core.DataDir(), "googlesheets_token.json")
-	_, err := os.Stat(tokenPath)
-	return err == nil
 }
 
 // LoadSources returns all data sources for MCP use (read-only, no auth gate).
 func LoadSources(dir string) []core.DataSource {
 	return []core.DataSource{
 		whatsapp.NewSource(dir),
-		googledocs.NewSource(dir),
-		googlesheets.NewSource(dir),
+		gsuite.NewSource(dir),
 	}
 }

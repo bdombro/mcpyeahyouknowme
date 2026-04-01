@@ -14,7 +14,7 @@ alwaysApply: false
 
 ## Coverage filtering (`scripts/test.sh`)
 
-- **File inclusion**: `sources/whatsapp/` (store, service, helpers), `sources/googledocs/` (source, mcp, client), `sources/googlesheets/` (source, mcp, client), `search_store`, `embedding`. `*_init.go` excluded.
+- **File inclusion**: `sources/whatsapp/` (store, service, helpers), `sources/gsuite/` (source, mcp, client, store, app_*), `search_store`, `embedding`. `*_init.go` excluded.
 - **`// nocov` auto-detection**: uncovered blocks containing `// nocov` stripped from filtered profile. Covered blocks unaffected.
 - CLI handlers, OAuth, event handlers, daemon code excluded entirely from the filter.
 

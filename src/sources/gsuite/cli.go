@@ -1,6 +1,7 @@
-package googlesheets
+package gsuite
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -19,9 +20,10 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// RunLogin handles the OAuth loopback (PKCE) flow for Google Sheets.
+// RunLogin handles the single OAuth flow for all Google Workspace apps,
+// then prompts the user to select which apps to enable.
 func RunLogin(dataDir string) {
-	fmt.Println("🔐 Starting Google Sheets OAuth login...")
+	fmt.Println("🔐 Starting Google Suite OAuth login...")
 	fmt.Println()
 
 	src := NewSource(dataDir)
@@ -42,13 +44,11 @@ func RunLogin(dataDir string) {
 			http.NotFound(w, r)
 			return
 		}
-
 		if r.URL.Query().Get("state") != state {
 			http.Error(w, "Invalid state parameter", http.StatusBadRequest)
 			errChan <- fmt.Errorf("invalid state parameter")
 			return
 		}
-
 		code := r.URL.Query().Get("code")
 		if code == "" {
 			errorMsg := r.URL.Query().Get("error")
@@ -56,17 +56,15 @@ func RunLogin(dataDir string) {
 			errChan <- fmt.Errorf("authorization failed: %s", errorMsg)
 			return
 		}
-
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintf(w, `<!DOCTYPE html><html><head><title>Authentication Successful</title></head>
 <body style="font-family: sans-serif; text-align: center; padding: 50px;">
 <h1>Authentication Successful</h1>
 <p>You can close this window and return to the terminal.</p>
 </body></html>`)
-
 		codeChan <- code
 	})
-	srv := &http.Server{Addr: ":8086", Handler: mux}
+	srv := &http.Server{Addr: ":8085", Handler: mux}
 
 	go func() {
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
@@ -81,6 +79,8 @@ func RunLogin(dataDir string) {
 	)
 
 	fmt.Println("Opening browser for Google authentication...")
+	fmt.Println("This will authorize access to: Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides")
+	fmt.Println()
 	fmt.Println("If the browser doesn't open automatically, visit this URL:")
 	fmt.Println()
 	fmt.Println(authURL)
@@ -109,23 +109,32 @@ func RunLogin(dataDir string) {
 		}
 
 		if email, err := fetchGoogleEmail(config, token); err == nil && email != "" {
-			emailPath := filepath.Join(dataDir, "googlesheets_email.txt")
+			emailPath := filepath.Join(dataDir, "gsuite_email.txt")
 			os.WriteFile(emailPath, []byte(email), 0o600)
 		}
 
+		fmt.Println()
+		fmt.Println("✓ Successfully authenticated with Google!")
+		fmt.Println()
+
+		apps := promptAppSelection()
+
 		cfg := core.LoadConfig(dataDir)
-		cfg.Sources["googlesheets"] = core.SourceConfig{Enabled: true}
+		authData, _ := json.Marshal(struct {
+			Apps AppsConfig `json:"apps"`
+		}{Apps: apps})
+		cfg.Sources["gsuite"] = core.SourceConfig{Enabled: true, Auth: authData}
 		if err := core.SaveConfig(dataDir, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
 		}
 
 		fmt.Println()
-		fmt.Println("✓ Successfully authenticated with Google!")
-		fmt.Println("✓ Token saved for daemon use")
+		fmt.Println("✓ Configuration saved")
 		fmt.Println()
 		fmt.Println("You can now:")
 		fmt.Println("  • See the status: mcpyeahyouknowme info")
 		fmt.Println("  • Use MCP server: mcpyeahyouknowme mcp")
+		fmt.Println("  • Toggle apps:    mcpyeahyouknowme gsuite apps")
 
 	case err := <-errChan:
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -143,9 +152,84 @@ func RunLogin(dataDir string) {
 	srv.Shutdown(shutdownCtx)
 }
 
-// RunReset removes Google Sheets data after prompting for confirmation.
+// promptAppSelection asks the user which apps to enable after login.
+func promptAppSelection() AppsConfig {
+	apps := DefaultAppsConfig()
+
+	fmt.Println("Which Google apps would you like to enable?")
+	fmt.Println("All are enabled by default. Enter numbers to disable, or press Enter to keep all.")
+	fmt.Println()
+	for i, app := range allApps {
+		fmt.Printf("  %d. %s\n", i+1, app.displayName)
+	}
+	fmt.Println()
+	fmt.Print("Numbers to disable (comma-separated), or Enter for all: ")
+
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			for _, part := range strings.Split(line, ",") {
+				part = strings.TrimSpace(part)
+				idx := 0
+				if _, err := fmt.Sscanf(part, "%d", &idx); err == nil && idx >= 1 && idx <= len(allApps) {
+					apps.SetEnabled(allApps[idx-1].name, false)
+					fmt.Printf("  ✗ Disabled %s\n", allApps[idx-1].displayName)
+				}
+			}
+		}
+	}
+
+	return apps
+}
+
+// RunApps shows current app status and allows toggling.
+func RunApps(dataDir string) {
+	src := NewSource(dataDir)
+	defer src.Close()
+
+	fmt.Println("Google Suite apps:")
+	fmt.Println()
+	for i, app := range allApps {
+		status := "✓ enabled"
+		if !src.apps.IsEnabled(app.name) {
+			status = "✗ disabled"
+		}
+		fmt.Printf("  %d. %s — %s\n", i+1, app.displayName, status)
+	}
+	fmt.Println()
+	fmt.Print("Enter numbers to toggle (comma-separated), or Enter to keep: ")
+
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			return
+		}
+		for _, part := range strings.Split(line, ",") {
+			part = strings.TrimSpace(part)
+			idx := 0
+			if _, err := fmt.Sscanf(part, "%d", &idx); err == nil && idx >= 1 && idx <= len(allApps) {
+				appName := allApps[idx-1].name
+				newState := !src.apps.IsEnabled(appName)
+				src.apps.SetEnabled(appName, newState)
+				if newState {
+					fmt.Printf("  ✓ Enabled %s\n", allApps[idx-1].displayName)
+				} else {
+					fmt.Printf("  ✗ Disabled %s — clearing data...\n", allApps[idx-1].displayName)
+					src.ResetApp(appName)
+				}
+			}
+		}
+		if err := src.saveAppsConfig(src.apps); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not save config: %v\n", err)
+		}
+	}
+}
+
+// RunReset removes Google Suite data after prompting for confirmation.
 func RunReset(dataDir string) {
-	fmt.Println("⚠️  This will remove your Google Sheets authentication and delete all synced spreadsheets.")
+	fmt.Println("⚠️  This will remove your Google Suite authentication and delete all synced data.")
 	fmt.Print("Are you sure? (yes/no): ")
 
 	var response string
@@ -161,45 +245,62 @@ func RunReset(dataDir string) {
 		fmt.Fprintf(os.Stderr, "Warning during reset: %v\n", err)
 	}
 
-	fmt.Println("Google Sheets data reset complete")
-	fmt.Println("Run 'mcpyeahyouknowme googlesheets login' to re-authenticate")
+	fmt.Println("Google Suite data reset complete")
+	fmt.Println("Run 'mcpyeahyouknowme gsuite login' to re-authenticate")
 }
 
-// InfoLines returns indented lines for the `info` command Google Sheets section.
+// InfoLines returns indented lines for the `info` command Google Suite section.
 func InfoLines(dataDir string) []string {
 	var lines []string
-	tokenPath := filepath.Join(dataDir, "googlesheets_token.json")
+	tokenPath := filepath.Join(dataDir, "gsuite_token.json")
 	if _, err := os.Stat(tokenPath); err != nil {
-		lines = append(lines, "   Logged in:  no (run 'mcpyeahyouknowme googlesheets login')")
-	} else if email, err := os.ReadFile(filepath.Join(dataDir, "googlesheets_email.txt")); err == nil && len(email) > 0 {
+		lines = append(lines, "   Logged in:  no (run 'mcpyeahyouknowme gsuite login')")
+		return lines
+	}
+	if email, err := os.ReadFile(filepath.Join(dataDir, "gsuite_email.txt")); err == nil && len(email) > 0 {
 		lines = append(lines, fmt.Sprintf("   Logged in:  %s", string(email)))
 	} else {
 		lines = append(lines, "   Logged in:  yes")
 	}
 
-	dbPath := filepath.Join(dataDir, "googlesheets.db")
-	if _, err := os.Stat(dbPath); err != nil {
-		lines = append(lines, "   Spreadsheets:  no database yet")
-		return lines
-	}
-
 	src := NewSource(dataDir)
 	defer src.Close()
 
-	if src.db == nil {
-		lines = append(lines, "   Spreadsheets:  unable to read database")
-		return lines
+	for _, app := range allApps {
+		if !src.apps.IsEnabled(app.name) {
+			lines = append(lines, fmt.Sprintf("   %-12s disabled", app.displayName+":"))
+			continue
+		}
+		if src.db == nil {
+			lines = append(lines, fmt.Sprintf("   %-12s no database yet", app.displayName+":"))
+			continue
+		}
+		count, err := app.countRows(src.db)
+		if err != nil {
+			lines = append(lines, fmt.Sprintf("   %-12s unable to count", app.displayName+":"))
+			continue
+		}
+		syncStatus := src.getSyncStatus(app.name)
+		lastSync := src.getLastSyncTime(app.name)
+		statusStr := formatSyncStatus(syncStatus, lastSync, count)
+		lines = append(lines, fmt.Sprintf("   %-12s %s", app.displayName+":", statusStr))
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
-	defer cancel()
-	var n int
-	if err := src.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM spreadsheets").Scan(&n); err != nil {
-		lines = append(lines, "   Spreadsheets:  unable to count rows")
-		return lines
-	}
-	lines = append(lines, fmt.Sprintf("   Spreadsheets:  %d synced", n))
 	return lines
+}
+
+func formatSyncStatus(syncStatus string, lastSync time.Time, count int) string {
+	if strings.HasPrefix(syncStatus, "syncing") {
+		parts := strings.SplitN(syncStatus, ":", 2)
+		if len(parts) == 2 {
+			return fmt.Sprintf("%d synced — syncing (%s fetched)", count, parts[1])
+		}
+		return fmt.Sprintf("%d synced — syncing", count)
+	}
+	if lastSync.IsZero() {
+		return fmt.Sprintf("%d synced", count)
+	}
+	ago := time.Since(lastSync).Truncate(time.Second)
+	return fmt.Sprintf("%d synced — idle (last sync: %s ago)", count, ago)
 }
 
 func generateCodeVerifier() string {

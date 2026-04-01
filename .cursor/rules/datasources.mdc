@@ -60,6 +60,22 @@ Use `core` utility functions for common patterns — do not duplicate boilerplat
 
 Do NOT use struct embedding or base types. Interfaces enforce contracts; utility functions share behavior.
 
+## Timestamps requirement
+
+Every source must capture and expose known timestamps in both the database schema and MCP tool responses:
+
+- `created_time` — when the record was first created (ISO 8601)
+- `modified_time` / `updated_time` — when the record was last modified
+- Additional domain-specific timestamps (e.g. `date` for email, `start_time`/`end_time` for calendar events)
+
+All timestamp fields must be included in MCP tool response JSON.
+
+## No media auto-download
+
+Sources must NOT automatically download or cache audio, video, or binary attachment files. Instead:
+- Store metadata (filename, MIME type, attachment ID, size) in the local DB
+- Expose an on-demand fetch tool (e.g. `source_download_attachment`) that retrieves the file via API when explicitly called by the AI
+
 ## Interface checklist for new sources
 
 1. Implement `core.DataSource` (required) — includes `Reset(dataDir string)` for cleanup
@@ -69,3 +85,5 @@ Do NOT use struct embedding or base types. Interfaces enforce contracts; utility
 5. Accept `dataDir string` in constructor (dependency injection)
 6. Store credentials via the shared config.json (see config.go) or in a source-owned file
 7. Use `core.RunPollLoop` / `core.DefaultReset` / `core.OpenDB` instead of reimplementing
+8. Capture all known timestamps in DB schema and MCP responses
+9. Never auto-download media; provide on-demand fetch tool instead

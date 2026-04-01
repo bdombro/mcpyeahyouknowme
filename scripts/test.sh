@@ -53,8 +53,7 @@ filter_coverage() {
 	local keep_pat='^(mode:'
 	keep_pat+='|mcpyeahyouknowme/(search_store|embedding)\.go:'
 	keep_pat+='|mcpyeahyouknowme/sources/whatsapp/(service|store|helpers)\.go:'
-	keep_pat+='|mcpyeahyouknowme/sources/googledocs/(source|mcp|client)\.go:'
-	keep_pat+='|mcpyeahyouknowme/sources/googlesheets/(source|mcp|client)\.go:'
+	keep_pat+='|mcpyeahyouknowme/sources/gsuite/(source|mcp|client|store|app_.*)\.go:'
 	keep_pat+=')'
 	grep -E "$keep_pat" "$raw" \
 		| grep -v '_init\.go:' \
@@ -63,7 +62,7 @@ filter_coverage() {
 	# Step 2: Collect // nocov line numbers from source
 	local nocov_lines
 	nocov_lines=$(mktemp)
-	for src in "$CLI_DIR"/*.go "$CLI_DIR"/sources/whatsapp/*.go "$CLI_DIR"/sources/googledocs/*.go "$CLI_DIR"/sources/googlesheets/*.go; do
+	for src in "$CLI_DIR"/*.go "$CLI_DIR"/sources/whatsapp/*.go "$CLI_DIR"/sources/gsuite/*.go; do
 		base=$(basename "$src")
 		[[ "$base" == *_test.go ]] && continue
 		[[ "$base" == *_init.go ]] && continue

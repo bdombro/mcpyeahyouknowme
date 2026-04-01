@@ -1,4 +1,4 @@
-package googlesheets
+package gsuite
 
 import (
 	"encoding/json"
@@ -8,8 +8,6 @@ import (
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
-	"google.golang.org/api/drive/v3"
-	"google.golang.org/api/sheets/v4"
 )
 
 // GoogleClientID and GoogleClientSecret are injected at build time via ldflags.
@@ -18,23 +16,32 @@ var (
 	GoogleClientSecret string
 )
 
-// getOAuthConfig returns the OAuth2 config for Google Sheets access.
+// All scopes needed across all Google Workspace apps.
+var oauthScopes = []string{
+	"https://www.googleapis.com/auth/documents.readonly",
+	"https://www.googleapis.com/auth/spreadsheets.readonly",
+	"https://www.googleapis.com/auth/drive.readonly",
+	"https://www.googleapis.com/auth/gmail.readonly",
+	"https://www.googleapis.com/auth/calendar.readonly",
+	"https://www.googleapis.com/auth/tasks.readonly",
+	"https://www.googleapis.com/auth/contacts.readonly",
+	"https://www.googleapis.com/auth/presentations.readonly",
+}
+
+// getOAuthConfig returns the OAuth2 config for all Google Workspace apps.
 func (g *Source) getOAuthConfig() *oauth2.Config {
 	return &oauth2.Config{
 		ClientID:     GoogleClientID,
 		ClientSecret: GoogleClientSecret,
-		RedirectURL:  "http://127.0.0.1:8086",
-		Scopes: []string{
-			sheets.SpreadsheetsReadonlyScope,
-			drive.DriveReadonlyScope,
-		},
-		Endpoint: google.Endpoint,
+		RedirectURL:  "http://127.0.0.1:8085",
+		Scopes:       oauthScopes,
+		Endpoint:     google.Endpoint,
 	}
 }
 
 // loadToken loads the OAuth token from disk.
 func (g *Source) loadToken() error {
-	tokenPath := filepath.Join(g.dataDir, "googlesheets_token.json")
+	tokenPath := filepath.Join(g.dataDir, "gsuite_token.json")
 	data, err := os.ReadFile(tokenPath)
 	if err != nil {
 		return err
@@ -50,7 +57,7 @@ func (g *Source) loadToken() error {
 // saveToken saves the OAuth token to disk.
 func (g *Source) saveToken(token *oauth2.Token) error {
 	g.token = token
-	tokenPath := filepath.Join(g.dataDir, "googlesheets_token.json")
+	tokenPath := filepath.Join(g.dataDir, "gsuite_token.json")
 	data, err := json.Marshal(token)
 	if err != nil { // nocov — oauth2.Token is always marshallable
 		return err

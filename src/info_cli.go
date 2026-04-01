@@ -9,8 +9,7 @@ import (
 	"time"
 
 	"mcpyeahyouknowme/core"
-	"mcpyeahyouknowme/sources/googledocs"
-	"mcpyeahyouknowme/sources/googlesheets"
+	"mcpyeahyouknowme/sources/gsuite"
 	"mcpyeahyouknowme/sources/whatsapp"
 )
 
@@ -25,33 +24,6 @@ func runInfo() {
 	fmt.Println("\U0001f527 Build")
 	fmt.Printf("   Version:    %s\n", BuildVersion)
 	fmt.Printf("   Built:      %s\n", BuildTime)
-	fmt.Println()
-
-	fmt.Println("\U0001f4c1 Data")
-	fmt.Printf("   Directory:  %s\n", dDir)
-	if info, err := os.Stat(dDir); err == nil && info.IsDir() {
-		fmt.Println("   Status:     initialized")
-	} else {
-		fmt.Println("   Status:     not initialized (run 'mcpyeahyouknowme whatsapp login')")
-	}
-	fmt.Println()
-
-	fmt.Println("\U0001f4f2 WhatsApp")
-	for _, line := range whatsapp.InfoLines(dDir) {
-		fmt.Println(line)
-	}
-	fmt.Println()
-
-	fmt.Println("\U0001f4c4 Google Docs")
-	for _, line := range googledocs.InfoLines(dDir) {
-		fmt.Println(line)
-	}
-	fmt.Println()
-
-	fmt.Println("\U0001f4ca Google Sheets")
-	for _, line := range googlesheets.InfoLines(dDir) {
-		fmt.Println(line)
-	}
 	fmt.Println()
 
 	fmt.Println("\u2699\ufe0f  Core Daemon")
@@ -69,5 +41,31 @@ func runInfo() {
 		fmt.Printf("   Logs:       %s\n", filepath.Join(dDir, "core.log"))
 	} else {
 		fmt.Println("   Status:     not installed")
+	}
+	if core.IsNetworkAvailable() {
+		fmt.Println("   Network:    online")
+	} else {
+		fmt.Println("   Network:    offline (sync paused)")
+	}
+	fmt.Println()
+
+	fmt.Println("\U0001f4c1 Data")
+	fmt.Printf("   Directory:  %s\n", dDir)
+	if info, err := os.Stat(dDir); err == nil && info.IsDir() {
+		fmt.Println("   Status:     initialized")
+	} else {
+		fmt.Println("   Status:     not initialized (run 'mcpyeahyouknowme whatsapp login')")
+	}
+	fmt.Println()
+
+	fmt.Println("\U0001f4f2 WhatsApp")
+	for _, line := range whatsapp.InfoLines(dDir) {
+		fmt.Println(line)
+	}
+	fmt.Println()
+
+	fmt.Println("\U0001f537 Google Suite")
+	for _, line := range gsuite.InfoLines(dDir) {
+		fmt.Println(line)
 	}
 }
