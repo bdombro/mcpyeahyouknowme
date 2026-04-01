@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"mcpyeahyouknowme/sources/gsuite"
 )
 
 func TestRunInfo_EndsWithBlankLine(t *testing.T) {
@@ -43,6 +45,29 @@ func TestRunInfo_EndsWithBlankLine(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "\n\n") {
 		t.Fatalf("expected output to end with a blank line, got suffix %q", got[max(0, len(got)-4):])
+	}
+}
+
+func TestRenderInfo_marksUnavailableSources(t *testing.T) {
+	oldID := gsuite.GoogleClientID
+	oldSecret := gsuite.GoogleClientSecret
+	defer func() {
+		gsuite.GoogleClientID = oldID
+		gsuite.GoogleClientSecret = oldSecret
+	}()
+
+	gsuite.GoogleClientID = ""
+	gsuite.GoogleClientSecret = ""
+
+	got := renderInfo()
+	if !strings.Contains(got, "Google Suite") {
+		t.Fatalf("expected Google Suite section in output, got %q", got)
+	}
+	if !strings.Contains(got, "Status:     unavailable") {
+		t.Fatalf("expected unavailable status in output, got %q", got)
+	}
+	if !strings.Contains(got, "GOOGLE_CLIENT_ID") {
+		t.Fatalf("expected missing credential reason in output, got %q", got)
 	}
 }
 

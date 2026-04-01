@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -16,6 +17,9 @@ import (
 func runCore() {
 	dir := core.DataDir()
 	cfg := loadConfig(dir)
+
+	fmt.Println("Starting mcpyeahyouknowme core daemon...")
+	fmt.Print(renderInfo())
 
 	running := map[string]context.CancelFunc{}
 
@@ -53,6 +57,16 @@ func runCore() {
 					handleReset(dir, name, &newCfg)
 				}
 			}
+			for name, cancel := range running {
+				newSc, exists := newCfg.Sources[name]
+				if !exists || !newSc.Enabled || newSc.Reset {
+					continue
+				}
+				if shouldRestartSource(cfg.Sources[name], newSc) {
+					cancel()
+					delete(running, name)
+				}
+			}
 			for name, sc := range newCfg.Sources {
 				if sc.Enabled && !sc.Reset && running[name] == nil {
 					startSource(dir, name, running)
@@ -70,11 +84,24 @@ func runCore() {
 	}
 }
 
+func shouldRestartSource(prev, next core.SourceConfig) bool {
+	return prev.Enabled == next.Enabled &&
+		prev.Reset == next.Reset &&
+		!bytes.Equal(prev.Auth, next.Auth)
+}
+
 // startSource constructs the source, checks auth, and starts its CoreService.
 func startSource(dir, name string, running map[string]context.CancelFunc) {
 	desc, ok := registry.Find(name)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "Warning: unknown source %q\n", name)
+		return
+	}
+	if available, reason := registry.IsAvailable(name); !available {
+		fmt.Fprintf(os.Stderr, "Info: %s is unavailable and will not be started.\n", name)
+		if reason != "" {
+			fmt.Fprintf(os.Stderr, "      %s.\n", reason)
+		}
 		return
 	}
 	if !desc.RunsCore {

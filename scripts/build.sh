@@ -32,25 +32,49 @@ echo "Building binary to $OUTFILE"
 
 rm -rf "$OUTFILE"
 
-# Source .env for Google OAuth client ID (baked into the binary via ldflags).
+# Source .env for Google credentials baked into the binary via ldflags.
 if [ -f "$ROOT/.env" ]; then
 	set -a
 	source "$ROOT/.env"
 	set +a
 fi
 
-missing=()
-[ -z "${GOOGLE_CLIENT_ID:-}" ] && missing+=("GOOGLE_CLIENT_ID")
-if [ ${#missing[@]} -gt 0 ]; then
-	echo "Error: required variable(s) not set: ${missing[*]}" >&2
-	echo "Copy .env.example to .env and fill in the values, or export them in your shell." >&2
-	exit 1
+print_source_status() {
+	local name="$1"
+	local status="$2"
+	local detail="${3:-}"
+	if [ -n "$detail" ]; then
+		echo "  - $name: $status ($detail)"
+	else
+		echo "  - $name: $status"
+	fi
+}
+
+echo "Build-time source availability:"
+print_source_status "whatsapp" "available"
+
+gsuite_missing=()
+[ -z "${GOOGLE_CLIENT_ID:-}" ] && gsuite_missing+=("GOOGLE_CLIENT_ID")
+[ -z "${GOOGLE_CLIENT_SECRET:-}" ] && gsuite_missing+=("GOOGLE_CLIENT_SECRET")
+if [ ${#gsuite_missing[@]} -eq 0 ]; then
+	print_source_status "gsuite" "available"
+else
+	print_source_status "gsuite" "unavailable" "missing ${gsuite_missing[*]}"
 fi
+
+if [ -n "${GOOGLE_PLACE_API_KEY:-}" ]; then
+	print_source_status "google_places" "available"
+else
+	print_source_status "google_places" "unavailable" "missing GOOGLE_PLACE_API_KEY"
+fi
+echo
 
 build_time="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 cd "$CLI_DIR" && go build -tags "sqlite_fts5" \
 	-ldflags "\
 		-X 'main.BuildTime=$build_time' \
 		-X 'main.BuildVersion=1.0.0' \
-		-X 'mcpyeahyouknowme/sources/gsuite.GoogleClientID=$GOOGLE_CLIENT_ID'" \
+		-X 'mcpyeahyouknowme/sources/gsuite.GoogleClientID=$GOOGLE_CLIENT_ID' \
+		-X 'mcpyeahyouknowme/sources/gsuite.GoogleClientSecret=$GOOGLE_CLIENT_SECRET' \
+		-X 'mcpyeahyouknowme/sources/google_places.GooglePlaceAPIKey=${GOOGLE_PLACE_API_KEY:-}'" \
 	-o "$OUTFILE" .

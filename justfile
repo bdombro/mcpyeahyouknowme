@@ -27,7 +27,7 @@ default:
 build:
     @{{root}}/scripts/build.sh
 
-# Bootstrap required Google Cloud APIs for the gsuite source
+# Bootstrap required Google Cloud APIs and Places key
 google-project-setup project_id:
     @{{root}}/scripts/google-project-setup.sh {{project_id}}
 

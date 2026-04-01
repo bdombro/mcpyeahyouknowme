@@ -1,6 +1,6 @@
 # Product Spec
 
-A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Docs** (via Google Docs/Drive APIs with OAuth 2.0), and **Google Sheets** (via Google Sheets/Drive APIs with OAuth 2.0), with the architecture designed to support additional sources like Gmail, Google Drive, and others.
+A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides via Google APIs with OAuth 2.0), and **Google Places** (live business and address lookup via the Places API (New)).
 
 ## Building
 
@@ -8,7 +8,7 @@ A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.
 ./scripts/build.sh
 ```
 
-The build script sources `.env` from the repository root (if present) and bakes `GOOGLE_CLIENT_ID` into the binary via `-ldflags` for the Google Suite source. Copy `.env.example` to `.env` and fill in the values before building. The shipped desktop OAuth flow uses PKCE and does not rely on `GOOGLE_CLIENT_SECRET`.
+The build script sources `.env` from the repository root (if present) and bakes `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and optional `GOOGLE_PLACE_API_KEY` into the binary via `-ldflags`. Copy `.env.example` to `.env` and fill in the values before building if you want those sources available. The shipped desktop OAuth flow uses PKCE, but Google currently still requires the desktop client secret during token exchange.
 
 CGO must be enabled (default on macOS/Linux) since `go-sqlite3` requires it. On Windows, install a C compiler via [MSYS2](https://www.msys2.org/) and run `go env -w CGO_ENABLED=1` first.
 
@@ -134,6 +134,7 @@ Current sources:
 |--------|--------|---------|-------------|
 | WhatsApp | `whatsapp_` | `sources/whatsapp/` | Messages, chats, contacts via local SQLite + REST API |
 | Google Suite | `gsuite_` | `sources/gsuite/` | Docs, Sheets, Gmail, Calendar, Tasks, Contacts, and Slides via Google APIs with periodic sync |
+| Google Places | `google_places_` | `sources/google_places/` | Live business and address lookup via the Places API (New); no local cache or indexing |
 
 ### Daemon Management
 
@@ -309,8 +310,15 @@ Use `tools/call` with `params.name` set to one of the tool names below and `para
 | `gsuite_docs_search` | FTS5 search across synced docs; `query`, optional `limit`. |
 | `gsuite_docs_get_document` | Full document body by ID. |
 | `gsuite_docs_list_recent` | Recently modified docs; optional `limit`. |
+| `gsuite_gmail_search` | Search synced Gmail messages; returns `thread_id` for thread follow-up. |
+| `gsuite_gmail_get_message` | Full raw body for one Gmail message by ID, plus `thread_id`. |
+| `gsuite_gmail_get_thread` | Reconstructed Gmail thread by `thread_id`; optional `include_raw`. |
+| `gsuite_gmail_list_recent` | Recently synced Gmail messages; optional folder filter, includes `thread_id`. |
+| `gsuite_gmail_download_attachment` | Download one Gmail attachment on demand by message and attachment IDs. |
+| `google_places_search_places` | Live text search for businesses or addresses using the Places API (New). |
+| `google_places_get_place` | Live place details lookup by `place_id` using the Places API (New). |
 
-**Availability:** source tools are registered only when the source is both `enabled` in config and authenticated. `search` is registered when the search index initializes on MCP startup; if indexing fails, other tools may still be available without `search`.
+**Availability:** most source tools are registered only when the source is both `enabled` in config and authenticated. `google_places_*` tools are registered when the binary was built with a non-empty `GOOGLE_PLACE_API_KEY`. `search` is registered when the search index initializes on MCP startup; if indexing fails, other tools may still be available without `search`.
 
 ### Global Search
 
@@ -394,6 +402,27 @@ Metadata shapes per WhatsApp content type:
 | `gsuite_sheets_get_spreadsheet` | Get the full content of a specific Google Sheet by ID. Returns title, content, modification time, sheet count, and web link. |
 | `gsuite_sheets_list_recent` | List recently modified Google Sheets, sorted by modification time descending. Accepts `limit` parameter (default 20). |
 
+### Gmail Tools
+
+**Read path**: Queries `gsuite.db` directly via SQLite. Gmail messages are synced by the core daemon every 5 minutes when the Google Suite source is enabled and the Gmail app is enabled. Message rows are canonical; thread rows are derived from them.
+
+| Tool | Description |
+|------|-------------|
+| `gsuite_gmail_search` | Full-text search across synced Gmail messages using FTS5 on `body_visible` (quoted reply text stripped pessimistically when possible). Returns message hits with `thread_id` so clients can pivot to the full conversation. |
+| `gsuite_gmail_get_message` | Get the full raw content of a specific Gmail message by ID. Returns headers, labels, folder, message body, and `thread_id`. |
+| `gsuite_gmail_get_thread` | Get a reconstructed Gmail thread by `thread_id`. Returns chronological messages with `body_visible` by default and `body_raw` when `include_raw=true`. |
+| `gsuite_gmail_list_recent` | List recent synced Gmail messages, sorted by stored date descending. Accepts optional `folder` and `limit` parameters. Each result includes `thread_id`. |
+| `gsuite_gmail_download_attachment` | Download a Gmail attachment on demand via the Gmail API using `message_id` and `attachment_id`. Attachments are not cached automatically during sync. |
+
+### Google Places Tools
+
+**Read path:** Calls the Places API (New) live over HTTPS. No local caching, SQLite persistence, core daemon sync, or global search indexing.
+
+| Tool | Description |
+|------|-------------|
+| `google_places_search_places` | Search for businesses or addresses using text input. Returns candidate places with `place_id`, display name, formatted address, types, coordinates, and business status. Accepts `query` (required) and `max_results` (default 5). |
+| `google_places_get_place` | Fetch detailed place information by `place_id`. Returns address, phone numbers, website, Google Maps URI, coordinates, opening hours, rating, address components, business status, types, and price level. |
+
 ---
 
 ## Search
@@ -413,13 +442,16 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 | `spreadsheet_title` | Google Sheets | Spreadsheet titles (prefixed with owner names when present) |
 | `spreadsheet_owner` | Google Sheets | Spreadsheet owner names and emails |
 | `spreadsheet_content` | Google Sheets | Spreadsheet cell content (prefixed with owner names, chunked at 5000 chars) |
+| `email_thread_subject` | Gmail | Derived Gmail thread subject |
+| `email_thread_participants` | Gmail | Derived Gmail thread participant list |
+| `email_thread_content` | Gmail | Reconstructed Gmail thread transcript chunks built from `body_visible` |
 
 **Search algorithm:**
 
 1. **BM25** — FTS5 full-text search on the `search_fts` virtual table
 2. **Vector** (when ONNX installed) — embed the query with BGE-Small-EN-v1.5, compute cosine similarity against stored embeddings
 3. **Reciprocal Rank Fusion (RRF)** — combine BM25 and vector ranked lists: `score(d) = sum(1/(k+rank_i))` with k=60
-4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `message` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x)
+4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `message` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x), `email_thread_subject` (2.5x), `email_thread_participants` (2x), `email_thread_content` (1x)
 
 When ONNX Runtime is not installed, vector search is disabled and the system falls back to BM25-only. This is transparent to the caller.
 
@@ -487,6 +519,16 @@ All data is stored in `~/.local/share/mcpyeahyouknowme/`.
 
 Tables are created on startup if they don't exist. The FTS5 index is automatically rebuilt from the messages table on first run. The Go binary must be built with `-tags "sqlite_fts5"` to enable FTS5 support.
 
+### gsuite.db Gmail Schema
+
+| Table | Key | Contents |
+|-------|-----|----------|
+| `gmail_messages` | `id` (primary) | Canonical Gmail message records: `thread_id`, headers, labels, folder, date, snippet, `body_text` (legacy raw alias), `body_raw`, `body_visible`, attachment flag, size estimate, `last_synced` |
+| `gmail_threads` | `thread_id` (primary) | Derived Gmail thread cache: subject, participants, message count, first/last dates, last message ID, reconstructed `thread_text_visible`, `last_synced` |
+| `gmail_messages_fts` | (FTS5 virtual) | Local Gmail full-text index on message subject/body-visible content, maintained via triggers |
+
+`body_raw` preserves the extracted Gmail message body exactly as stored after MIME decoding / HTML stripping. `body_visible` is a pessimistically stripped view used for thread reconstruction and indexing when quoted reply boundaries can be identified safely. Global search indexes Gmail at the thread level rather than indexing raw message bodies directly.
+
 ### search.db Schema
 
 | Table | Key | Contents |
@@ -548,11 +590,13 @@ Without this, Gatekeeper blocks execution — the first invocation is killed (SI
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `GOOGLE_CLIENT_ID` | Build-time | - | Desktop OAuth client ID from Google Cloud Console; set in `.env` and baked into the binary via `-ldflags` |
+| `GOOGLE_CLIENT_ID` | Optional build-time | - | Desktop OAuth client ID from Google Cloud Console; when missing, the `gsuite` source is unavailable in the built binary |
+| `GOOGLE_CLIENT_SECRET` | Optional build-time | - | Matching desktop OAuth client secret; when missing, the `gsuite` source is unavailable in the built binary |
+| `GOOGLE_PLACE_API_KEY` | No | - | Optional Places API key; set in `.env`, baked into the binary via `-ldflags`, and enables the `google_places_*` MCP tools |
 | `GOOGLE_PROJECT_ID` | No | - | Convenience project ID for `scripts/google-project-setup.sh` and `just google-project-setup` |
 | `MCP_ENABLE_EMBEDDINGS` | No | `true` | Set to `false` to disable vector search and skip ONNX Runtime |
 
-`GOOGLE_CLIENT_ID` must be set before building. Copy `.env.example` to `.env` and fill in the values. The build script (`scripts/build.sh`) will abort if it is missing.
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are required only if you want the `gsuite` source available in the built binary. `GOOGLE_PLACE_API_KEY` is optional; when present at build time it enables the `google_places_*` tools. `scripts/google-project-setup.sh` can create a restricted Places API key automatically and write it to `.env`. Copy `.env.example` to `.env` and fill in the values. The build script prints which sources will be available or unavailable at build time.
 
 ### Hardcoded Paths
 

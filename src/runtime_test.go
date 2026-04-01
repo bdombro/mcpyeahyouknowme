@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"mcpyeahyouknowme/core"
@@ -75,5 +76,80 @@ func TestStartSource_skipsEnabledNonCoreSources(t *testing.T) {
 	startSource(t.TempDir(), "stub", running)
 	if len(running) != 0 {
 		t.Fatalf("expected no running sources, got %d", len(running))
+	}
+}
+
+func TestStartSource_skipsUnavailableSources(t *testing.T) {
+	src := &runtimeTestSource{}
+	original := registry.All
+	registry.All = []registry.Descriptor{{
+		Name:              "stub",
+		New:               func(string) core.DataSource { return src },
+		IsEnabled:         func() bool { return false },
+		UnavailableReason: "missing build-time credential",
+		IndexGlobally:     false,
+		RunsCore:          true,
+	}}
+	t.Cleanup(func() { registry.All = original })
+
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() {
+		os.Stderr = oldStderr
+	}()
+
+	running := map[string]context.CancelFunc{}
+	startSource(t.TempDir(), "stub", running)
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	out := make([]byte, 256)
+	n, _ := r.Read(out)
+	if got := string(out[:n]); got == "" {
+		t.Fatal("expected availability warning on stderr")
+	}
+	if len(running) != 0 {
+		t.Fatalf("expected no running sources, got %d", len(running))
+	}
+}
+
+func TestShouldRestartSource(t *testing.T) {
+	tests := []struct {
+		name string
+		prev core.SourceConfig
+		next core.SourceConfig
+		want bool
+	}{
+		{
+			name: "auth change restarts source",
+			prev: core.SourceConfig{Enabled: true, Auth: []byte(`{"apps":{"tasks":true}}`)},
+			next: core.SourceConfig{Enabled: true, Auth: []byte(`{"apps":{"tasks":true,"docs":true}}`)},
+			want: true,
+		},
+		{
+			name: "same auth does not restart",
+			prev: core.SourceConfig{Enabled: true, Auth: []byte(`{"apps":{"tasks":true}}`)},
+			next: core.SourceConfig{Enabled: true, Auth: []byte(`{"apps":{"tasks":true}}`)},
+			want: false,
+		},
+		{
+			name: "enabled state change handled elsewhere",
+			prev: core.SourceConfig{Enabled: false, Auth: []byte(`{"apps":{"tasks":true}}`)},
+			next: core.SourceConfig{Enabled: true, Auth: []byte(`{"apps":{"tasks":true,"docs":true}}`)},
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldRestartSource(tc.prev, tc.next); got != tc.want {
+				t.Fatalf("shouldRestartSource() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

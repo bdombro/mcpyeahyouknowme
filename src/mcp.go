@@ -28,8 +28,19 @@ func runMcp() {
 
 	var activeSources []activeSource
 	for _, desc := range registry.All {
+		available, reason := registry.IsAvailable(desc.Name)
+		if !available {
+			fmt.Fprintf(os.Stderr, "Info: %s is unavailable - %s MCP tools will not be available.\n", desc.Name, desc.Name)
+			if reason != "" {
+				fmt.Fprintf(os.Stderr, "      %s.\n", reason)
+			}
+			fmt.Fprintf(os.Stderr, "      Rebuild with the required credentials to enable it.\n")
+			continue
+		}
+
 		sc := cfg.Sources[desc.Name]
-		if !sc.Enabled {
+		enabled := sc.Enabled || (!desc.RunsCore && !desc.IndexGlobally)
+		if !enabled {
 			fmt.Fprintf(os.Stderr, "Info: %s is disabled - %s MCP tools will not be available.\n", desc.Name, desc.Name)
 			fmt.Fprintf(os.Stderr, "      Enable it by logging in again or updating config.json.\n")
 			continue

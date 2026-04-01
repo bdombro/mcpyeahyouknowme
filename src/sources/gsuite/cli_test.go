@@ -1,6 +1,7 @@
 package gsuite
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -97,15 +98,18 @@ func TestInfoLines_WithDB(t *testing.T) {
 	db.Close()
 
 	lines := InfoLines(dir)
-	// Should include count line for docs
+	// Should include count line for Docs and omit the "Google " prefix.
 	found := false
 	for _, l := range lines {
-		if containsStr(l, "Google Docs") {
+		if containsStr(l, "Docs") {
 			found = true
+		}
+		if containsStr(l, "Google Docs") {
+			t.Fatalf("expected shortened app name, got: %v", lines)
 		}
 	}
 	if !found {
-		t.Errorf("expected 'Google Docs' in info lines, got: %v", lines)
+		t.Errorf("expected 'Docs' in info lines, got: %v", lines)
 	}
 }
 
@@ -129,6 +133,97 @@ func TestRunReset_Abort(t *testing.T) {
 	}
 }
 
+func TestPromptAppSelection_AllOption(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantAllApps bool
+	}{
+		{name: "zero keeps none", input: "0\n", wantAllApps: false},
+		{name: "all enables all", input: "all\n", wantAllApps: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			oldStdin := os.Stdin
+			oldStdout := os.Stdout
+			inR, inW, err := os.Pipe()
+			if err != nil {
+				t.Fatalf("stdin pipe: %v", err)
+			}
+			outR, outW, err := os.Pipe()
+			if err != nil {
+				t.Fatalf("stdout pipe: %v", err)
+			}
+			os.Stdin = inR
+			os.Stdout = outW
+			defer func() {
+				os.Stdin = oldStdin
+				os.Stdout = oldStdout
+			}()
+
+			if _, err := inW.WriteString(tc.input); err != nil {
+				t.Fatalf("write input: %v", err)
+			}
+			inW.Close()
+
+			apps := promptAppSelection()
+
+			outW.Close()
+			if _, err := io.ReadAll(outR); err != nil {
+				t.Fatalf("read stdout: %v", err)
+			}
+
+			for _, app := range allApps {
+				if apps.IsEnabled(app.name) != tc.wantAllApps {
+					t.Fatalf("expected %s enabled=%v", app.name, tc.wantAllApps)
+				}
+			}
+		})
+	}
+}
+
+func TestRunApps_AllEnablesEverything(t *testing.T) {
+	dir := t.TempDir()
+
+	oldStdin := os.Stdin
+	oldStdout := os.Stdout
+	inR, inW, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+	os.Stdin = inR
+	os.Stdout = outW
+	defer func() {
+		os.Stdin = oldStdin
+		os.Stdout = oldStdout
+	}()
+
+	if _, err := inW.WriteString("all\n"); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+	inW.Close()
+
+	RunApps(dir)
+
+	outW.Close()
+	if _, err := io.ReadAll(outR); err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+
+	src := NewSource(dir)
+	defer src.Close()
+	for _, app := range allApps {
+		if !src.apps.IsEnabled(app.name) {
+			t.Fatalf("expected %s to be enabled", app.name)
+		}
+	}
+}
+
 func TestInfoLines_DisabledSourceDisablesApps(t *testing.T) {
 	dir := t.TempDir()
 	lines := InfoLines(dir)
@@ -136,6 +231,9 @@ func TestInfoLines_DisabledSourceDisablesApps(t *testing.T) {
 	for _, l := range lines {
 		if containsStr(l, "disabled") {
 			disabledCount++
+		}
+		if containsStr(l, "source disabled") {
+			t.Fatalf("unexpected legacy disabled suffix in line %q", l)
 		}
 	}
 	if disabledCount < len(allApps)+1 {

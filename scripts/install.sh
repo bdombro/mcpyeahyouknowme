@@ -111,7 +111,7 @@ step_4_completions() {
 		echo -e "✓ Added shell completions to ~/.zshrc (restart your terminal or run: source ~/.zshrc)\n"
 	else
 		echo -e "✓ Shell completions already in ~/.zshrc"
-		echo "To reload the completions in current shell, run: $comp_line"
+		echo "To reload the completions in current shell, run: $comp_line\n"
 	fi
 }
 

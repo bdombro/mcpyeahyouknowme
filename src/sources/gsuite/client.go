@@ -13,8 +13,14 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
-// GoogleClientID is injected at build time via ldflags.
+// GoogleClientID and GoogleClientSecret are injected at build time via ldflags.
 var GoogleClientID string
+var GoogleClientSecret string
+
+// IsConfigured reports whether the binary was built with the required Google OAuth credentials.
+func IsConfigured() bool {
+	return GoogleClientID != "" && GoogleClientSecret != ""
+}
 
 type gsuiteErrKind string
 
@@ -40,11 +46,29 @@ var oauthScopes = []string{
 // getOAuthConfig returns the OAuth2 config for all Google Workspace apps.
 func (g *Source) getOAuthConfig() *oauth2.Config {
 	return &oauth2.Config{
-		ClientID:    GoogleClientID,
-		RedirectURL: "http://127.0.0.1:8085",
-		Scopes:      oauthScopes,
-		Endpoint:    google.Endpoint,
+		ClientID:     GoogleClientID,
+		ClientSecret: GoogleClientSecret,
+		RedirectURL:  "http://127.0.0.1:8085",
+		Scopes:       oauthScopes,
+		Endpoint:     google.Endpoint,
 	}
+}
+
+func describeOAuthExchangeError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	var retrieveErr *oauth2.RetrieveError
+	if errors.As(err, &retrieveErr) {
+		body := strings.ToLower(string(retrieveErr.Body))
+		code := strings.ToLower(retrieveErr.ErrorCode)
+		if code == "invalid_request" && strings.Contains(body, "client_secret is missing") {
+			return "Google rejected the token exchange because `GOOGLE_CLIENT_SECRET` is missing from the built binary. Set both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from the same Google Cloud OAuth client, rebuild/reinstall the binary, and run `mcpyeahyouknowme gsuite login` again."
+		}
+	}
+
+	return err.Error()
 }
 
 func classifyGSuiteError(err error) gsuiteErrKind {

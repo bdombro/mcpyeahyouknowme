@@ -2,17 +2,20 @@ package registry
 
 import (
 	"mcpyeahyouknowme/core"
+	"mcpyeahyouknowme/sources/google_places"
 	"mcpyeahyouknowme/sources/gsuite"
 	"mcpyeahyouknowme/sources/whatsapp"
 )
 
 // Descriptor centralizes construction and auth checks for a data source.
 type Descriptor struct {
-	Name            string
-	New             func(dataDir string) core.DataSource
-	IsAuthenticated func(dataDir string) bool
-	IndexGlobally   bool
-	RunsCore        bool
+	Name              string
+	New               func(dataDir string) core.DataSource
+	IsEnabled         func() bool
+	UnavailableReason string
+	IsAuthenticated   func(dataDir string) bool
+	IndexGlobally     bool
+	RunsCore          bool
 }
 
 // All contains every source known to the application.
@@ -25,11 +28,22 @@ var All = []Descriptor{
 		RunsCore:        true,
 	},
 	{
-		Name:            "gsuite",
-		New:             func(dataDir string) core.DataSource { return gsuite.NewSource(dataDir) },
-		IsAuthenticated: gsuite.IsLoggedIn,
-		IndexGlobally:   true,
-		RunsCore:        true,
+		Name:              "gsuite",
+		New:               func(dataDir string) core.DataSource { return gsuite.NewSource(dataDir) },
+		IsEnabled:         gsuite.IsConfigured,
+		UnavailableReason: "missing build-time GOOGLE_CLIENT_ID and/or GOOGLE_CLIENT_SECRET",
+		IsAuthenticated:   gsuite.IsLoggedIn,
+		IndexGlobally:     true,
+		RunsCore:          true,
+	},
+	{
+		Name:              "google_places",
+		New:               func(dataDir string) core.DataSource { return google_places.NewSource(dataDir) },
+		IsEnabled:         google_places.IsConfigured,
+		UnavailableReason: "missing build-time GOOGLE_PLACE_API_KEY",
+		IsAuthenticated:   func(dataDir string) bool { return google_places.IsConfigured() },
+		IndexGlobally:     false,
+		RunsCore:          false,
 	},
 }
 
@@ -59,6 +73,19 @@ func IsAuthenticated(name, dataDir string) bool {
 		return true
 	}
 	return desc.IsAuthenticated(dataDir)
+}
+
+// IsAvailable reports whether a source was built/configured with its required
+// build-time credentials or feature flags.
+func IsAvailable(name string) (bool, string) {
+	desc, ok := Find(name)
+	if !ok {
+		return false, ""
+	}
+	if desc.IsEnabled == nil || desc.IsEnabled() {
+		return true, ""
+	}
+	return false, desc.UnavailableReason
 }
 
 // LoadAll constructs all registered sources.

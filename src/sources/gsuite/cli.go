@@ -97,7 +97,7 @@ func RunLogin(dataDir string) {
 		token, err := config.Exchange(context.Background(), code,
 			oauth2.SetAuthURLParam("code_verifier", codeVerifier))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Failed to exchange code for token: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: Failed to exchange code for token: %s\n", describeOAuthExchangeError(err))
 			srv.Shutdown(context.Background())
 			os.Exit(1)
 		}
@@ -159,30 +159,45 @@ func promptAppSelection() AppsConfig {
 	apps := DefaultAppsConfig()
 
 	fmt.Println("Which Google apps would you like to enable?")
-	fmt.Println("All apps start disabled. Enter numbers to enable, or press Enter to keep all disabled.")
+	fmt.Println("All apps start disabled. Enter numbers to enable, `all` to enable everything, or press Enter to keep all disabled.")
 	fmt.Println()
 	for i, app := range allApps {
-		fmt.Printf("  %d. %s\n", i+1, app.displayName)
+		fmt.Printf("  %d. %s\n", i+1, cliAppName(app))
 	}
 	fmt.Println()
-	fmt.Print("Numbers to enable (comma-separated), or Enter for none: ")
+	fmt.Print("Numbers to enable (comma-separated), `all`, or Enter for none: ")
 
 	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line != "" {
+			if strings.EqualFold(line, "all") || line == "*" {
+				enableAllApps(&apps)
+				return apps
+			}
 			for _, part := range strings.Split(line, ",") {
 				part = strings.TrimSpace(part)
+				if strings.EqualFold(part, "all") || part == "*" {
+					enableAllApps(&apps)
+					return apps
+				}
 				idx := 0
 				if _, err := fmt.Sscanf(part, "%d", &idx); err == nil && idx >= 1 && idx <= len(allApps) {
 					apps.SetEnabled(allApps[idx-1].name, true)
-					fmt.Printf("  ✓ Enabled %s\n", allApps[idx-1].displayName)
+					fmt.Printf("  ✓ Enabled %s\n", cliAppName(allApps[idx-1]))
 				}
 			}
 		}
 	}
 
 	return apps
+}
+
+func enableAllApps(apps *AppsConfig) {
+	for _, app := range allApps {
+		apps.SetEnabled(app.name, true)
+		fmt.Printf("  ✓ Enabled %s\n", cliAppName(app))
+	}
 }
 
 // RunApps shows current app status and allows toggling.
@@ -197,10 +212,10 @@ func RunApps(dataDir string) {
 		if !src.apps.IsEnabled(app.name) {
 			status = "✗ disabled"
 		}
-		fmt.Printf("  %d. %s — %s\n", i+1, app.displayName, status)
+		fmt.Printf("  %d. %s — %s\n", i+1, cliAppName(app), status)
 	}
 	fmt.Println()
-	fmt.Print("Enter numbers to toggle (comma-separated), or Enter to keep: ")
+	fmt.Print("Enter numbers to toggle (comma-separated), `all` to enable all, or Enter to keep: ")
 
 	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {
@@ -208,18 +223,26 @@ func RunApps(dataDir string) {
 		if line == "" {
 			return
 		}
-		for _, part := range strings.Split(line, ",") {
-			part = strings.TrimSpace(part)
-			idx := 0
-			if _, err := fmt.Sscanf(part, "%d", &idx); err == nil && idx >= 1 && idx <= len(allApps) {
-				appName := allApps[idx-1].name
-				newState := !src.apps.IsEnabled(appName)
-				src.apps.SetEnabled(appName, newState)
-				if newState {
-					fmt.Printf("  ✓ Enabled %s\n", allApps[idx-1].displayName)
-				} else {
-					fmt.Printf("  ✗ Disabled %s — clearing data...\n", allApps[idx-1].displayName)
-					src.ResetApp(appName)
+		if strings.EqualFold(line, "all") || line == "*" {
+			enableAllApps(&src.apps)
+		} else {
+			for _, part := range strings.Split(line, ",") {
+				part = strings.TrimSpace(part)
+				if strings.EqualFold(part, "all") || part == "*" {
+					enableAllApps(&src.apps)
+					break
+				}
+				idx := 0
+				if _, err := fmt.Sscanf(part, "%d", &idx); err == nil && idx >= 1 && idx <= len(allApps) {
+					appName := allApps[idx-1].name
+					newState := !src.apps.IsEnabled(appName)
+					src.apps.SetEnabled(appName, newState)
+					if newState {
+						fmt.Printf("  ✓ Enabled %s\n", cliAppName(allApps[idx-1]))
+					} else {
+						fmt.Printf("  ✗ Disabled %s — clearing data...\n", cliAppName(allApps[idx-1]))
+						src.ResetApp(appName)
+					}
 				}
 			}
 		}
@@ -262,7 +285,7 @@ func InfoLines(dataDir string) []string {
 	if !sc.Enabled {
 		lines = append(lines, "   Status:     disabled")
 		for _, app := range allApps {
-			lines = append(lines, fmt.Sprintf("   %-12s disabled (source disabled)", app.displayName+":"))
+			lines = append(lines, fmt.Sprintf("   %-12s disabled", cliAppName(app)+":"))
 		}
 		return lines
 	}
@@ -283,24 +306,28 @@ func InfoLines(dataDir string) []string {
 
 	for _, app := range allApps {
 		if !src.apps.IsEnabled(app.name) {
-			lines = append(lines, fmt.Sprintf("   %-12s disabled", app.displayName+":"))
+			lines = append(lines, fmt.Sprintf("   %-12s disabled", cliAppName(app)+":"))
 			continue
 		}
 		if src.db == nil {
-			lines = append(lines, fmt.Sprintf("   %-12s no database yet", app.displayName+":"))
+			lines = append(lines, fmt.Sprintf("   %-12s no database yet", cliAppName(app)+":"))
 			continue
 		}
 		count, err := app.countRows(src.db)
 		if err != nil {
-			lines = append(lines, fmt.Sprintf("   %-12s unable to count", app.displayName+":"))
+			lines = append(lines, fmt.Sprintf("   %-12s unable to count", cliAppName(app)+":"))
 			continue
 		}
 		syncStatus := src.getSyncStatus(app.name)
 		lastSync := src.getLastSyncTime(app.name)
 		statusStr := formatSyncStatus(syncStatus, lastSync, count)
-		lines = append(lines, fmt.Sprintf("   %-12s %s", app.displayName+":", statusStr))
+		lines = append(lines, fmt.Sprintf("   %-12s %s", cliAppName(app)+":", statusStr))
 	}
 	return lines
+}
+
+func cliAppName(app *appDef) string {
+	return strings.TrimPrefix(app.displayName, "Google ")
 }
 
 func formatSyncStatus(syncStatus string, lastSync time.Time, count int) string {

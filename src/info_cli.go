@@ -6,67 +6,89 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"mcpyeahyouknowme/core"
+	"mcpyeahyouknowme/sources/google_places"
 	"mcpyeahyouknowme/sources/gsuite"
+	"mcpyeahyouknowme/sources/registry"
 	"mcpyeahyouknowme/sources/whatsapp"
 )
 
 func runInfo() {
+	fmt.Print(renderInfo())
+}
+
+func renderInfo() string {
 	dDir := core.DataDir()
+	var b strings.Builder
 
-	fmt.Println("┌──────────────────────────────────────────┐")
-	fmt.Println("│         mcpyeahyouknowme info            │")
-	fmt.Println("└──────────────────────────────────────────┘")
-	fmt.Println()
+	writeLine := func(format string, args ...interface{}) {
+		fmt.Fprintf(&b, format+"\n", args...)
+	}
 
-	fmt.Println("\U0001f527 Build")
-	fmt.Printf("   Version:    %s\n", BuildVersion)
-	fmt.Printf("   Built:      %s\n", BuildTime)
-	fmt.Println()
+	writeLine("┌──────────────────────────────────────────┐")
+	writeLine("│         mcpyeahyouknowme info            │")
+	writeLine("└──────────────────────────────────────────┘")
+	writeLine("")
 
-	fmt.Println("\u2699\ufe0f  Core Daemon")
+	writeLine("\U0001f527 Build")
+	writeLine("   Version:    %s", BuildVersion)
+	writeLine("   Built:      %s", BuildTime)
+	writeLine("")
+
+	writeLine("\u2699\ufe0f  Core Daemon")
 	plist := plistPath()
 	if _, err := os.Stat(plist); err == nil {
 		ctxLC, cancelLC := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancelLC()
 		out, err := exec.CommandContext(ctxLC, "launchctl", "list", plistName).Output()
 		if err == nil && len(out) > 0 {
-			fmt.Println("   Status:     running")
+			writeLine("   Status:     running")
 		} else {
-			fmt.Println("   Status:     installed (not running)")
+			writeLine("   Status:     installed (not running)")
 		}
-		fmt.Printf("   Plist:      %s\n", plist)
-		fmt.Printf("   Logs:       %s\n", filepath.Join(dDir, "core.log"))
+		writeLine("   Plist:      %s", plist)
+		writeLine("   Logs:       %s", filepath.Join(dDir, "core.log"))
 	} else {
-		fmt.Println("   Status:     not installed")
+		writeLine("   Status:     not installed")
 	}
 	if core.IsNetworkAvailable() {
-		fmt.Println("   Network:    online")
+		writeLine("   Network:    online")
 	} else {
-		fmt.Println("   Network:    offline (sync paused)")
+		writeLine("   Network:    offline (sync paused)")
 	}
-	fmt.Println()
+	writeLine("")
 
-	fmt.Println("\U0001f4c1 Data")
-	fmt.Printf("   Directory:  %s\n", dDir)
+	writeLine("\U0001f4c1 Data")
+	writeLine("   Directory:  %s", dDir)
 	if info, err := os.Stat(dDir); err == nil && info.IsDir() {
-		fmt.Println("   Status:     initialized")
+		writeLine("   Status:     initialized")
 	} else {
-		fmt.Println("   Status:     not initialized (run 'mcpyeahyouknowme whatsapp login')")
+		writeLine("   Status:     not initialized (run 'mcpyeahyouknowme whatsapp login')")
 	}
-	fmt.Println()
+	writeLine("")
 
-	fmt.Println("\U0001f4f2 WhatsApp")
-	for _, line := range whatsapp.InfoLines(dDir) {
-		fmt.Println(line)
-	}
-	fmt.Println()
+	writeSourceSection(&b, "\U0001f4f2 WhatsApp", "whatsapp", dDir, whatsapp.InfoLines)
+	writeSourceSection(&b, "\U0001f537 Google Suite", "gsuite", dDir, gsuite.InfoLines)
+	writeSourceSection(&b, "\U0001f4cd Google Places", "google_places", dDir, google_places.InfoLines)
 
-	fmt.Println("\U0001f537 Google Suite")
-	for _, line := range gsuite.InfoLines(dDir) {
-		fmt.Println(line)
+	return b.String()
+}
+
+func writeSourceSection(b *strings.Builder, title, sourceName, dataDir string, infoLines func(string) []string) {
+	fmt.Fprintln(b, title)
+	if available, reason := registry.IsAvailable(sourceName); !available {
+		fmt.Fprintln(b, "   Status:     unavailable")
+		if reason != "" {
+			fmt.Fprintf(b, "   Reason:     %s\n", reason)
+		}
+		fmt.Fprintln(b)
+		return
 	}
-	fmt.Println()
+	for _, line := range infoLines(dataDir) {
+		fmt.Fprintln(b, line)
+	}
+	fmt.Fprintln(b)
 }

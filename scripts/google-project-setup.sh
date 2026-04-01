@@ -4,8 +4,9 @@
 #
 # Description:
 #   Validates gcloud access, selects a Google Cloud project, enables the APIs
-#   required by the gsuite source, and prints the remaining manual OAuth setup
-#   steps that must be completed in the Google Cloud Console.
+#   required by the gsuite and google_places sources, creates a restricted
+#   Places API key, and prints the remaining manual OAuth setup steps that
+#   must be completed in the Google Cloud Console.
 #
 # Usage:
 #   ./scripts/google-project-setup.sh <google-project-id>
@@ -17,6 +18,8 @@
 
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 readonly REQUIRED_APIS=(
   docs.googleapis.com
   drive.googleapis.com
@@ -26,6 +29,7 @@ readonly REQUIRED_APIS=(
   people.googleapis.com
   tasks.googleapis.com
   slides.googleapis.com
+  places.googleapis.com
 )
 
 usage() {
@@ -83,14 +87,56 @@ Next manual steps in Google Cloud Console:
 5. Add test users while the OAuth app is still unverified.
 6. Review Data Access and requested scopes.
 7. Create an OAuth client with type "Desktop app".
-8. Copy the Desktop app Client ID.
-9. Put that Client ID in .env or your shell as GOOGLE_CLIENT_ID.
+8. Copy the Desktop app Client ID and Client Secret.
+9. Put them in .env or your shell as GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.
 10. Build/install the app and run: mcpyeahyouknowme gsuite login
 
 Notes:
-- A Desktop app client secret is not treated as a trusted secret in a shipped macOS binary.
+- A Desktop app client secret is not a meaningful trusted secret in a shipped macOS binary, but Google currently still requires it during token exchange.
 - Gmail, Contacts, and other sensitive scopes may require additional Google verification before broad public rollout.
 EOF
+}
+
+# step_6_create_places_api_key creates or reuses a restricted Places API key.
+step_6_create_places_api_key() {
+  local project_id="$1"
+  local key_id="mcpyeahyouknowme-places"
+  local full_key_name="projects/$project_id/locations/global/keys/$key_id"
+  local env_file="$ROOT/.env"
+  local key_string
+
+  echo "Setting up Places API key..."
+
+  if ! gcloud services api-keys describe "$full_key_name" >/dev/null 2>&1; then
+    echo "Creating Places API key (restricted to Places API (New))..."
+    gcloud services api-keys create \
+      --project="$project_id" \
+      --key-id="$key_id" \
+      --display-name="mcpyeahyouknowme Places Key" \
+      --api-target=service=places.googleapis.com >/dev/null
+  else
+    echo "Places API key already exists, re-fetching key string."
+  fi
+
+  key_string="$(gcloud services api-keys get-key-string "$full_key_name" \
+    --format='value(keyString)')"
+
+  if [ -z "$key_string" ]; then
+    echo "Error: failed to retrieve Places API key string." >&2
+    exit 1
+  fi
+
+  if [ ! -f "$env_file" ]; then
+    cp "$ROOT/.env.example" "$env_file"
+  fi
+
+  if grep -q "^GOOGLE_PLACE_API_KEY=" "$env_file"; then
+    sed -i '' "s|^GOOGLE_PLACE_API_KEY=.*|GOOGLE_PLACE_API_KEY=$key_string|" "$env_file"
+  else
+    echo "GOOGLE_PLACE_API_KEY=$key_string" >> "$env_file"
+  fi
+
+  echo "Places API key written to $env_file as GOOGLE_PLACE_API_KEY."
 }
 
 main() {
@@ -104,6 +150,7 @@ main() {
   step_3_require_project "$project_id"
   step_4_enable_apis
   step_5_print_manual_steps
+  step_6_create_places_api_key "$project_id"
 }
 
 main "$@"

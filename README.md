@@ -1,6 +1,6 @@
 # MCP Bridge
 
-A pluggable [Model Context Protocol](https://modelcontextprotocol.io/) server that gives AI assistants access to personal data sources. Currently supports **WhatsApp** (search/read messages, search contacts, send messages) and **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides), with the architecture ready for additional sources.
+A pluggable [Model Context Protocol](https://modelcontextprotocol.io/) server that gives AI assistants access to personal data sources. Currently supports **WhatsApp** (search/read messages, search contacts, send messages), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides), and **Google Places** (live business/address lookup), with the architecture ready for additional sources.
 
 Data is stored locally in SQLite and only sent to an LLM when accessed through MCP tools. Each data source registers its own namespaced tools (e.g. `whatsapp_list_chats`, `whatsapp_send_message`).
 
@@ -72,7 +72,7 @@ See the [product spec](docs/spec.md) for full details.
 
 ## Google Suite Setup
 
-Google Suite uses a public desktop OAuth client with PKCE. The only build-time credential you need is `GOOGLE_CLIENT_ID`.
+Google Suite uses a desktop OAuth client with PKCE. Google still expects both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` during token exchange, but the binary can still be built without them. If either is missing at build time, the `gsuite` source is marked unavailable until you rebuild with both values.
 
 1. **Bootstrap the Google Cloud project**
 
@@ -80,7 +80,7 @@ Google Suite uses a public desktop OAuth client with PKCE. The only build-time c
    just google-project-setup your-google-project-id
    ```
 
-   This validates `gcloud`, selects the project, enables the required APIs, and prints the remaining manual Google Cloud Console steps.
+   This validates `gcloud`, selects the project, enables the required APIs, creates a restricted Places API key, and prints the remaining manual Google Cloud Console steps.
 
 2. **Finish the manual Google Cloud Console steps**
 
@@ -91,19 +91,24 @@ Google Suite uses a public desktop OAuth client with PKCE. The only build-time c
    - Add support/contact email and test users while the app is unverified
    - Review the requested scopes
    - Create an OAuth client of type **Desktop app**
-   - Copy the Desktop app **Client ID**
+   - Copy the Desktop app **Client ID** and **Client Secret**
 
-   A Desktop app client secret is not a trusted secret in a shipped macOS binary, so this project does not use `GOOGLE_CLIENT_SECRET`.
+   A Desktop app client secret is not a meaningful trusted secret in a shipped macOS binary, but Google currently still requires it during token exchange.
 
-3. **Set the client ID**
+3. **Set the client credentials**
 
    ```bash
    export GOOGLE_CLIENT_ID='your-desktop-client-id'
+   export GOOGLE_CLIENT_SECRET='your-desktop-client-secret'
    ```
 
-   Add it to your shell profile or put it in `.env` before building.
+   Add them to your shell profile or put them in `.env` before building if you want the `gsuite` source enabled in the binary.
 
-4. **Authenticate and enable the apps you want**
+4. **Build-time Places API key** (optional)
+
+   `just google-project-setup` will also create a restricted Places API key and write it to `.env` as `GOOGLE_PLACE_API_KEY`. When present during `just build`, it enables the `google_places_*` MCP tools for live business and address lookup.
+
+5. **Authenticate and enable the apps you want**
 
    ```bash
    mcpyeahyouknowme gsuite login
@@ -111,13 +116,13 @@ Google Suite uses a public desktop OAuth client with PKCE. The only build-time c
 
    This opens your browser for OAuth authorization, stores the token in `~/.local/share/mcpyeahyouknowme/gsuite_token.json`, stores the account email in `~/.local/share/mcpyeahyouknowme/gsuite_email.txt`, and prompts you to choose which Google apps to enable. Apps start disabled until you explicitly enable them.
 
-5. **Manage enabled apps**
+6. **Manage enabled apps**
 
    ```bash
    mcpyeahyouknowme gsuite apps
    ```
 
-6. **Reset Google Suite data** (optional)
+7. **Reset Google Suite data** (optional)
 
    ```bash
    mcpyeahyouknowme gsuite reset
@@ -129,7 +134,9 @@ Google Suite uses a public desktop OAuth client with PKCE. The only build-time c
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GOOGLE_CLIENT_ID` | For Google Suite | Desktop OAuth client ID from Google Cloud Console |
+| `GOOGLE_CLIENT_ID` | Optional | Desktop OAuth client ID from Google Cloud Console; required only if you want the `gsuite` source available |
+| `GOOGLE_CLIENT_SECRET` | Optional | Matching desktop OAuth client secret; required only if you want the `gsuite` source available |
+| `GOOGLE_PLACE_API_KEY` | Optional | Build-time Places API key that enables the `google_places_*` tools |
 | `GOOGLE_PROJECT_ID` | Optional | Used by `scripts/google-project-setup.sh` / `just google-project-setup` |
 | `MCP_ENABLE_EMBEDDINGS` | Optional | Set to `false` to disable vector search and skip ONNX Runtime dependency |
 

@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"mcpyeahyouknowme/sources/google_places"
+	"mcpyeahyouknowme/sources/gsuite"
 )
 
 func TestFind(t *testing.T) {
@@ -13,6 +16,7 @@ func TestFind(t *testing.T) {
 	}{
 		{name: "whatsapp", want: true},
 		{name: "gsuite", want: true},
+		{name: "google_places", want: true},
 		{name: "unknown", want: false},
 	}
 
@@ -28,7 +32,7 @@ func TestFind(t *testing.T) {
 
 func TestNewSource(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"whatsapp", "gsuite"} {
+	for _, name := range []string{"whatsapp", "gsuite", "google_places"} {
 		t.Run(name, func(t *testing.T) {
 			src := NewSource(name, dir)
 			if src == nil {
@@ -60,6 +64,14 @@ func TestIsAuthenticated(t *testing.T) {
 	if !IsAuthenticated("gsuite", dir) {
 		t.Fatal("expected gsuite auth to be true with a token")
 	}
+	oldGooglePlacesKey := google_places.GooglePlaceAPIKey
+	google_places.GooglePlaceAPIKey = "test-key"
+	defer func() {
+		google_places.GooglePlaceAPIKey = oldGooglePlacesKey
+	}()
+	if !IsAuthenticated("google_places", dir) {
+		t.Fatal("expected google_places auth to be true with a configured key")
+	}
 	if !IsAuthenticated("unknown", dir) {
 		t.Fatal("unknown sources should default to authenticated")
 	}
@@ -76,13 +88,68 @@ func TestLoadAll(t *testing.T) {
 }
 
 func TestDescriptorCapabilities(t *testing.T) {
-	for _, desc := range All {
-		if !desc.IndexGlobally {
-			t.Fatalf("expected %s to participate in global indexing", desc.Name)
-		}
-		if !desc.RunsCore {
-			t.Fatalf("expected %s to run a core service", desc.Name)
-		}
+	tests := []struct {
+		name          string
+		indexGlobally bool
+		runsCore      bool
+		hasIsEnabled  bool
+		hasReason     bool
+	}{
+		{name: "whatsapp", indexGlobally: true, runsCore: true},
+		{name: "gsuite", indexGlobally: true, runsCore: true, hasIsEnabled: true, hasReason: true},
+		{name: "google_places", indexGlobally: false, runsCore: false, hasIsEnabled: true, hasReason: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			desc, ok := Find(tt.name)
+			if !ok {
+				t.Fatalf("missing descriptor %q", tt.name)
+			}
+			if desc.IndexGlobally != tt.indexGlobally {
+				t.Fatalf("IndexGlobally = %v, want %v", desc.IndexGlobally, tt.indexGlobally)
+			}
+			if desc.RunsCore != tt.runsCore {
+				t.Fatalf("RunsCore = %v, want %v", desc.RunsCore, tt.runsCore)
+			}
+			if (desc.IsEnabled != nil) != tt.hasIsEnabled {
+				t.Fatalf("IsEnabled presence = %v, want %v", desc.IsEnabled != nil, tt.hasIsEnabled)
+			}
+			if (desc.UnavailableReason != "") != tt.hasReason {
+				t.Fatalf("UnavailableReason presence = %v, want %v", desc.UnavailableReason != "", tt.hasReason)
+			}
+		})
+	}
+}
+
+func TestIsAvailable(t *testing.T) {
+	oldGooglePlacesKey := google_places.GooglePlaceAPIKey
+	oldGoogleClientID := gsuite.GoogleClientID
+	oldGoogleClientSecret := gsuite.GoogleClientSecret
+	defer func() {
+		google_places.GooglePlaceAPIKey = oldGooglePlacesKey
+		gsuite.GoogleClientID = oldGoogleClientID
+		gsuite.GoogleClientSecret = oldGoogleClientSecret
+	}()
+
+	if available, reason := IsAvailable("whatsapp"); !available || reason != "" {
+		t.Fatalf("whatsapp availability = (%v, %q), want (true, empty)", available, reason)
+	}
+
+	gsuite.GoogleClientID = ""
+	gsuite.GoogleClientSecret = ""
+	if available, reason := IsAvailable("gsuite"); available || reason == "" {
+		t.Fatalf("gsuite availability = (%v, %q), want unavailable with reason", available, reason)
+	}
+
+	gsuite.GoogleClientID = "client-id"
+	gsuite.GoogleClientSecret = "client-secret"
+	if available, reason := IsAvailable("gsuite"); !available || reason != "" {
+		t.Fatalf("gsuite availability = (%v, %q), want available", available, reason)
+	}
+
+	google_places.GooglePlaceAPIKey = ""
+	if available, reason := IsAvailable("google_places"); available || reason == "" {
+		t.Fatalf("google_places availability = (%v, %q), want unavailable with reason", available, reason)
 	}
 }
 
@@ -91,7 +158,7 @@ func TestNames(t *testing.T) {
 	if len(names) != len(All) {
 		t.Fatalf("Names() len = %d, want %d", len(names), len(All))
 	}
-	if names[0] != "whatsapp" || names[1] != "gsuite" {
+	if names[0] != "whatsapp" || names[1] != "gsuite" || names[2] != "google_places" {
 		t.Fatalf("unexpected names order: %v", names)
 	}
 }

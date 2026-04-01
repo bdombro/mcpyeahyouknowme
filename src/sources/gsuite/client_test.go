@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"golang.org/x/oauth2"
@@ -107,18 +108,121 @@ func TestClassifyGSuiteError(t *testing.T) {
 
 func TestGetOAuthConfig_usesClientIDAndLoopbackRedirect(t *testing.T) {
 	oldID := GoogleClientID
+	oldSecret := GoogleClientSecret
 	GoogleClientID = "client-id"
-	defer func() { GoogleClientID = oldID }()
+	GoogleClientSecret = "client-secret"
+	defer func() {
+		GoogleClientID = oldID
+		GoogleClientSecret = oldSecret
+	}()
 
 	cfg := (&Source{}).getOAuthConfig()
 	if cfg.ClientID != "client-id" {
 		t.Fatalf("ClientID = %q, want %q", cfg.ClientID, "client-id")
+	}
+	if cfg.ClientSecret != "client-secret" {
+		t.Fatalf("ClientSecret = %q, want %q", cfg.ClientSecret, "client-secret")
 	}
 	if cfg.RedirectURL != "http://127.0.0.1:8085" {
 		t.Fatalf("RedirectURL = %q", cfg.RedirectURL)
 	}
 	if len(cfg.Scopes) != len(oauthScopes) {
 		t.Fatalf("Scopes len = %d, want %d", len(cfg.Scopes), len(oauthScopes))
+	}
+}
+
+func TestIsConfigured(t *testing.T) {
+	oldID := GoogleClientID
+	oldSecret := GoogleClientSecret
+	defer func() {
+		GoogleClientID = oldID
+		GoogleClientSecret = oldSecret
+	}()
+
+	GoogleClientID = ""
+	GoogleClientSecret = ""
+	if IsConfigured() {
+		t.Fatal("expected empty credentials to be unconfigured")
+	}
+
+	GoogleClientID = "client-id"
+	GoogleClientSecret = ""
+	if IsConfigured() {
+		t.Fatal("expected missing secret to be unconfigured")
+	}
+
+	GoogleClientID = "client-id"
+	GoogleClientSecret = "client-secret"
+	if !IsConfigured() {
+		t.Fatal("expected both credentials to be configured")
+	}
+}
+
+func TestDescribeOAuthExchangeError(t *testing.T) {
+	tests := []struct {
+		name  string
+		err   error
+		want  string
+		exact bool
+	}{
+		{
+			name: "nil error returns empty string",
+			err:  nil,
+			want: "",
+		},
+		{
+			name: "missing client secret gets hint",
+			err: &oauth2.RetrieveError{
+				Response:  &http.Response{StatusCode: http.StatusBadRequest},
+				ErrorCode: "invalid_request",
+				Body:      []byte(`{"error":"invalid_request","error_description":"client_secret is missing."}`),
+			},
+			want: "GOOGLE_CLIENT_SECRET",
+		},
+		{
+			name: "other retrieve errors fall back to original text",
+			err: &oauth2.RetrieveError{
+				Response:  &http.Response{StatusCode: http.StatusBadRequest},
+				ErrorCode: "invalid_request",
+				Body:      []byte(`{"error":"invalid_request","error_description":"something else"}`),
+			},
+			want: (&oauth2.RetrieveError{
+				Response:  &http.Response{StatusCode: http.StatusBadRequest},
+				ErrorCode: "invalid_request",
+				Body:      []byte(`{"error":"invalid_request","error_description":"something else"}`),
+			}).Error(),
+			exact: true,
+		},
+		{
+			name:  "other errors fall back to original text",
+			err:   errors.New("boom"),
+			want:  "boom",
+			exact: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := describeOAuthExchangeError(tc.err)
+			if tc.want == "" {
+				if got != "" {
+					t.Fatalf("describeOAuthExchangeError() = %q, want empty string", got)
+				}
+				return
+			}
+			if got == "" {
+				t.Fatal("expected non-empty description")
+			}
+			if tc.exact {
+				if got != tc.want {
+					t.Fatalf("describeOAuthExchangeError() = %q, want %q", got, tc.want)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("describeOAuthExchangeError() = %q, want substring %q", got, tc.want)
+			}
+		})
 	}
 }
 
