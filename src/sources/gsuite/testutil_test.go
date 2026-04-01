@@ -67,16 +67,26 @@ func seedSheets(t *testing.T, db *sql.DB) {
 // seedGmail inserts sample Gmail messages into the test DB.
 func seedGmail(t *testing.T, db *sql.DB) {
 	t.Helper()
+	msg1Raw := "Hi Bob,\n\nCan you make the meeting tomorrow?\n\nThanks,\nAlice"
+	msg2Raw := "Yes, I can make it.\n\nOn Fri, Mar 1, 2024 at 10:00 AM Alice <alice@example.com> wrote:\n> Hi Bob,\n> \n> Can you make the meeting tomorrow?\n> \n> Thanks,\n> Alice"
 	_, err := db.Exec(`INSERT INTO gmail_messages
 		(id, thread_id, labels, folder, subject, from_addr, to_addrs, cc_addrs, bcc_addrs,
-		 date, snippet, body_text, has_attachments, size_estimate, last_synced)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		 date, snippet, body_text, body_raw, body_visible, has_attachments, size_estimate, last_synced)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')),
+		       (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
 		"msg1", "thread1", "INBOX,UNREAD", "INBOX",
 		"Meeting Tomorrow", "alice@example.com", "bob@example.com", "", "",
-		"2024-03-01T10:00:00Z", "Let me know if you can make it.",
-		"Hi Bob, let me know if you can make the meeting tomorrow.", 0, 1024)
+		"2024-03-01T10:00:00Z", "Can you make the meeting tomorrow?",
+		msg1Raw, msg1Raw, deriveVisibleBody(msg1Raw), 0, 1024,
+		"msg2", "thread1", "INBOX", "INBOX",
+		"Re: Meeting Tomorrow", "bob@example.com", "alice@example.com", "", "",
+		"2024-03-01T11:00:00Z", "Yes, I can make it.",
+		msg2Raw, msg2Raw, deriveVisibleBody(msg2Raw), 0, 2048)
 	if err != nil {
 		t.Fatalf("seed gmail: %v", err)
+	}
+	if err := rebuildAllGmailThreads(db); err != nil {
+		t.Fatalf("rebuild gmail threads: %v", err)
 	}
 }
 

@@ -18,10 +18,10 @@ type SearchEntry = core.SearchEntry
 // SearchResult is returned by the global search MCP tool.
 type SearchResult struct {
 	Source      string          `json:"source"`
-	ContentType string         `json:"content_type"`
-	Title       string         `json:"title"`
-	Content     string         `json:"content"`
-	Score       float64        `json:"score"`
+	ContentType string          `json:"content_type"`
+	Title       string          `json:"title"`
+	Content     string          `json:"content"`
+	Score       float64         `json:"score"`
 	Metadata    json.RawMessage `json:"metadata,omitempty"`
 }
 
@@ -40,8 +40,11 @@ var hierarchyWeights = map[string]float64{
 	"spreadsheet_owner":   2.0,
 	"spreadsheet_content": 1.0,
 	// Gmail
-	"email_subject": 2.5,
-	"email_content": 1.0,
+	"email_subject":             2.5,
+	"email_content":             1.0,
+	"email_thread_subject":      2.5,
+	"email_thread_participants": 2.0,
+	"email_thread_content":      1.0,
 	// Calendar
 	"calendar_event":             2.0,
 	"calendar_event_description": 1.0,

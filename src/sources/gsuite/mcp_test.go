@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/server"
@@ -220,6 +221,9 @@ func TestGmailGetMessage_Found(t *testing.T) {
 	if result["folder"] == nil {
 		t.Error("expected folder in response")
 	}
+	if result["thread_id"] != "thread1" {
+		t.Errorf("expected thread_id 'thread1', got %v", result["thread_id"])
+	}
 }
 
 func TestGmailGetMessage_NotFound(t *testing.T) {
@@ -240,13 +244,78 @@ func TestGmailGetMessage_NilDB(t *testing.T) {
 	}
 }
 
+func TestGmailGetThread_Found(t *testing.T) {
+	s := buildMCPServer(t)
+	text := callTool(t, s, "gsuite_gmail_get_thread", map[string]interface{}{"thread_id": "thread1"})
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &result); err != nil {
+		t.Fatalf("parse result: %v\ntext: %s", err, text)
+	}
+	if result["thread_id"] != "thread1" {
+		t.Errorf("expected thread_id 'thread1', got %v", result["thread_id"])
+	}
+	if result["message_count"].(float64) != 2 {
+		t.Errorf("expected 2 messages, got %v", result["message_count"])
+	}
+	messages, ok := result["messages"].([]interface{})
+	if !ok || len(messages) != 2 {
+		t.Fatalf("expected 2 thread messages, got %#v", result["messages"])
+	}
+	second, ok := messages[1].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected second message object, got %#v", messages[1])
+	}
+	body, _ := second["body"].(string)
+	if strings.Contains(body, "On Fri, Mar 1, 2024") {
+		t.Errorf("expected visible body without quoted reply, got %q", body)
+	}
+}
+
+func TestGmailGetThread_IncludeRaw(t *testing.T) {
+	s := buildMCPServer(t)
+	text := callTool(t, s, "gsuite_gmail_get_thread", map[string]interface{}{"thread_id": "thread1", "include_raw": true})
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &result); err != nil {
+		t.Fatalf("parse result: %v\ntext: %s", err, text)
+	}
+	messages := result["messages"].([]interface{})
+	second := messages[1].(map[string]interface{})
+	raw, _ := second["body_raw"].(string)
+	if !strings.Contains(raw, "On Fri, Mar 1, 2024") {
+		t.Errorf("expected raw body to include quoted text, got %q", raw)
+	}
+}
+
+func TestGmailGetThread_NotFound(t *testing.T) {
+	s := buildMCPServer(t)
+	text := callTool(t, s, "gsuite_gmail_get_thread", map[string]interface{}{"thread_id": "nope"})
+	if text != "Thread not found" {
+		t.Errorf("expected 'Thread not found', got %q", text)
+	}
+}
+
+func TestGmailGetThread_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_gmail_get_thread", map[string]interface{}{"thread_id": "thread1"})
+	if text != "Database not available" {
+		t.Errorf("expected 'Database not available', got %q", text)
+	}
+}
+
 func TestGmailListRecent(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_list_recent", map[string]interface{}{})
 	var result map[string]interface{}
 	json.Unmarshal([]byte(text), &result)
-	if result["count"].(float64) != 1 {
-		t.Errorf("expected 1 message, got %v", result["count"])
+	if result["count"].(float64) != 2 {
+		t.Errorf("expected 2 messages, got %v", result["count"])
+	}
+	messages := result["messages"].([]interface{})
+	first := messages[0].(map[string]interface{})
+	if first["thread_id"] != "thread1" {
+		t.Errorf("expected thread_id 'thread1', got %v", first["thread_id"])
 	}
 }
 
@@ -255,8 +324,8 @@ func TestGmailListRecent_FilterByFolder(t *testing.T) {
 	text := callTool(t, s, "gsuite_gmail_list_recent", map[string]interface{}{"folder": "INBOX"})
 	var result map[string]interface{}
 	json.Unmarshal([]byte(text), &result)
-	if result["count"].(float64) != 1 {
-		t.Errorf("expected 1 INBOX message, got %v", result["count"])
+	if result["count"].(float64) != 2 {
+		t.Errorf("expected 2 INBOX messages, got %v", result["count"])
 	}
 	text2 := callTool(t, s, "gsuite_gmail_list_recent", map[string]interface{}{"folder": "SENT"})
 	var result2 map[string]interface{}
@@ -503,21 +572,28 @@ func TestStoreGmailMessage(t *testing.T) {
 	src := newTestSource(t)
 	seedGmail(t, src.db)
 
-	var subject, from, folder string
+	var subject, from, folder, bodyRaw, bodyVisible string
 	var hasAttach int
-	err := src.db.QueryRow(`SELECT subject, from_addr, folder, has_attachments FROM gmail_messages WHERE id = 'msg1'`).
-		Scan(&subject, &from, &folder, &hasAttach)
+	err := src.db.QueryRow(`SELECT subject, from_addr, folder, body_raw, body_visible, has_attachments
+		FROM gmail_messages WHERE id = 'msg2'`).
+		Scan(&subject, &from, &folder, &bodyRaw, &bodyVisible, &hasAttach)
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
-	if subject != "Meeting Tomorrow" {
-		t.Errorf("expected 'Meeting Tomorrow', got %q", subject)
+	if subject != "Re: Meeting Tomorrow" {
+		t.Errorf("expected 'Re: Meeting Tomorrow', got %q", subject)
 	}
-	if from != "alice@example.com" {
-		t.Errorf("expected from 'alice@example.com', got %q", from)
+	if from != "bob@example.com" {
+		t.Errorf("expected from 'bob@example.com', got %q", from)
 	}
 	if folder != "INBOX" {
 		t.Errorf("expected folder 'INBOX', got %q", folder)
+	}
+	if !strings.Contains(bodyRaw, "On Fri, Mar 1, 2024") {
+		t.Errorf("expected raw body to keep quoted text, got %q", bodyRaw)
+	}
+	if strings.Contains(bodyVisible, "On Fri, Mar 1, 2024") {
+		t.Errorf("expected visible body to strip quoted text, got %q", bodyVisible)
 	}
 	if hasAttach != 0 {
 		t.Error("expected no attachments")
@@ -536,20 +612,26 @@ func TestGmailSearchEntries(t *testing.T) {
 	if len(entries) == 0 {
 		t.Error("expected entries from gmail")
 	}
-	hasSubject, hasBody := false, false
+	hasSubject, hasParticipants, hasBody := false, false, false
 	for _, e := range entries {
-		if e.ContentType == "email_subject" {
+		if e.ContentType == "email_thread_subject" {
 			hasSubject = true
 		}
-		if e.ContentType == "email_content" {
+		if e.ContentType == "email_thread_participants" {
+			hasParticipants = true
+		}
+		if e.ContentType == "email_thread_content" {
 			hasBody = true
 		}
 	}
 	if !hasSubject {
-		t.Error("expected email_subject entry")
+		t.Error("expected email_thread_subject entry")
+	}
+	if !hasParticipants {
+		t.Error("expected email_thread_participants entry")
 	}
 	if !hasBody {
-		t.Error("expected email_content entry")
+		t.Error("expected email_thread_content entry")
 	}
 }
 

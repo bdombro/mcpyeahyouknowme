@@ -20,6 +20,7 @@ func TestInitGSuiteDB(t *testing.T) {
 		"docs_documents",
 		"sheets_spreadsheets",
 		"gmail_messages",
+		"gmail_threads",
 		"calendar_events",
 		"tasks_items",
 		"contacts_people",
@@ -240,7 +241,7 @@ func TestSearchEntries_WithData(t *testing.T) {
 	for _, e := range entries {
 		types[e.ContentType] = true
 	}
-	expected := []string{"document_title", "spreadsheet_title", "email_subject", "calendar_event", "task", "contact", "presentation_title"}
+	expected := []string{"document_title", "spreadsheet_title", "email_thread_subject", "email_thread_content", "calendar_event", "task", "contact", "presentation_title"}
 	for _, ct := range expected {
 		if !types[ct] {
 			t.Errorf("expected content type %q in search entries", ct)
