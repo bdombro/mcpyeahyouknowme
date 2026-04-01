@@ -12,14 +12,36 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// IsNetworkAvailable checks connectivity by dialing the Google API endpoint.
+// IsNetworkAvailable reports whether any non-loopback network interface is up
+// and has a routable (non-link-local) IP address. This is a pure OS syscall —
+// zero network traffic, sub-millisecond — so it can be called freely.
 func IsNetworkAvailable() bool {
-	conn, err := net.DialTimeout("tcp", "www.googleapis.com:443", 3*time.Second)
+	ifaces, err := net.Interfaces()
 	if err != nil {
 		return false
 	}
-	conn.Close()
-	return true
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip != nil && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // DefaultReset removes a list of files (by relative path under dataDir).
