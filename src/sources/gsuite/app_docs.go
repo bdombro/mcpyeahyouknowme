@@ -329,12 +329,16 @@ func buildContentEntries(sourceName, id, title, content, modTime, owners,
 			if end > len(contentWithOwners) {
 				end = len(contentWithOwners)
 			}
+			chunk := contentWithOwners[i:end]
+			if core.IsLowValueContent(chunk) {
+				continue
+			}
 			chunkMeta, _ := json.Marshal(map[string]interface{}{
 				idField: id, "title": title, "chunk_index": i / chunkSize, "modified_time": modTime,
 			})
 			entries = append(entries, core.SearchEntry{
 				Source: sourceName, SourceID: id, ContentType: contentType,
-				Title: title, Content: contentWithOwners[i:end], Metadata: chunkMeta,
+				Title: title, Content: chunk, Metadata: chunkMeta,
 			})
 		}
 	}

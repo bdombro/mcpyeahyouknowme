@@ -6,7 +6,7 @@
 |------|---------|-------|----------|
 | [`app_calendar.go`](#app_calendargo) | 119 | 169 | 70.4% |
 | [`app_contacts.go`](#app_contactsgo) | 95 | 137 | 69.3% |
-| [`app_docs.go`](#app_docsgo) | 119 | 170 | 70.0% |
+| [`app_docs.go`](#app_docsgo) | 122 | 173 | 70.5% |
 | [`app_gmail.go`](#app_gmailgo) | 517 | 607 | 85.2% |
 | [`app_sheets.go`](#app_sheetsgo) | 86 | 135 | 63.7% |
 | [`app_slides.go`](#app_slidesgo) | 80 | 129 | 62.0% |
@@ -18,7 +18,7 @@
 | [`daemon.go`](#daemongo) | 133 | 516 | 25.8% |
 | [`embedding.go`](#embeddinggo) | 24 | 25 | 96.0% |
 | [`embedding_init.go`](#embedding_initgo) | 17 | 24 | 70.8% |
-| [`helpers.go`](#helpersgo) | 149 | 172 | 86.6% |
+| [`helpers.go`](#helpersgo) | 160 | 183 | 87.4% |
 | [`indexer.go`](#indexergo) | 7 | 25 | 28.0% |
 | [`info_cli.go`](#info_cligo) | 61 | 68 | 89.7% |
 | [`main.go`](#maingo) | 0 | 2 | 0.0% |
@@ -36,7 +36,7 @@
 | [`store_init.go`](#store_initgo) | 0 | 28 | 0.0% |
 | [`system.go`](#systemgo) | 24 | 30 | 80.0% |
 | [`utils.go`](#utilsgo) | 0 | 46 | 0.0% |
-| **Total** | **2802** | **4377** | **64.0%** |
+| **Total** | **2816** | **4391** | **64.1%** |
 
 ## Uncovered Blocks
 
@@ -128,8 +128,8 @@
 - Lines 268–269 (1 stmt)
 - Lines 280–282 (1 stmt)
 - Lines 287–288 (1 stmt)
-- Lines 365–367 (1 stmt)
-- Lines 372–373 (1 stmt)
+- Lines 369–371 (1 stmt)
+- Lines 376–377 (1 stmt)
 
 ### [`app_gmail.go`](../src/app_gmail.go)
 
@@ -403,11 +403,6 @@
 ### [`client.go`](../src/client.go)
 
 - Lines 147–149 (1 stmt)
-- Lines 146–148 (1 stmt)
-- Lines 151–153 (1 stmt)
-- Lines 184–186 (1 stmt)
-- Lines 208–210 (1 stmt)
-- Lines 214–216 (1 stmt)
 - Lines 34–35 (1 stmt)
 - Lines 35–37 (1 stmt)
 - Lines 39–44 (4 stmts)
@@ -487,6 +482,11 @@
 - Lines 349–354 (3 stmts)
 - Lines 378–380 (1 stmt)
 - Lines 380–382 (1 stmt)
+- Lines 146–148 (1 stmt)
+- Lines 151–153 (1 stmt)
+- Lines 184–186 (1 stmt)
+- Lines 208–210 (1 stmt)
+- Lines 214–216 (1 stmt)
 
 ### [`cmd.go`](../src/cmd.go)
 
@@ -795,27 +795,27 @@
 
 ### [`helpers.go`](../src/helpers.go)
 
-- Lines 22–23 (1 stmt)
-- Lines 23–25 (2 stmts)
-- Lines 25–27 (1 stmt)
-- Lines 28–28 (1 stmt)
-- Lines 30–30 (1 stmt)
-- Lines 47–48 (1 stmt)
+- Lines 23–24 (1 stmt)
+- Lines 24–26 (2 stmts)
+- Lines 26–28 (1 stmt)
+- Lines 29–29 (1 stmt)
+- Lines 31–31 (1 stmt)
 - Lines 48–49 (1 stmt)
-- Lines 49–51 (1 stmt)
-- Lines 53–53 (1 stmt)
-- Lines 123–124 (1 stmt)
-- Lines 125–126 (1 stmt)
-- Lines 127–128 (1 stmt)
-- Lines 129–130 (1 stmt)
-- Lines 131–132 (1 stmt)
-- Lines 140–142 (1 stmt)
-- Lines 154–156 (1 stmt)
-- Lines 165–167 (1 stmt)
-- Lines 199–202 (2 stmts)
-- Lines 210–212 (1 stmt)
-- Lines 214–216 (1 stmt)
-- Lines 218–220 (1 stmt)
+- Lines 49–50 (1 stmt)
+- Lines 50–52 (1 stmt)
+- Lines 54–54 (1 stmt)
+- Lines 124–125 (1 stmt)
+- Lines 126–127 (1 stmt)
+- Lines 128–129 (1 stmt)
+- Lines 130–131 (1 stmt)
+- Lines 132–133 (1 stmt)
+- Lines 141–143 (1 stmt)
+- Lines 155–157 (1 stmt)
+- Lines 186–188 (1 stmt)
+- Lines 220–223 (2 stmts)
+- Lines 231–233 (1 stmt)
+- Lines 235–237 (1 stmt)
+- Lines 239–241 (1 stmt)
 
 ### [`indexer.go`](../src/indexer.go)
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -495,6 +496,86 @@ func TestBuildContentEntries_LongContent(t *testing.T) {
 	}
 	if contentChunks != 3 {
 		t.Errorf("expected 3 content chunks for 12001 chars, got %d", contentChunks)
+	}
+}
+
+func TestBuildContentEntries_SkipsNumericDominantChunks(t *testing.T) {
+	numericContent := strings.Repeat("$1,234.56\t2024-01-15\tINV-00123\t", 200)
+	textContent := strings.Repeat("Revenue Q1 improved because the pipeline expanded with new contracts. ", 120)
+
+	numericEntries := buildContentEntries("src", "numeric", "Budget Grid", numericContent, "2024-01-01T00:00:00Z", "",
+		"spreadsheet_title", "spreadsheet_owner", "spreadsheet_content", "spreadsheet_id")
+	textEntries := buildContentEntries("src", "text", "Narrative Grid", textContent, "2024-01-01T00:00:00Z", "",
+		"spreadsheet_title", "spreadsheet_owner", "spreadsheet_content", "spreadsheet_id")
+
+	numericChunks := 0
+	for _, entry := range numericEntries {
+		if entry.ContentType == "spreadsheet_content" {
+			numericChunks++
+		}
+	}
+	textChunks := 0
+	for _, entry := range textEntries {
+		if entry.ContentType == "spreadsheet_content" {
+			textChunks++
+		}
+	}
+
+	if numericChunks != 0 {
+		t.Fatalf("expected numeric-heavy content chunks to be skipped, got %d", numericChunks)
+	}
+	if textChunks == 0 {
+		t.Fatal("expected prose-heavy content chunks to remain indexed")
+	}
+	if len(numericEntries) >= len(textEntries) {
+		t.Fatalf("expected numeric-heavy content to produce fewer search entries (%d vs %d)", len(numericEntries), len(textEntries))
+	}
+}
+
+func TestSearchEntries_NumericHeavySheetProducesFewerEntries(t *testing.T) {
+	src := newTestSource(t)
+	src.apps = DefaultAppsConfig()
+	src.apps.SetEnabled("sheets", true)
+
+	numericContent := strings.Repeat("$1,234.56\t2024-01-15\tINV-00123\t", 200)
+	textContent := strings.Repeat("Revenue Q1 improved because the pipeline expanded with new contracts. ", 120)
+
+	_, err := src.db.Exec(`INSERT INTO sheets_spreadsheets
+		(id, title, content, modified_time, created_time, web_view_link, owners, sheet_count, last_synced)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now')),
+		       (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		"sheet_numeric", "Budget Grid", numericContent, "2024-02-10T08:00:00Z", "2024-02-01T08:00:00Z",
+		"https://sheets.google.com/sheet_numeric", "", 1,
+		"sheet_text", "Narrative Grid", textContent, "2024-02-10T08:00:00Z", "2024-02-01T08:00:00Z",
+		"https://sheets.google.com/sheet_text", "", 1)
+	if err != nil {
+		t.Fatalf("seed sheets: %v", err)
+	}
+
+	entries, err := src.SearchEntries()
+	if err != nil {
+		t.Fatalf("SearchEntries: %v", err)
+	}
+
+	numericCount := 0
+	textCount := 0
+	for _, entry := range entries {
+		switch entry.SourceID {
+		case "sheet_numeric":
+			numericCount++
+		case "sheet_text":
+			textCount++
+		}
+	}
+
+	if numericCount == 0 {
+		t.Fatal("expected numeric-heavy sheet to keep at least the title entry")
+	}
+	if textCount == 0 {
+		t.Fatal("expected text-heavy sheet to produce search entries")
+	}
+	if numericCount >= textCount {
+		t.Fatalf("expected numeric-heavy sheet to produce fewer entries (%d vs %d)", numericCount, textCount)
 	}
 }
 

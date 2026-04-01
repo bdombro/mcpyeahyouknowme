@@ -444,7 +444,7 @@ Metadata shapes per WhatsApp content type:
 
 ### Global Hybrid Search
 
-The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 10-second tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available. Embedding batch size scales dynamically based on available system memory (4–32, baseline 16), and embeddings are computed in chunks of 200 rows with per-chunk commits to limit resource usage. Each `DataSource` provides its indexable content via `SearchEntries()`. Content is normalized into a shared schema:
+The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 10-second tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available. Embedding batch size scales dynamically based on available system memory (4–32, baseline 16), and embeddings are computed in chunks of 200 rows with per-chunk commits to limit resource usage. Each `DataSource` provides its indexable content via `SearchEntries()`. To reduce index size and embedding cost, numeric-dominant body chunks from long Docs, Sheets, and Slides content are skipped while titles, owners, subjects, and other short structured entries remain indexed. Content is normalized into a shared schema:
 
 | Content Type | Source | Indexed From |
 |-------------|--------|-------------|
@@ -453,10 +453,10 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 | `message` | WhatsApp | Message content (>20 chars only) |
 | `document_title` | Google Docs | Document titles (prefixed with owner names when present) |
 | `document_owner` | Google Docs | Document owner names and emails |
-| `document_content` | Google Docs | Document text content (prefixed with owner names, chunked at 5000 chars) |
+| `document_content` | Google Docs | Document text content (prefixed with owner names, chunked at 5000 chars, numeric-dominant chunks skipped) |
 | `spreadsheet_title` | Google Sheets | Spreadsheet titles (prefixed with owner names when present) |
 | `spreadsheet_owner` | Google Sheets | Spreadsheet owner names and emails |
-| `spreadsheet_content` | Google Sheets | Spreadsheet cell content (prefixed with owner names, chunked at 5000 chars) |
+| `spreadsheet_content` | Google Sheets | Spreadsheet cell content (prefixed with owner names, chunked at 5000 chars, numeric-dominant chunks skipped) |
 | `email_thread_subject` | Gmail | Derived Gmail thread subject |
 | `email_thread_participants` | Gmail | Derived Gmail thread participant list |
 | `email_thread_content` | Gmail | Reconstructed Gmail thread transcript chunks built from `body_visible` |

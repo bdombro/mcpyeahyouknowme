@@ -212,6 +212,47 @@ func TestRequireBoolArgument_missing(t *testing.T) {
 	}
 }
 
+func TestIsLowValueContent(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{
+			name: "numeric grid",
+			text: strings.Repeat("$1,234.56\t2024-01-15\tINV-00123\t", 4),
+			want: true,
+		},
+		{
+			name: "mixed prose and numbers",
+			text: strings.Repeat("Revenue Q1: $1.2M and pipeline expansion plan. ", 3),
+			want: false,
+		},
+		{
+			name: "short content never skipped",
+			text: "2024-01-15\t12345\t67890",
+			want: false,
+		},
+		{
+			name: "unicode letters count as prose",
+			text: strings.Repeat("Metrica senor Q1 cafe numero 123. ", 3),
+			want: false,
+		},
+		{
+			name: "dates and ids only",
+			text: strings.Repeat("2024-01-15 INV-00123 555-1200 ", 4),
+			want: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsLowValueContent(tc.text); got != tc.want {
+				t.Fatalf("IsLowValueContent() = %v, want %v for %q", got, tc.want, tc.text)
+			}
+		})
+	}
+}
+
 func TestNormalizeConfig_seedsKnownSources(t *testing.T) {
 	RegisterKnownSource("core_test_seeded")
 	cfg := NormalizeConfig(Config{})

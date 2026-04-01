@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"unicode"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -155,6 +156,26 @@ func RequireBoolArgument(req mcp.CallToolRequest, key, example string) (bool, *m
 		return false, missingArgumentResult(key, example)
 	}
 	return b, nil
+}
+
+// IsLowValueContent reports whether text is too numeric/punctuation-heavy to be
+// worth indexing as a semantic content chunk.
+func IsLowValueContent(text string) bool {
+	nonWhitespace := 0
+	letters := 0
+	for _, r := range text {
+		if unicode.IsSpace(r) {
+			continue
+		}
+		nonWhitespace++
+		if unicode.IsLetter(r) {
+			letters++
+		}
+	}
+	if nonWhitespace < 50 {
+		return false
+	}
+	return float64(letters)/float64(nonWhitespace) < 0.30
 }
 
 // RegisterKnownSource records a source name so config normalization can keep a
