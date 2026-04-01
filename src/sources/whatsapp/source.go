@@ -9,6 +9,10 @@ import (
 	"mcpyeahyouknowme/core"
 )
 
+func init() {
+	core.RegisterKnownSource("whatsapp")
+}
+
 // Source implements core.DataSource and core.CoreService for WhatsApp.
 type Source struct {
 	store   *MessageStore

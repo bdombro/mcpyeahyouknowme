@@ -138,7 +138,7 @@ func commandTree() []Command {
 			Subcommands: []Command{
 				{
 					Name:    "login",
-					Summary: "Authenticate with Google (all apps)",
+					Summary: "Authenticate with Google and choose apps",
 					Usage:   "gsuite login",
 					Run: func(args []string) {
 						gsuite.RunLogin(dataDir)

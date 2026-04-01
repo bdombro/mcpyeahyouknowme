@@ -11,6 +11,8 @@ type Descriptor struct {
 	Name            string
 	New             func(dataDir string) core.DataSource
 	IsAuthenticated func(dataDir string) bool
+	IndexGlobally   bool
+	RunsCore        bool
 }
 
 // All contains every source known to the application.
@@ -19,11 +21,15 @@ var All = []Descriptor{
 		Name:            "whatsapp",
 		New:             func(dataDir string) core.DataSource { return whatsapp.NewSource(dataDir) },
 		IsAuthenticated: whatsapp.IsLoggedIn,
+		IndexGlobally:   true,
+		RunsCore:        true,
 	},
 	{
 		Name:            "gsuite",
 		New:             func(dataDir string) core.DataSource { return gsuite.NewSource(dataDir) },
 		IsAuthenticated: gsuite.IsLoggedIn,
+		IndexGlobally:   true,
+		RunsCore:        true,
 	},
 }
 
@@ -62,4 +68,13 @@ func LoadAll(dataDir string) []core.DataSource {
 		sources = append(sources, desc.New(dataDir))
 	}
 	return sources
+}
+
+// Names returns the registered source names in descriptor order.
+func Names() []string {
+	names := make([]string, 0, len(All))
+	for _, desc := range All {
+		names = append(names, desc.Name)
+	}
+	return names
 }

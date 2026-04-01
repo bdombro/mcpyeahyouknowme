@@ -75,7 +75,7 @@ func TestDocsSearch_Found(t *testing.T) {
 }
 
 func TestDocsSearch_NilDB(t *testing.T) {
-	src := &Source{apps: DefaultAppsConfig()}
+	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
 	src.RegisterTools(s)
 	text := callTool(t, s, "gsuite_docs_search", map[string]interface{}{"query": "anything"})
@@ -111,7 +111,7 @@ func TestDocsGetDocument_NotFound(t *testing.T) {
 }
 
 func TestDocsGetDocument_NilDB(t *testing.T) {
-	src := &Source{apps: DefaultAppsConfig()}
+	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
 	src.RegisterTools(s)
 	text := callTool(t, s, "gsuite_docs_get_document", map[string]interface{}{"document_id": "x"})
@@ -171,7 +171,7 @@ func TestSheetsGetSpreadsheet_NotFound(t *testing.T) {
 }
 
 func TestSheetsGetSpreadsheet_NilDB(t *testing.T) {
-	src := &Source{apps: DefaultAppsConfig()}
+	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
 	src.RegisterTools(s)
 	text := callTool(t, s, "gsuite_sheets_get_spreadsheet", map[string]interface{}{"spreadsheet_id": "x"})
@@ -231,7 +231,7 @@ func TestGmailGetMessage_NotFound(t *testing.T) {
 }
 
 func TestGmailGetMessage_NilDB(t *testing.T) {
-	src := &Source{apps: DefaultAppsConfig()}
+	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
 	src.RegisterTools(s)
 	text := callTool(t, s, "gsuite_gmail_get_message", map[string]interface{}{"message_id": "x"})
@@ -307,7 +307,7 @@ func TestCalendarGetEvent_NotFound(t *testing.T) {
 }
 
 func TestCalendarGetEvent_NilDB(t *testing.T) {
-	src := &Source{apps: DefaultAppsConfig()}
+	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
 	src.RegisterTools(s)
 	text := callTool(t, s, "gsuite_calendar_get_event", map[string]interface{}{"event_id": "x"})
@@ -386,7 +386,7 @@ func TestContactsList(t *testing.T) {
 }
 
 func TestContactsList_NilDB(t *testing.T) {
-	src := &Source{apps: DefaultAppsConfig()}
+	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
 	src.RegisterTools(s)
 	text := callTool(t, s, "gsuite_contacts_list", map[string]interface{}{})
@@ -433,7 +433,7 @@ func TestSlidesGetPresentation_NotFound(t *testing.T) {
 }
 
 func TestSlidesGetPresentation_NilDB(t *testing.T) {
-	src := &Source{apps: DefaultAppsConfig()}
+	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
 	src.RegisterTools(s)
 	text := callTool(t, s, "gsuite_slides_get_presentation", map[string]interface{}{"presentation_id": "x"})
@@ -456,7 +456,7 @@ func TestSlidesListRecent(t *testing.T) {
 
 func TestDisabledApp_ToolsNotRegistered(t *testing.T) {
 	src := newTestSource(t)
-	src.apps = DefaultAppsConfig()
+	src.apps = allAppsEnabledConfig()
 	src.apps.SetEnabled("gmail", false)
 	seedGmail(t, src.db)
 

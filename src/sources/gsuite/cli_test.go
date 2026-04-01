@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"mcpyeahyouknowme/core"
 )
 
 func TestIsLoggedIn(t *testing.T) {
@@ -26,13 +28,16 @@ func TestInfoLines_NotLoggedIn_CLI(t *testing.T) {
 	if len(lines) == 0 {
 		t.Fatal("expected at least one line")
 	}
-	if !containsStr(lines[0], "no") && !containsStr(lines[0], "login") {
-		t.Errorf("expected 'not logged in' message, got: %q", lines[0])
+	if !containsStr(lines[0], "disabled") {
+		t.Errorf("expected disabled status, got: %q", lines[0])
 	}
 }
 
 func TestInfoLines_WithEmail(t *testing.T) {
 	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
+		t.Fatalf("SetSourceEnabled: %v", err)
+	}
 	os.WriteFile(dir+"/gsuite_token.json", []byte(`{"access_token":"x"}`), 0600)
 	os.WriteFile(dir+"/gsuite_email.txt", []byte("me@test.com"), 0600)
 
@@ -50,6 +55,9 @@ func TestInfoLines_WithEmail(t *testing.T) {
 
 func TestInfoLines_AllAppsDisabled(t *testing.T) {
 	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
+		t.Fatalf("SetSourceEnabled: %v", err)
+	}
 	os.WriteFile(dir+"/gsuite_token.json", []byte(`{"access_token":"x"}`), 0600)
 
 	src := &Source{dataDir: dir, apps: AppsConfig{}}
@@ -75,6 +83,9 @@ func TestInfoLines_AllAppsDisabled(t *testing.T) {
 
 func TestInfoLines_WithDB(t *testing.T) {
 	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
+		t.Fatalf("SetSourceEnabled: %v", err)
+	}
 	os.WriteFile(dir+"/gsuite_token.json", []byte(`{"access_token":"x"}`), 0600)
 
 	// Create a real DB via openGSuiteDB and seed it
@@ -115,6 +126,20 @@ func TestRunReset_Abort(t *testing.T) {
 
 	if _, err := os.Stat(dir + "/gsuite_token.json"); os.IsNotExist(err) {
 		t.Error("token should not be deleted when reset is aborted")
+	}
+}
+
+func TestInfoLines_DisabledSourceDisablesApps(t *testing.T) {
+	dir := t.TempDir()
+	lines := InfoLines(dir)
+	disabledCount := 0
+	for _, l := range lines {
+		if containsStr(l, "disabled") {
+			disabledCount++
+		}
+	}
+	if disabledCount < len(allApps)+1 {
+		t.Fatalf("expected disabled status plus disabled app lines, got %v", lines)
 	}
 }
 

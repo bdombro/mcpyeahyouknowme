@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Data Sources
 
-Every data source lives in its own Go package under `src/sources/<name>/` and implements the `core.DataSource` interface.
+Every data source lives in its own Go package under `src/sources/<name>/` and implements the `core.DataSource` interface. Source lifecycle capabilities are declared centrally in `src/sources/registry/registry.go`.
 
 ## Package structure
 
@@ -25,16 +25,16 @@ Each source package contains these files:
 
 ### Local data sync
 
-Every source must download and locally persist all indexable content. Data must be kept current via one of:
+Sources with `RunsCore=true` must download and locally persist all indexable content. Data must be kept current via one of:
 
 - **Subscription**: maintain a persistent connection (WebSocket, push, etc.) and process events in real time.
 - **Polling**: fetch changes every 5 minutes from `StartCore()`.
 
-MCP tool handlers read from the local database only — never call the upstream API for reads.
+When `IndexGlobally=true`, MCP tool handlers should read from the local database only — never call the upstream API for reads.
 
 ### Global search integration
 
-Every source must implement `SearchEntries()` returning `[]core.SearchEntry` covering all locally-stored content. This feeds the MCP `search` tool which searches across all sources. Each entry must set:
+Sources with `IndexGlobally=true` must implement `SearchEntries()` returning `[]core.SearchEntry` covering all locally-stored content. This feeds the MCP `search` tool which searches across opted-in sources. Each entry must set:
 
 - `Source` — the source `Name()`
 - `SourceID` — unique ID within the source
@@ -46,9 +46,9 @@ Every source must implement `SearchEntries()` returning `[]core.SearchEntry` cov
 
 Each source implements `Reset(dataDir string)` which removes all of its data files (DBs, tokens, caches). The daemon — not the CLI — calls `Reset()` after stopping the source's `StartCore()`. This avoids race conditions with open file handles.
 
-- CLI sets `{"<source>": {"reset": true}}` in config.json
-- Daemon detects within 10s, stops the source, calls `Reset()`, removes the source entry from config
-- If daemon is not running, CLI calls `Reset()` directly (safe — no open handles)
+- CLI or daemon writes a disabled source state back to config after reset
+- Daemon detects within 10s, stops the source, calls `Reset()`, then leaves the source entry present with `enabled: false`
+- If daemon is not running, CLI calls `Reset()` directly (safe — no open handles) and still persists the disabled source state
 
 ## Shared utilities in `core/`
 
@@ -79,11 +79,14 @@ Sources must NOT automatically download or cache audio, video, or binary attachm
 ## Interface checklist for new sources
 
 1. Implement `core.DataSource` (required) — includes `Reset(dataDir string)` for cleanup
-2. Implement `core.CoreService` (required — for sync daemon)
-3. Register all tools via `RegisterTools()` with `Name() + "_"` prefix
-4. Return comprehensive `SearchEntries()` for global search
-5. Accept `dataDir string` in constructor (dependency injection)
-6. Store credentials via the shared config.json (see config.go) or in a source-owned file
-7. Use `core.RunPollLoop` / `core.DefaultReset` / `core.OpenDB` instead of reimplementing
-8. Capture all known timestamps in DB schema and MCP responses
-9. Never auto-download media; provide on-demand fetch tool instead
+2. Decide and declare registry capabilities:
+   - `RunsCore=true` for proactively synced sources
+   - `IndexGlobally=true` for sources that feed the global search index
+3. Implement `core.CoreService` only when `RunsCore=true`
+4. Register all tools via `RegisterTools()` with `Name() + "_"` prefix
+5. Return comprehensive `SearchEntries()` when `IndexGlobally=true`
+6. Accept `dataDir string` in constructor (dependency injection)
+7. Store credentials via the shared config.json and/or source-owned files
+8. Use `core.RunPollLoop` / `core.DefaultReset` / `core.OpenDB` instead of reimplementing
+9. Capture all known timestamps in DB schema and MCP responses
+10. Never auto-download media; provide on-demand fetch tool instead

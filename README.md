@@ -1,6 +1,6 @@
 # MCP Bridge
 
-A pluggable [Model Context Protocol](https://modelcontextprotocol.io/) server that gives AI assistants access to personal data sources. Currently supports **WhatsApp** (search/read messages, search contacts, send messages) and **Google Docs** (search/read documents with periodic sync), with the architecture ready for additional sources.
+A pluggable [Model Context Protocol](https://modelcontextprotocol.io/) server that gives AI assistants access to personal data sources. Currently supports **WhatsApp** (search/read messages, search contacts, send messages) and **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides), with the architecture ready for additional sources.
 
 Data is stored locally in SQLite and only sent to an LLM when accessed through MCP tools. Each data source registers its own namespaced tools (e.g. `whatsapp_list_chats`, `whatsapp_send_message`).
 
@@ -12,7 +12,7 @@ A single Go binary (`mcpyeahyouknowme`) with a pluggable `DataSource` interface.
 
 | Mode | Command | Description |
 |------|---------|-------------|
-| Core | `mcpyeahyouknowme core` | Core daemon: WhatsApp connection + Google Docs sync, stores data in SQLite, exposes REST API |
+| Core | `mcpyeahyouknowme core` | Core daemon: WhatsApp connection + Google Suite sync, stores data in SQLite, exposes REST API |
 | MCP  | `mcpyeahyouknowme mcp`  | MCP server over stdio. Loads all enabled sources and registers their tools |
 
 Data flows: Claude/Cursor talks MCP (stdio) to `mcpyeahyouknowme mcp`, which loads each data source. Read tools query local SQLite directly; write tools proxy through the source's backend (e.g. WhatsApp core daemon REST API).
@@ -70,62 +70,67 @@ See the [product spec](docs/spec.md) for full details.
 
 5. **Restart Claude Desktop / Cursor**
 
-## Google Docs Setup
+## Google Suite Setup
 
-Google Docs integration requires app API keys and OAuth 2.0 auth:
+Google Suite uses a public desktop OAuth client with PKCE. The only build-time credential you need is `GOOGLE_CLIENT_ID`.
 
-1. **Get OAuth API keys**
-
-   - Go to [Google Cloud Console](https://console.cloud.google.com/)
-   - Create a project or select an existing one
-   - Enable the Google Docs API and Google Drive API
-   - Create OAuth 2.0 credentials (Desktop App type)
-   - Download the client ID and secret
-
-2. **Set environment variables**
+1. **Bootstrap the Google Cloud project**
 
    ```bash
-   export GOOGLE_CLIENT_ID='your-client-id'
-   export GOOGLE_CLIENT_SECRET='your-client-secret'
-   ``` (only WhatsApp)
-mcpyeahyouknowme whatsapp reset
-
-# Wipe Google Docs token and data (only Google Docs)
-mcpyeahyouknowme googledocs
-   Add these to your `~/.zshrc` or `~/.bashrc` to persist across sessions.
-
-3. **Authenticate**
-
-   ```bash
-   mcpyeahyouknowme googledocs login
+   just google-project-setup your-google-project-id
    ```
 
-   This opens your browser for OAuth authorization. The token is WhatsApped to `~/.local/share/mcpyeahyouknowme/googledocs_token.json`.
+   This validates `gcloud`, selects the project, enables the required APIs, and prints the remaining manual Google Cloud Console steps.
 
-4. **Start the sync daemon**
+2. **Finish the manual Google Cloud Console steps**
 
-   The Google Docs sync runs automatically when you start the core daemon:
+   - Open [Google Cloud Console](https://console.cloud.google.com/) and confirm the project
+   - Open **Google Auth Platform**
+   - Configure Branding / app information
+   - Choose the Audience (`External` for a public app, `Internal` only for Workspace-only use)
+   - Add support/contact email and test users while the app is unverified
+   - Review the requested scopes
+   - Create an OAuth client of type **Desktop app**
+   - Copy the Desktop app **Client ID**
+
+   A Desktop app client secret is not a trusted secret in a shipped macOS binary, so this project does not use `GOOGLE_CLIENT_SECRET`.
+
+3. **Set the client ID**
 
    ```bash
-   mcpyeahyouknowme core
+   export GOOGLE_CLIENT_ID='your-desktop-client-id'
    ```
 
-   Documents are synced every 15 minutes and stored in `googledocs.db`. The MCP server provides three tools: `googledocs_search`, ` googledocs_get_document`, and `googledocs_list_recent`.
+   Add it to your shell profile or put it in `.env` before building.
 
-5. **Reset Google Docs data** (optional)
+4. **Authenticate and enable the apps you want**
 
    ```bash
-   mcpyeahyouknowme googledocs reset
+   mcpyeahyouknowme gsuite login
    ```
 
-   This removes the OAuth token and all synced documents.
+   This opens your browser for OAuth authorization, stores the token in `~/.local/share/mcpyeahyouknowme/gsuite_token.json`, stores the account email in `~/.local/share/mcpyeahyouknowme/gsuite_email.txt`, and prompts you to choose which Google apps to enable. Apps start disabled until you explicitly enable them.
+
+5. **Manage enabled apps**
+
+   ```bash
+   mcpyeahyouknowme gsuite apps
+   ```
+
+6. **Reset Google Suite data** (optional)
+
+   ```bash
+   mcpyeahyouknowme gsuite reset
+   ```
+
+   This removes the token and synced Google data, then leaves the source disabled until you log in again.
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GOOGLE_CLIENT_ID` | For Google Docs | OAuth 2.0 client ID from Google Cloud Console |
-| `GOOGLE_CLIENT_SECRET` | For Google Docs | OAuth 2.0 client secret |
+| `GOOGLE_CLIENT_ID` | For Google Suite | Desktop OAuth client ID from Google Cloud Console |
+| `GOOGLE_PROJECT_ID` | Optional | Used by `scripts/google-project-setup.sh` / `just google-project-setup` |
 | `MCP_ENABLE_EMBEDDINGS` | Optional | Set to `false` to disable vector search and skip ONNX Runtime dependency |
 
 ## Managing the Daemon
@@ -147,8 +152,8 @@ mcpyeahyouknowme info
 # Wipe WhatsApp data and session (only WhatsApp)
 mcpyeahyouknowme whatsapp reset
 
-# Wipe Google Docs token and data (only Google Docs)
-mcpyeahyouknowme googledocs reset
+# Wipe Google Suite token and synced data
+mcpyeahyouknowme gsuite reset
 ```
 
 ## Uninstalling

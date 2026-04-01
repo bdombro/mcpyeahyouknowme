@@ -2,18 +2,27 @@ package gsuite
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/googleapi"
 )
 
-// GoogleClientID and GoogleClientSecret are injected at build time via ldflags.
-var (
-	GoogleClientID     string
-	GoogleClientSecret string
+// GoogleClientID is injected at build time via ldflags.
+var GoogleClientID string
+
+type gsuiteErrKind string
+
+const (
+	gsuiteErrOther        gsuiteErrKind = "other"
+	gsuiteErrInvalidGrant gsuiteErrKind = "invalid_grant"
+	gsuiteErrUnauthorized gsuiteErrKind = "401"
+	gsuiteErrForbidden    gsuiteErrKind = "403"
 )
 
 // All scopes needed across all Google Workspace apps.
@@ -31,11 +40,63 @@ var oauthScopes = []string{
 // getOAuthConfig returns the OAuth2 config for all Google Workspace apps.
 func (g *Source) getOAuthConfig() *oauth2.Config {
 	return &oauth2.Config{
-		ClientID:     GoogleClientID,
-		ClientSecret: GoogleClientSecret,
-		RedirectURL:  "http://127.0.0.1:8085",
-		Scopes:       oauthScopes,
-		Endpoint:     google.Endpoint,
+		ClientID:    GoogleClientID,
+		RedirectURL: "http://127.0.0.1:8085",
+		Scopes:      oauthScopes,
+		Endpoint:    google.Endpoint,
+	}
+}
+
+func classifyGSuiteError(err error) gsuiteErrKind {
+	if err == nil {
+		return gsuiteErrOther
+	}
+
+	var retrieveErr *oauth2.RetrieveError
+	if errors.As(err, &retrieveErr) {
+		body := strings.ToLower(string(retrieveErr.Body))
+		code := strings.ToLower(retrieveErr.ErrorCode)
+		if code == "invalid_grant" || strings.Contains(body, "invalid_grant") {
+			return gsuiteErrInvalidGrant
+		}
+		if retrieveErr.Response != nil {
+			switch retrieveErr.Response.StatusCode {
+			case 401:
+				return gsuiteErrUnauthorized
+			case 403:
+				return gsuiteErrForbidden
+			}
+		}
+	}
+
+	var apiErr *googleapi.Error
+	if errors.As(err, &apiErr) {
+		switch apiErr.Code {
+		case 401:
+			return gsuiteErrUnauthorized
+		case 403:
+			return gsuiteErrForbidden
+		}
+		if strings.Contains(strings.ToLower(apiErr.Message), "invalid_grant") {
+			return gsuiteErrInvalidGrant
+		}
+	}
+
+	msg := ""
+	if retrieveErr != nil && retrieveErr.Response == nil {
+		msg = strings.ToLower(string(retrieveErr.Body))
+	} else {
+		msg = strings.ToLower(err.Error())
+	}
+	switch {
+	case strings.Contains(msg, "invalid_grant"):
+		return gsuiteErrInvalidGrant
+	case strings.Contains(msg, "401"):
+		return gsuiteErrUnauthorized
+	case strings.Contains(msg, "403"):
+		return gsuiteErrForbidden
+	default:
+		return gsuiteErrOther
 	}
 }
 

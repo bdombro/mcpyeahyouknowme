@@ -14,6 +14,10 @@ import (
 	"golang.org/x/oauth2"
 )
 
+func init() {
+	core.RegisterKnownSource("gsuite")
+}
+
 // toolAdder abstracts server.MCPServer.AddTool for testing.
 type toolAdder interface {
 	AddTool(tool mcp.Tool, handler server.ToolHandlerFunc)
@@ -63,12 +67,9 @@ type AppsConfig struct {
 	Slides   bool `json:"slides"`
 }
 
-// DefaultAppsConfig returns config with all apps enabled.
+// DefaultAppsConfig returns config with all apps disabled until explicitly enabled.
 func DefaultAppsConfig() AppsConfig {
-	return AppsConfig{
-		Docs: true, Sheets: true, Gmail: true,
-		Calendar: true, Tasks: true, Contacts: true, Slides: true,
-	}
+	return AppsConfig{}
 }
 
 // IsEnabled returns whether a specific app is enabled.
@@ -198,8 +199,8 @@ func (g *Source) SearchEntries() ([]core.SearchEntry, error) {
 // loadAppsConfig reads the per-app config from config.json.
 func (g *Source) loadAppsConfig() AppsConfig {
 	cfg := core.LoadConfig(g.dataDir)
-	sc, ok := cfg.Sources["gsuite"]
-	if !ok || sc.Auth == nil {
+	sc := cfg.Sources["gsuite"]
+	if len(sc.Auth) == 0 {
 		return DefaultAppsConfig()
 	}
 	var wrapper struct {
@@ -214,15 +215,12 @@ func (g *Source) loadAppsConfig() AppsConfig {
 // saveAppsConfig writes the per-app config to config.json.
 func (g *Source) saveAppsConfig(apps AppsConfig) error {
 	g.apps = apps
-	cfg := core.LoadConfig(g.dataDir)
 	authData, _ := json.Marshal(struct {
 		Apps AppsConfig `json:"apps"`
 	}{Apps: apps})
-	sc := cfg.Sources["gsuite"]
-	sc.Auth = authData
-	sc.Enabled = true
-	cfg.Sources["gsuite"] = sc
-	return core.SaveConfig(g.dataDir, cfg)
+	return core.UpdateSourceConfig(g.dataDir, "gsuite", func(sc *core.SourceConfig) {
+		sc.Auth = authData
+	})
 }
 
 // AppDefs returns the known app definitions (for use by CLI/info).

@@ -22,8 +22,34 @@ func (g *Source) StartCore(ctx context.Context) error { // nocov
 	if !g.isAuthenticated() { // nocov
 		return fmt.Errorf("not authenticated - run 'mcpyeahyouknowme gsuite login' first")
 	}
-	return core.RunPollLoop(ctx, 5*time.Minute, func(pollCtx context.Context) error {
-		return g.syncAllApps(pollCtx)
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	return core.RunPollLoop(runCtx, 5*time.Minute, func(pollCtx context.Context) error {
+		err := g.syncAllApps(pollCtx)
+		switch classifyGSuiteError(err) {
+		case gsuiteErrInvalidGrant:
+			fmt.Fprintf(os.Stderr, "Warning: Google auth reset required (invalid_grant); clearing local GSuite state and disabling the source\n")
+			if g.db != nil {
+				g.db.Close()
+				g.db = nil
+			}
+			if resetErr := g.Reset(g.dataDir); resetErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to reset GSuite after invalid_grant: %v\n", resetErr)
+			}
+			if disableErr := core.SetSourceDisabled(g.dataDir, "gsuite"); disableErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to disable GSuite after invalid_grant: %v\n", disableErr)
+			}
+			cancel()
+			return nil
+		case gsuiteErrUnauthorized:
+			fmt.Fprintf(os.Stderr, "Warning: Google Suite sync received HTTP 401; keeping the source enabled and retrying later\n")
+			return nil
+		case gsuiteErrForbidden:
+			fmt.Fprintf(os.Stderr, "Warning: Google Suite sync received HTTP 403; keeping the source enabled and retrying later\n")
+			return nil
+		default:
+			return err
+		}
 	})
 }
 
@@ -63,7 +89,19 @@ func (g *Source) syncAllApps(ctx context.Context) error { // nocov
 			},
 		}
 		if err := app.syncFunc(sctx); err != nil { // nocov
-			fmt.Fprintf(os.Stderr, "Warning: %s sync error: %v\n", app.displayName, err)
+			switch classifyGSuiteError(err) {
+			case gsuiteErrInvalidGrant:
+				return fmt.Errorf("%s sync auth error: %w", app.displayName, err)
+			case gsuiteErrUnauthorized:
+				fmt.Fprintf(os.Stderr, "Warning: %s sync received HTTP 401: %v\n", app.displayName, err)
+				continue
+			case gsuiteErrForbidden:
+				fmt.Fprintf(os.Stderr, "Warning: %s sync received HTTP 403: %v\n", app.displayName, err)
+				continue
+			default:
+				fmt.Fprintf(os.Stderr, "Warning: %s sync error: %v\n", app.displayName, err)
+				continue
+			}
 		}
 		g.setLastSyncTime(app.name, time.Now())
 	}
@@ -73,6 +111,8 @@ func (g *Source) syncAllApps(ctx context.Context) error { // nocov
 		if err2 := g.saveToken(fresh); err2 != nil { // nocov
 			fmt.Printf("Warning: Failed to persist refreshed token: %v\n", err2)
 		}
+	} else { // nocov
+		return fmt.Errorf("failed to refresh token: %w", err)
 	}
 	return nil
 }

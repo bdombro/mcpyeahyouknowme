@@ -7,25 +7,34 @@ import (
 	"strings"
 	"testing"
 
+	"mcpyeahyouknowme/core"
+
 	_ "github.com/mattn/go-sqlite3"
+	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
 func TestInfoLines_emptyDir(t *testing.T) {
 	dir := t.TempDir()
 	lines := InfoLines(dir)
-	if len(lines) != 2 {
+	if len(lines) != 3 {
 		t.Fatalf("want 2 lines, got %d: %q", len(lines), lines)
 	}
-	if !strings.Contains(lines[0], "no session") {
+	if !strings.Contains(lines[0], "disabled") {
 		t.Errorf("first line: %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "no database yet") {
+	if !strings.Contains(lines[1], "no session") {
 		t.Errorf("second line: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "no database yet") {
+		t.Errorf("third line: %q", lines[2])
 	}
 }
 
 func TestInfoLines_withSessionAndMessages(t *testing.T) {
 	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "whatsapp", true); err != nil {
+		t.Fatalf("SetSourceEnabled: %v", err)
+	}
 	waPath := filepath.Join(dir, "whatsapp.db")
 	msgPath := filepath.Join(dir, "messages.db")
 
@@ -51,19 +60,25 @@ func TestInfoLines_withSessionAndMessages(t *testing.T) {
 	msgDB.Close()
 
 	lines := InfoLines(dir)
-	if len(lines) != 2 {
+	if len(lines) != 3 {
 		t.Fatalf("want 2 lines, got %d: %q", len(lines), lines)
 	}
-	if !strings.Contains(lines[0], "user@s.whatsapp.net") {
-		t.Errorf("jid line: %q", lines[0])
+	if !strings.Contains(lines[0], "enabled") {
+		t.Errorf("status line: %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "3 across 2 chats") {
-		t.Errorf("counts line: %q", lines[1])
+	if !strings.Contains(lines[1], "user@s.whatsapp.net") {
+		t.Errorf("jid line: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "3 across 2 chats") {
+		t.Errorf("counts line: %q", lines[2])
 	}
 }
 
 func TestInfoLines_messagesDBUnreadable(t *testing.T) {
 	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "whatsapp", true); err != nil {
+		t.Fatalf("SetSourceEnabled: %v", err)
+	}
 	waPath := filepath.Join(dir, "whatsapp.db")
 	waDB, err := sql.Open("sqlite3", waPath)
 	if err != nil {
@@ -81,7 +96,26 @@ func TestInfoLines_messagesDBUnreadable(t *testing.T) {
 	}
 
 	lines := InfoLines(dir)
-	if len(lines) != 2 || !strings.Contains(lines[1], "unable to read database") {
+	if len(lines) != 3 || !strings.Contains(lines[2], "unable to read database") {
 		t.Fatalf("lines: %q", lines)
+	}
+}
+
+func TestHandleLoggedOut_disablesSource(t *testing.T) {
+	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "whatsapp", true); err != nil {
+		t.Fatalf("SetSourceEnabled: %v", err)
+	}
+
+	notified := false
+	handleLoggedOut(dir, waLog.Stdout("Test", "ERROR", false), func() {
+		notified = true
+	})
+
+	if !notified {
+		t.Fatal("expected logged-out handler to notify caller")
+	}
+	if core.LoadConfig(dir).Sources["whatsapp"].Enabled {
+		t.Fatal("expected whatsapp source to be disabled")
 	}
 }

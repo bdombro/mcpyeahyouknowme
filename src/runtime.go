@@ -72,13 +72,23 @@ func runCore() {
 
 // startSource constructs the source, checks auth, and starts its CoreService.
 func startSource(dir, name string, running map[string]context.CancelFunc) {
-	src := registry.NewSource(name, dir)
-	if src == nil {
+	desc, ok := registry.Find(name)
+	if !ok {
 		fmt.Fprintf(os.Stderr, "Warning: unknown source %q\n", name)
+		return
+	}
+	if !desc.RunsCore {
+		fmt.Printf("ℹ %s is enabled for MCP use but does not run a background core service\n", name)
+		return
+	}
+	src := desc.New(dir)
+	if src == nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not construct source %q\n", name)
 		return
 	}
 	cs, ok := src.(core.CoreService)
 	if !ok {
+		fmt.Fprintf(os.Stderr, "Warning: source %q is marked RunsCore but does not implement core.CoreService\n", name)
 		return
 	}
 	if cs.RequiresAuth() && !registry.IsAuthenticated(name, dir) {
@@ -96,7 +106,7 @@ func startSource(dir, name string, running map[string]context.CancelFunc) {
 	}()
 }
 
-// handleReset calls source.Reset(), removes the config entry, and saves config.
+// handleReset calls source.Reset(), then persists the source as disabled.
 func handleReset(dir, name string, cfg *core.Config) {
 	src := registry.NewSource(name, dir)
 	if src != nil {
@@ -104,6 +114,8 @@ func handleReset(dir, name string, cfg *core.Config) {
 			fmt.Fprintf(os.Stderr, "Reset error for %s: %v\n", name, err)
 		}
 	}
-	delete(cfg.Sources, name)
-	saveConfig(dir, *cfg)
+	if err := core.SetSourceDisabled(dir, name); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not disable %s after reset: %v\n", name, err)
+	}
+	cfg.Sources[name] = core.SourceConfig{}
 }

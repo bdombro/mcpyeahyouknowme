@@ -74,3 +74,24 @@ func TestLoadAll(t *testing.T) {
 		defer src.Close()
 	}
 }
+
+func TestDescriptorCapabilities(t *testing.T) {
+	for _, desc := range All {
+		if !desc.IndexGlobally {
+			t.Fatalf("expected %s to participate in global indexing", desc.Name)
+		}
+		if !desc.RunsCore {
+			t.Fatalf("expected %s to run a core service", desc.Name)
+		}
+	}
+}
+
+func TestNames(t *testing.T) {
+	names := Names()
+	if len(names) != len(All) {
+		t.Fatalf("Names() len = %d, want %d", len(names), len(All))
+	}
+	if names[0] != "whatsapp" || names[1] != "gsuite" {
+		t.Fatalf("unexpected names order: %v", names)
+	}
+}

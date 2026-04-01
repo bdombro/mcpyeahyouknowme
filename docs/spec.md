@@ -8,7 +8,7 @@ A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.
 ./scripts/build.sh
 ```
 
-The build script sources `.env` from the repository root (if present) and bakes `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` into the binary via `-ldflags` for both Google Docs and Google Sheets. Copy `.env.example` to `.env` and fill in the values before building. If `.env` is missing, the binary still builds but Google features will require the environment variables at runtime.
+The build script sources `.env` from the repository root (if present) and bakes `GOOGLE_CLIENT_ID` into the binary via `-ldflags` for the Google Suite source. Copy `.env.example` to `.env` and fill in the values before building. The shipped desktop OAuth flow uses PKCE and does not rely on `GOOGLE_CLIENT_SECRET`.
 
 CGO must be enabled (default on macOS/Linux) since `go-sqlite3` requires it. On Windows, install a C compiler via [MSYS2](https://www.msys2.org/) and run `go env -w CGO_ENABLED=1` first.
 
@@ -27,21 +27,13 @@ During first login, the CLI captures WhatsApp's initial history sync and stores 
 
 The `--relogin` flag clears the existing session and message databases, re-displays the QR code for a fresh pairing, captures the initial history sync, and restarts the core daemon if it was previously running. Use this when the session is stale or when the initial history sync was missed.
 
-### Google Docs Login
+### Google Suite Login
 
 ```
-mcpyeahyouknowme googledocs login
+mcpyeahyouknowme gsuite login
 ```
 
-Authenticates with Google using OAuth 2.0. Opens the default browser to authorize access to Google Docs and Google Drive APIs. OAuth client credentials are baked into the binary at build time from `.env` via `-ldflags` (see **Building**). The OAuth token is saved to `googledocs_token.json` for subsequent daemon runs.
-
-### Google Sheets Login
-
-```
-mcpyeahyouknowme googlesheets login
-```
-
-Authenticates with Google using OAuth 2.0. Opens the default browser to authorize access to Google Sheets and Google Drive APIs. Uses the same OAuth client credentials as Google Docs (baked into the binary from `.env`). The OAuth token is saved to `googlesheets_token.json` for subsequent daemon runs. Uses port 8086 for the local OAuth callback (Google Docs uses 8085).
+Authenticates with Google using OAuth 2.0 for the unified Google Suite source. Opens the default browser, completes the PKCE loopback flow on port 8085, saves the OAuth token to `gsuite_token.json`, caches the account email in `gsuite_email.txt`, and prompts the user to choose which Google apps to enable. Apps default to disabled until explicitly selected.
 
 ### Core — Data Source Services
 
@@ -49,9 +41,9 @@ Authenticates with Google using OAuth 2.0. Opens the default browser to authoriz
 mcpyeahyouknowme core
 ```
 
-Runs all available data source core services. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on port 8080. For Google Docs: syncs documents every 5 minutes via the Google Docs/Drive APIs. For Google Sheets: syncs spreadsheets every 5 minutes via the Google Sheets/Drive APIs. Requires authentication for each source.
+Runs all enabled data source core services. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on port 8080. For Google Suite: syncs each enabled Google app every 5 minutes via the corresponding Google APIs. Requires authentication for each enabled source.
 
-Re-authentication may be required after ~20 days for WhatsApp. Google Docs OAuth tokens refresh automatically as long as the refresh token is valid.
+Re-authentication may be required after ~20 days for WhatsApp. Google OAuth access tokens refresh automatically as long as the refresh token remains valid, but repeated Google `401 Invalid Credentials` or token refresh `invalid_grant` errors should be treated as persistent credential/configuration problems rather than transient network blips.
 
 ### MCP — Model Context Protocol Server
 
@@ -79,7 +71,7 @@ For **Cursor**: save to `~/.cursor/mcp.json`
 
 ## Multi-Source Architecture
 
-The MCP server loads data sources via the `DataSource` interface defined in `core/interfaces.go`. Each source lives in its own Go package under `src/sources/<name>/` and registers its own MCP tools namespaced with a prefix (e.g. `whatsapp_`, `googledocs_`).
+The MCP server loads data sources via the `DataSource` interface defined in `core/interfaces.go`. Each source lives in its own Go package under `src/sources/<name>/` and registers its own MCP tools namespaced with a prefix (e.g. `whatsapp_`, `gsuite_`).
 
 ```go
 type DataSource interface {
@@ -124,18 +116,16 @@ src/
 ### Config-driven daemon
 
 The daemon (`runCore()`) reads `{DataDir}/config.json` every 10 seconds and:
-- Starts newly-enabled sources
-- Stops removed/disabled sources
-- Handles `reset: true` by calling `source.Reset()` then removing the config entry
+- Starts newly-enabled sources whose descriptors declare `RunsCore=true`
+- Stops disabled sources
+- Handles `reset: true` by calling `source.Reset()`, then keeping the source entry in config with `enabled: false`
 
-Login commands (`whatsapp login`, `googledocs login`) write `{enabled: true}` to config on success so the daemon picks them up within 10 seconds without a restart.
-
-On first run after upgrade from a pre-config version, the daemon auto-migrates existing auth artifacts (`whatsapp.db` session, `googledocs_token.json`) into config.json.
+`config.json` keeps a stable section for every known source, even when disabled or unauthenticated. Login commands (`whatsapp login`, `gsuite login`) mark the source `enabled: true` on success so the daemon picks it up within 10 seconds without a restart.
 
 `sources/registry` is the single source of truth for available sources. To add a new source:
 
-1. Create `src/sources/<name>/` implementing `core.DataSource` and `core.CoreService`
-2. Add a descriptor to `src/sources/registry/registry.go`
+1. Create `src/sources/<name>/` implementing `core.DataSource`
+2. Add a descriptor to `src/sources/registry/registry.go` with explicit `IndexGlobally` / `RunsCore` capability flags
 3. Expose any source-specific auth check used by the registry
 
 Current sources:
@@ -165,14 +155,14 @@ mcpyeahyouknowme restart
 ```
 mcpyeahyouknowme info
 mcpyeahyouknowme whatsapp reset
-mcpyeahyouknowme googledocs reset
+mcpyeahyouknowme gsuite reset
 ```
 
 | Command | Description |
 |---------|-------------|
-| `info` | Shows build metadata; global data directory status; per-source sections (WhatsApp session and message counts, Google Docs login email and synced document count); and core daemon install status. |
-| `whatsapp reset` | Writes `reset: true` to config.json. If the daemon is running, it stops WhatsApp, removes `whatsapp.db` and `messages.db`, then continues running other sources. If the daemon is not running, resets directly. |
-| `googledocs reset` | Prompts for confirmation, then writes `reset: true` to config.json. If the daemon is running, it stops Google Docs, removes `googledocs_token.json`, `googledocs_email.txt`, and `googledocs.db`, then continues running other sources. If the daemon is not running, resets directly. |
+| `info` | Shows build metadata; global data directory status; per-source sections with explicit disabled / enabled-without-auth / enabled status; and core daemon install status. |
+| `whatsapp reset` | Removes WhatsApp auth/session data, clears local synced data, and leaves the source disabled in config until the user logs in again. |
+| `gsuite reset` | Prompts for confirmation, removes the Google Suite token and local synced data, and leaves the source disabled in config until the user logs in again. |
 
 **Uninstalling:** For complete removal of the application, use `./scripts/uninstall.sh` from the repository root. This kills all processes, removes the daemon, wipes all data, removes shell completions, and deletes the binary from `/usr/local/bin`. See the [README](../README.md) for details.
 
@@ -197,6 +187,8 @@ eval "$(mcpyeahyouknowme completions zsh)"
 - Handles QR code pairing flow (3-minute timeout)
 - Automatically reconnects on subsequent runs using session stored in `whatsapp.db`
 - Listens for real-time message events and history sync events
+- Treats websocket `EOF` / `connection reset by peer` disconnects as commonly transient; whatsmeow is expected to auto-reconnect
+- Treats revoked-session events as reset conditions: the source is disabled until the user logs in again
 
 ### How whatsmeow Works
 
@@ -314,11 +306,11 @@ Use `tools/call` with `params.name` set to one of the tool names below and `para
 | `whatsapp_send_file` | Send a local file as media via core daemon. |
 | `whatsapp_send_audio_message` | Send audio as a voice message via core daemon. |
 | `whatsapp_download_media` | Download media for a message via core daemon. |
-| `googledocs_search` | FTS5 search across synced docs; `query`, optional `limit`. |
-| `googledocs_get_document` | Full document body by ID. |
-| `googledocs_list_recent` | Recently modified docs; optional `limit`. |
+| `gsuite_docs_search` | FTS5 search across synced docs; `query`, optional `limit`. |
+| `gsuite_docs_get_document` | Full document body by ID. |
+| `gsuite_docs_list_recent` | Recently modified docs; optional `limit`. |
 
-**Availability:** `whatsapp_*` tools are registered only when WhatsApp is logged in. `googledocs_*` tools appear when the Google Docs source loads successfully (OAuth credentials baked in at build time). `search` is registered when the search index initializes on MCP startup; if indexing fails, other tools may still be available without `search`.
+**Availability:** source tools are registered only when the source is both `enabled` in config and authenticated. `search` is registered when the search index initializes on MCP startup; if indexing fails, other tools may still be available without `search`.
 
 ### Global Search
 
@@ -384,23 +376,23 @@ Metadata shapes per WhatsApp content type:
 
 ### Google Docs Tools
 
-**Read path**: Queries `googledocs.db` directly via SQLite. Documents are synced by the core daemon every 5 minutes. Each sync cycle lists all Google Docs (including shared drives) via the Drive API, fetches content only for new or modified documents, and deletes local rows for documents that have been trashed or deleted remotely. The core daemon does not need to be running for read-only operations.
+**Read path**: Queries `gsuite.db` directly via SQLite. Documents are synced by the core daemon every 5 minutes when the Google Suite source is enabled and the Docs app is enabled. The core daemon does not need to be running for read-only operations.
 
 | Tool | Description |
 |------|-------------|
-| `googledocs_search` | Full-text search across all Google Docs using FTS5. Returns document snippets with highlighted matches, modification times, and web links. Accepts `query` (required) and `limit` (default 10) parameters. |
-| `googledocs_get_document` | Get the full content of a specific Google Doc by ID. Returns title, content, modification time, and web link. |
-| `googledocs_list_recent` | List recently modified Google Docs, sorted by modification time descending. Accepts `limit` parameter (default 20). |
+| `gsuite_docs_search` | Full-text search across all synced Google Docs using FTS5. Returns document snippets with highlighted matches, modification times, and web links. Accepts `query` (required) and `limit` (default 10) parameters. |
+| `gsuite_docs_get_document` | Get the full content of a specific Google Doc by ID. Returns title, content, modification time, and web link. |
+| `gsuite_docs_list_recent` | List recently modified Google Docs, sorted by modification time descending. Accepts `limit` parameter (default 20). |
 
 ### Google Sheets Tools
 
-**Read path**: Queries `googlesheets.db` directly via SQLite. Spreadsheets are synced by the core daemon every 5 minutes. Each sync cycle lists all Google Sheets (including shared drives) via the Drive API, fetches content only for new or modified spreadsheets, and deletes local rows for spreadsheets that have been trashed or deleted remotely. The core daemon does not need to be running for read-only operations. Spreadsheet content is stored as plain text: each sheet is rendered with a `## SheetName` header followed by tab-separated cell values.
+**Read path**: Queries `gsuite.db` directly via SQLite. Spreadsheets are synced by the core daemon every 5 minutes when the Google Suite source is enabled and the Sheets app is enabled. The core daemon does not need to be running for read-only operations. Spreadsheet content is stored as plain text: each sheet is rendered with a `## SheetName` header followed by tab-separated cell values.
 
 | Tool | Description |
 |------|-------------|
-| `googlesheets_search` | Full-text search across all Google Sheets using FTS5. Returns spreadsheet snippets with highlighted matches, modification times, sheet counts, and web links. Accepts `query` (required) and `limit` (default 10) parameters. |
-| `googlesheets_get_spreadsheet` | Get the full content of a specific Google Sheet by ID. Returns title, content, modification time, sheet count, and web link. |
-| `googlesheets_list_recent` | List recently modified Google Sheets, sorted by modification time descending. Accepts `limit` parameter (default 20). |
+| `gsuite_sheets_search` | Full-text search across all Google Sheets using FTS5. Returns spreadsheet snippets with highlighted matches, modification times, sheet counts, and web links. Accepts `query` (required) and `limit` (default 10) parameters. |
+| `gsuite_sheets_get_spreadsheet` | Get the full content of a specific Google Sheet by ID. Returns title, content, modification time, sheet count, and web link. |
+| `gsuite_sheets_list_recent` | List recently modified Google Sheets, sorted by modification time descending. Accepts `limit` parameter (default 20). |
 
 ---
 
@@ -477,9 +469,9 @@ All data is stored in `~/.local/share/mcpyeahyouknowme/`.
 |------|---------|
 | `whatsapp.db` | whatsmeow session store (device credentials, contacts, LID mappings) |
 | `messages.db` | Application message and chat database (includes FTS5 index) |
-| `googledocs.db` | Google Docs documents database (includes FTS5 full-text index) |
-| `googledocs_token.json` | OAuth 2.0 token for Google Docs/Drive APIs |
-| `googledocs_email.txt` | Cached Google account email (fetched during login via Drive API) |
+| `gsuite.db` | Unified Google Suite database (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides) |
+| `gsuite_token.json` | OAuth 2.0 token for Google APIs |
+| `gsuite_email.txt` | Cached Google account email (fetched during login via Drive API) |
 | `search.db` | Global search index (FTS5 + vector embeddings across all sources) |
 | `lib/` | ONNX Runtime shared library (auto-downloaded by `./scripts/install.sh`) |
 | `models/` | Cached embedding model (auto-downloaded on first MCP startup) |
@@ -516,7 +508,7 @@ The application must be resilient to transient failures across all connections �
 
 Multiple processes access the same SQLite databases concurrently (the `core` daemon writes, `mcp` and CLI commands read). All database connections must follow these rules:
 
-1. **WAL mode** — every database (`messages.db`, `search.db`, `googledocs.db`) must use `PRAGMA journal_mode=WAL` so readers never block writers and vice versa.
+1. **WAL mode** — every database (`messages.db`, `search.db`, `gsuite.db`) must use `PRAGMA journal_mode=WAL` so readers never block writers and vice versa.
 2. **Busy timeout** — every connection must set `busy_timeout` to at least **30 seconds** (30000ms). This tells SQLite to retry internally rather than immediately returning `SQLITE_BUSY`. This applies to both connection-string params (`_busy_timeout=30000`) and PRAGMA statements.
 3. **Context timeouts** — when a Go `context.WithTimeout` wraps a database call, the context deadline must exceed the busy timeout (e.g. 35s) so SQLite's internal retry has time to succeed before the context cancels.
 4. **Read-only where possible** — CLI commands (`info`) and MCP read paths should open databases with `mode=ro` to avoid writer contention entirely.
@@ -526,8 +518,10 @@ Multiple processes access the same SQLite databases concurrently (the `core` dae
 The core daemon runs long-lived services (WhatsApp connection, Google Docs sync). These must not exit on transient errors:
 
 - **WhatsApp message handler** — if `StoreMessage` or `StoreChat` fails (e.g. busy timeout expired), log a warning and continue. The next incoming message will succeed once the lock clears. Never crash the event loop.
-- **Google Docs sync** — each cycle does a full Drive metadata listing to detect new, modified, and deleted documents. Content is fetched via the Docs API only for new or modified documents; locally-stored documents absent from the remote listing are deleted. If an individual document fetch or store fails, log a warning and continue to the next document. If the entire sync cycle fails (API error, auth expiry, database lock), log the error and wait for the next ticker interval to retry. Never return a fatal error from `StartCore` for transient issues.
-- **WhatsApp reconnection** — whatsmeow handles automatic reconnection on websocket drops. The daemon must not exit on connection errors; it should let whatsmeow's backoff retry logic handle reconnection.
+- **Google Docs sync** — each cycle does a full Drive metadata listing to detect new, modified, and deleted documents. Content is fetched via the Docs API only for new or modified documents; locally-stored documents absent from the remote listing are deleted. If an individual document fetch or store fails, log a warning and continue to the next document. If the entire sync cycle fails (API error, database lock, temporary network issue), log the error and wait for the next ticker interval to retry. Never return a fatal error from `StartCore` for transient issues.
+- **Google auth failures** — repeated Google `401 Invalid Credentials` responses and token refresh `invalid_grant` errors are usually persistent auth/configuration failures, not transient blips. The daemon should keep other sources running and may continue periodic retries, but recovery generally requires user re-authentication or fixing the Google project configuration; retrying the same invalid credentials is unlikely to succeed.
+- **WhatsApp reconnection** — websocket `EOF` / `connection reset by peer` disconnects are commonly transient. whatsmeow handles automatic reconnection on websocket drops, so the daemon should stay alive and let whatsmeow reconnect. During a disconnect, local reads can continue from SQLite and write operations should fail fast with a clear "not connected" error rather than crashing the process.
+- **WhatsApp hard auth failures** — revoked-session states are not transient. These should disable the source and surface a reset-oriented message telling the user to run `whatsapp login` again (or `--relogin` if the session is stale).
 
 ### LaunchAgent & Process Management
 
@@ -554,11 +548,11 @@ Without this, Gatekeeper blocks execution — the first invocation is killed (SI
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `GOOGLE_CLIENT_ID` | Build-time | - | OAuth 2.0 client ID from Google Cloud Console; set in `.env` and baked into the binary via `-ldflags` |
-| `GOOGLE_CLIENT_SECRET` | Build-time | - | OAuth 2.0 client secret from Google Cloud Console; set in `.env` and baked into the binary via `-ldflags` |
+| `GOOGLE_CLIENT_ID` | Build-time | - | Desktop OAuth client ID from Google Cloud Console; set in `.env` and baked into the binary via `-ldflags` |
+| `GOOGLE_PROJECT_ID` | No | - | Convenience project ID for `scripts/google-project-setup.sh` and `just google-project-setup` |
 | `MCP_ENABLE_EMBEDDINGS` | No | `true` | Set to `false` to disable vector search and skip ONNX Runtime |
 
-Google OAuth credentials must be set before building. Copy `.env.example` to `.env` and fill in the values. The build script (`scripts/build.sh`) will abort if they are missing.
+`GOOGLE_CLIENT_ID` must be set before building. Copy `.env.example` to `.env` and fill in the values. The build script (`scripts/build.sh`) will abort if it is missing.
 
 ### Hardcoded Paths
 

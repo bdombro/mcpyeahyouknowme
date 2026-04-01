@@ -12,22 +12,38 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+type activeSource struct {
+	desc registry.Descriptor
+	src  core.DataSource
+}
+
+type sourceIndexer interface {
+	IndexEntries(entries []core.SearchEntry) error
+	UpdateSourceTimestamp(source string, ts time.Time)
+}
+
 func runMcp() {
 	dir := core.DataDir()
+	cfg := core.LoadConfig(dir)
 
-	// Only expose source tools when the source has usable credentials.
-	var enabledSources []core.DataSource
+	var activeSources []activeSource
 	for _, desc := range registry.All {
-		if desc.IsAuthenticated != nil && !desc.IsAuthenticated(dir) {
-			fmt.Fprintf(os.Stderr, "Info: %s not logged in - %s MCP tools will not be available.\n", desc.Name, desc.Name)
-			fmt.Fprintf(os.Stderr, "      Run 'mcpyeahyouknowme %s login' to enable %s integration.\n", desc.Name, desc.Name)
+		sc := cfg.Sources[desc.Name]
+		if !sc.Enabled {
+			fmt.Fprintf(os.Stderr, "Info: %s is disabled - %s MCP tools will not be available.\n", desc.Name, desc.Name)
+			fmt.Fprintf(os.Stderr, "      Enable it by logging in again or updating config.json.\n")
 			continue
 		}
-		enabledSources = append(enabledSources, desc.New(dir))
+		if desc.IsAuthenticated != nil && !desc.IsAuthenticated(dir) {
+			fmt.Fprintf(os.Stderr, "Info: %s is enabled but not authenticated - %s MCP tools will not be available.\n", desc.Name, desc.Name)
+			fmt.Fprintf(os.Stderr, "      Run 'mcpyeahyouknowme %s login' to authenticate %s.\n", desc.Name, desc.Name)
+			continue
+		}
+		activeSources = append(activeSources, activeSource{desc: desc, src: desc.New(dir)})
 	}
 	defer func() {
-		for _, src := range enabledSources {
-			src.Close()
+		for _, active := range activeSources {
+			active.src.Close()
 		}
 	}()
 
@@ -59,7 +75,7 @@ func runMcp() {
 	}
 	if searchStore != nil {
 		defer searchStore.Close()
-		indexSources(searchStore, enabledSources)
+		indexSources(searchStore, activeSources)
 	}
 
 	s := server.NewMCPServer(
@@ -68,8 +84,8 @@ func runMcp() {
 		server.WithToolCapabilities(false),
 	)
 
-	for _, src := range enabledSources {
-		src.RegisterTools(s)
+	for _, active := range activeSources {
+		active.src.RegisterTools(s)
 	}
 
 	if searchStore != nil {
@@ -83,17 +99,20 @@ func runMcp() {
 }
 
 // indexSources populates the search index from all data sources.
-func indexSources(store *SearchStore, sources []core.DataSource) {
-	for _, src := range sources {
-		entries, err := src.SearchEntries()
+func indexSources(store sourceIndexer, sources []activeSource) {
+	for _, active := range sources {
+		if !active.desc.IndexGlobally {
+			continue
+		}
+		entries, err := active.src.SearchEntries()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to get search entries from %s: %v\n", src.Name(), err)
+			fmt.Fprintf(os.Stderr, "Warning: failed to get search entries from %s: %v\n", active.src.Name(), err)
 			continue
 		}
 		if err := store.IndexEntries(entries); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to index %s entries: %v\n", src.Name(), err)
+			fmt.Fprintf(os.Stderr, "Warning: failed to index %s entries: %v\n", active.src.Name(), err)
 			continue
 		}
-		store.UpdateSourceTimestamp(src.Name(), time.Now())
+		store.UpdateSourceTimestamp(active.src.Name(), time.Now())
 	}
 }

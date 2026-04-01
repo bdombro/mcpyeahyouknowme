@@ -27,7 +27,15 @@ func newTestDB(t *testing.T) *sql.DB {
 func newTestSource(t *testing.T) *Source {
 	t.Helper()
 	db := newTestDB(t)
-	return &Source{db: db, dataDir: t.TempDir(), apps: DefaultAppsConfig()}
+	return &Source{db: db, dataDir: t.TempDir(), apps: allAppsEnabledConfig()}
+}
+
+func allAppsEnabledConfig() AppsConfig {
+	cfg := DefaultAppsConfig()
+	for _, app := range allApps {
+		cfg.SetEnabled(app.name, true)
+	}
+	return cfg
 }
 
 // seedDocs inserts sample documents into the test DB.

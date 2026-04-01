@@ -1,6 +1,7 @@
 package core
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -44,5 +45,39 @@ func TestJsonResult_unmarshalable(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Error("expected IsError=true for unmarshalable value")
+	}
+}
+
+func TestNormalizeConfig_seedsKnownSources(t *testing.T) {
+	RegisterKnownSource("core_test_seeded")
+	cfg := NormalizeConfig(Config{})
+	if _, ok := cfg.Sources["core_test_seeded"]; !ok {
+		t.Fatal("expected known source to be seeded")
+	}
+}
+
+func TestSetSourceDisabled_preservesEntry(t *testing.T) {
+	RegisterKnownSource("core_test_toggle")
+	dir := t.TempDir()
+	if err := SetSourceEnabled(dir, "core_test_toggle", true); err != nil {
+		t.Fatalf("SetSourceEnabled: %v", err)
+	}
+	if err := SetSourceDisabled(dir, "core_test_toggle"); err != nil {
+		t.Fatalf("SetSourceDisabled: %v", err)
+	}
+
+	cfg := LoadConfig(dir)
+	sc, ok := cfg.Sources["core_test_toggle"]
+	if !ok {
+		t.Fatal("expected source entry to remain after disable")
+	}
+	if sc.Enabled {
+		t.Fatal("expected source to be disabled")
+	}
+	if sc.Reset {
+		t.Fatal("expected reset flag to be cleared")
+	}
+	if got := ConfigPath(dir); got != filepath.Join(dir, "config.json") {
+		t.Fatalf("ConfigPath() = %q", got)
 	}
 }

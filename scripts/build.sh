@@ -32,7 +32,7 @@ echo "Building binary to $OUTFILE"
 
 rm -rf "$OUTFILE"
 
-# Source .env for Google OAuth credentials (baked into the binary via ldflags).
+# Source .env for Google OAuth client ID (baked into the binary via ldflags).
 if [ -f "$ROOT/.env" ]; then
 	set -a
 	source "$ROOT/.env"
@@ -41,7 +41,6 @@ fi
 
 missing=()
 [ -z "${GOOGLE_CLIENT_ID:-}" ] && missing+=("GOOGLE_CLIENT_ID")
-[ -z "${GOOGLE_CLIENT_SECRET:-}" ] && missing+=("GOOGLE_CLIENT_SECRET")
 if [ ${#missing[@]} -gt 0 ]; then
 	echo "Error: required variable(s) not set: ${missing[*]}" >&2
 	echo "Copy .env.example to .env and fill in the values, or export them in your shell." >&2
@@ -53,6 +52,5 @@ cd "$CLI_DIR" && go build -tags "sqlite_fts5" \
 	-ldflags "\
 		-X 'main.BuildTime=$build_time' \
 		-X 'main.BuildVersion=1.0.0' \
-		-X 'mcpyeahyouknowme/sources/gsuite.GoogleClientID=$GOOGLE_CLIENT_ID' \
-		-X 'mcpyeahyouknowme/sources/gsuite.GoogleClientSecret=$GOOGLE_CLIENT_SECRET'" \
+		-X 'mcpyeahyouknowme/sources/gsuite.GoogleClientID=$GOOGLE_CLIENT_ID'" \
 	-o "$OUTFILE" .

@@ -4,27 +4,28 @@
 
 | File | Covered | Total | Coverage |
 |------|---------|-------|----------|
-| [`app_calendar.go`](#app_calendargo) | 69 | 121 | 57.0% |
-| [`app_contacts.go`](#app_contactsgo) | 52 | 109 | 47.7% |
-| [`app_docs.go`](#app_docsgo) | 97 | 140 | 69.3% |
-| [`app_gmail.go`](#app_gmailgo) | 99 | 185 | 53.5% |
-| [`app_sheets.go`](#app_sheetsgo) | 57 | 102 | 55.9% |
-| [`app_slides.go`](#app_slidesgo) | 57 | 96 | 59.4% |
-| [`app_tasks.go`](#app_tasksgo) | 52 | 77 | 67.5% |
-| [`client.go`](#clientgo) | 18 | 20 | 90.0% |
+| [`app_calendar.go`](#app_calendargo) | 68 | 121 | 56.2% |
+| [`app_contacts.go`](#app_contactsgo) | 51 | 109 | 46.8% |
+| [`app_docs.go`](#app_docsgo) | 96 | 140 | 68.6% |
+| [`app_gmail.go`](#app_gmailgo) | 98 | 185 | 53.0% |
+| [`app_sheets.go`](#app_sheetsgo) | 56 | 102 | 54.9% |
+| [`app_slides.go`](#app_slidesgo) | 56 | 96 | 58.3% |
+| [`app_tasks.go`](#app_tasksgo) | 51 | 77 | 66.2% |
+| `client.go` | 48 | 48 | 100.0% |
 | `embedding.go` | 24 | 24 | 100.0% |
 | `helpers.go` | 73 | 73 | 100.0% |
 | `mcp.go` | 4 | 4 | 100.0% |
 | `search_store.go` | 205 | 205 | 100.0% |
 | `service.go` | 335 | 335 | 100.0% |
-| [`source.go`](#sourcego) | 66 | 70 | 94.3% |
-| [`store.go`](#storego) | 110 | 113 | 97.3% |
-| **Total** | **1318** | **1674** | **78.7%** |
+| `source.go` | 67 | 67 | 100.0% |
+| [`store.go`](#storego) | 111 | 114 | 97.4% |
+| **Total** | **1343** | **1700** | **79.0%** |
 
 ## Uncovered Blocks
 
 ### [`app_calendar.go`](../src/app_calendar.go)
 
+- Lines 25–25 (1 stmt)
 - Lines 51–53 (1 stmt)
 - Lines 96–102 (6 stmts)
 - Lines 102–104 (2 stmts)
@@ -61,6 +62,7 @@
 
 ### [`app_contacts.go`](../src/app_contacts.go)
 
+- Lines 24–24 (1 stmt)
 - Lines 44–46 (1 stmt)
 - Lines 84–87 (4 stmts)
 - Lines 98–98 (1 stmt)
@@ -100,6 +102,7 @@
 
 ### [`app_docs.go`](../src/app_docs.go)
 
+- Lines 25–25 (1 stmt)
 - Lines 42–44 (1 stmt)
 - Lines 88–91 (4 stmts)
 - Lines 105–105 (1 stmt)
@@ -132,6 +135,7 @@
 
 ### [`app_gmail.go`](../src/app_gmail.go)
 
+- Lines 25–25 (1 stmt)
 - Lines 49–51 (1 stmt)
 - Lines 90–93 (4 stmts)
 - Lines 103–103 (1 stmt)
@@ -193,6 +197,7 @@
 
 ### [`app_sheets.go`](../src/app_sheets.go)
 
+- Lines 24–24 (1 stmt)
 - Lines 42–44 (1 stmt)
 - Lines 84–87 (4 stmts)
 - Lines 99–99 (1 stmt)
@@ -222,6 +227,7 @@
 
 ### [`app_slides.go`](../src/app_slides.go)
 
+- Lines 24–24 (1 stmt)
 - Lines 42–44 (1 stmt)
 - Lines 86–89 (4 stmts)
 - Lines 101–101 (1 stmt)
@@ -249,6 +255,7 @@
 
 ### [`app_tasks.go`](../src/app_tasks.go)
 
+- Lines 23–23 (1 stmt)
 - Lines 44–46 (1 stmt)
 - Lines 89–91 (3 stmts)
 - Lines 91–93 (2 stmts)
@@ -264,18 +271,6 @@
 - Lines 178–180 (1 stmt)
 - Lines 190–192 (1 stmt)
 - Lines 210–212 (1 stmt)
-
-### [`client.go`](../src/client.go)
-
-- Lines 32–40 (1 stmt)
-- Lines 50–52 (1 stmt)
-
-### [`source.go`](../src/source.go)
-
-- Lines 127–129 (1 stmt)
-- Lines 190–191 (1 stmt)
-- Lines 208–210 (1 stmt)
-- Lines 229–231 (1 stmt)
 
 ### [`store.go`](../src/store.go)
 

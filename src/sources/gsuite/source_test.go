@@ -1,10 +1,14 @@
 package gsuite
 
 import (
+	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"mcpyeahyouknowme/core"
 
 	"golang.org/x/oauth2"
 )
@@ -88,11 +92,11 @@ func TestLoadToken_Missing(t *testing.T) {
 	}
 }
 
-func TestAppsConfig_DefaultAll(t *testing.T) {
+func TestAppsConfig_DefaultAllDisabled(t *testing.T) {
 	cfg := DefaultAppsConfig()
 	for _, app := range allApps {
-		if !cfg.IsEnabled(app.name) {
-			t.Errorf("expected %s to be enabled by default", app.name)
+		if cfg.IsEnabled(app.name) {
+			t.Errorf("expected %s to be disabled by default", app.name)
 		}
 	}
 }
@@ -119,10 +123,11 @@ func TestAppsConfig_UnknownApp(t *testing.T) {
 
 func TestSaveLoadAppsConfig(t *testing.T) {
 	dir := t.TempDir()
-	src := &Source{dataDir: dir, apps: DefaultAppsConfig()}
+	src := &Source{dataDir: dir, apps: allAppsEnabledConfig()}
 	src.db = newTestDB(t)
 
 	apps := DefaultAppsConfig()
+	apps.SetEnabled("docs", true)
 	apps.SetEnabled("gmail", false)
 	apps.SetEnabled("tasks", false)
 	if err := src.saveAppsConfig(apps); err != nil {
@@ -138,6 +143,39 @@ func TestSaveLoadAppsConfig(t *testing.T) {
 	}
 	if !loaded.IsEnabled("docs") {
 		t.Error("docs should still be enabled")
+	}
+}
+
+func TestLoadAppsConfig_InvalidJSONFallsBackToDefault(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{
+  "sources": {
+    "gsuite": {
+      "enabled": true,
+      "auth": "wrong-shape"
+    }
+  }
+}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	src := &Source{dataDir: dir}
+	loaded := src.loadAppsConfig()
+	for _, app := range allApps {
+		if loaded.IsEnabled(app.name) {
+			t.Fatalf("expected %s to be disabled after invalid JSON fallback", app.name)
+		}
+	}
+}
+
+func TestLoadAppsConfig_NoAuthFallsBackToDefault(t *testing.T) {
+	dir := t.TempDir()
+	src := &Source{dataDir: dir}
+	loaded := src.loadAppsConfig()
+	for _, app := range allApps {
+		if loaded.IsEnabled(app.name) {
+			t.Fatalf("expected %s to be disabled without auth config", app.name)
+		}
 	}
 }
 
@@ -211,7 +249,7 @@ func TestSearchEntries_WithData(t *testing.T) {
 }
 
 func TestSearchEntries_NilDB(t *testing.T) {
-	src := &Source{apps: DefaultAppsConfig()}
+	src := &Source{apps: allAppsEnabledConfig()}
 	entries, err := src.SearchEntries()
 	if err != nil {
 		t.Fatalf("unexpected error with nil db: %v", err)
@@ -233,6 +271,44 @@ func TestSearchEntries_DisabledApp(t *testing.T) {
 		if e.ContentType == "document_title" || e.ContentType == "document_content" {
 			t.Errorf("expected no docs entries when docs app is disabled")
 		}
+	}
+}
+
+func TestSearchEntries_ContinuesOnAppError(t *testing.T) {
+	originalApps := allApps
+	t.Cleanup(func() { allApps = originalApps })
+
+	src := newTestSource(t)
+	allApps = []*appDef{
+		{
+			name:        "docs",
+			displayName: "Docs",
+			searchEntries: func(_ *sql.DB, _ string) ([]core.SearchEntry, error) {
+				return nil, errors.New("boom")
+			},
+		},
+		{
+			name:        "gmail",
+			displayName: "Gmail",
+			searchEntries: func(_ *sql.DB, sourceName string) ([]core.SearchEntry, error) {
+				return []core.SearchEntry{{
+					Source:      sourceName,
+					SourceID:    "ok",
+					ContentType: "email_subject",
+					Title:       "ok",
+					Content:     "ok",
+				}}, nil
+			},
+		},
+	}
+	src.apps = allAppsEnabledConfig()
+
+	entries, err := src.SearchEntries()
+	if err != nil {
+		t.Fatalf("SearchEntries: %v", err)
+	}
+	if len(entries) != 1 || entries[0].SourceID != "ok" {
+		t.Fatalf("unexpected entries: %#v", entries)
 	}
 }
 
@@ -286,6 +362,32 @@ func TestResetApp_UnknownApp(t *testing.T) {
 	src := newTestSource(t)
 	if err := src.ResetApp("nonexistent"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNewSource_OpenDBFailureStillLoadsDefaults(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "not-a-directory")
+	if err := os.WriteFile(filePath, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	src := NewSource(filePath)
+	defer src.Close()
+	if src.db != nil {
+		t.Fatal("expected db to be nil when dataDir is not a directory")
+	}
+	for _, app := range allApps {
+		if src.apps.IsEnabled(app.name) {
+			t.Fatalf("expected %s to remain disabled by default", app.name)
+		}
+	}
+}
+
+func TestAppDefs_ReturnsAllApps(t *testing.T) {
+	apps := AppDefs()
+	if len(apps) != len(allApps) {
+		t.Fatalf("AppDefs len = %d, want %d", len(apps), len(allApps))
 	}
 }
 

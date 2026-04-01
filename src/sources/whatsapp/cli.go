@@ -149,20 +149,19 @@ func RunLogin(dataDir string, args []string) {
 	}
 	client.Disconnect()
 
-	cfg := core.LoadConfig(dataDir)
-	cfg.Sources["whatsapp"] = core.SourceConfig{Enabled: true}
-	if err := core.SaveConfig(dataDir, cfg); err != nil {
+	if err := core.SetSourceEnabled(dataDir, "whatsapp", true); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
 	}
 }
 
-// RunReset removes all WhatsApp data. If the daemon is running it writes a
-// reset flag to config.json and lets the daemon do the cleanup; otherwise it
-// calls Reset() directly.
+// RunReset removes all WhatsApp data and persists the source as disabled.
 func RunReset(dataDir string) {
 	src := NewSource(dataDir)
 	if err := src.Reset(dataDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning during reset: %v\n", err)
+	}
+	if err := core.SetSourceDisabled(dataDir, "whatsapp"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
 	}
 	fmt.Println("WhatsApp data reset complete.")
 }

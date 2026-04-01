@@ -119,12 +119,14 @@ func RunLogin(dataDir string) {
 
 		apps := promptAppSelection()
 
-		cfg := core.LoadConfig(dataDir)
 		authData, _ := json.Marshal(struct {
 			Apps AppsConfig `json:"apps"`
 		}{Apps: apps})
-		cfg.Sources["gsuite"] = core.SourceConfig{Enabled: true, Auth: authData}
-		if err := core.SaveConfig(dataDir, cfg); err != nil {
+		if err := core.UpdateSourceConfig(dataDir, "gsuite", func(sc *core.SourceConfig) {
+			sc.Enabled = true
+			sc.Reset = false
+			sc.Auth = authData
+		}); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
 		}
 
@@ -157,13 +159,13 @@ func promptAppSelection() AppsConfig {
 	apps := DefaultAppsConfig()
 
 	fmt.Println("Which Google apps would you like to enable?")
-	fmt.Println("All are enabled by default. Enter numbers to disable, or press Enter to keep all.")
+	fmt.Println("All apps start disabled. Enter numbers to enable, or press Enter to keep all disabled.")
 	fmt.Println()
 	for i, app := range allApps {
 		fmt.Printf("  %d. %s\n", i+1, app.displayName)
 	}
 	fmt.Println()
-	fmt.Print("Numbers to disable (comma-separated), or Enter for all: ")
+	fmt.Print("Numbers to enable (comma-separated), or Enter for none: ")
 
 	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {
@@ -173,8 +175,8 @@ func promptAppSelection() AppsConfig {
 				part = strings.TrimSpace(part)
 				idx := 0
 				if _, err := fmt.Sscanf(part, "%d", &idx); err == nil && idx >= 1 && idx <= len(allApps) {
-					apps.SetEnabled(allApps[idx-1].name, false)
-					fmt.Printf("  ✗ Disabled %s\n", allApps[idx-1].displayName)
+					apps.SetEnabled(allApps[idx-1].name, true)
+					fmt.Printf("  ✓ Enabled %s\n", allApps[idx-1].displayName)
 				}
 			}
 		}
@@ -244,6 +246,9 @@ func RunReset(dataDir string) {
 	if err := src.Reset(dataDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning during reset: %v\n", err)
 	}
+	if err := core.SetSourceDisabled(dataDir, "gsuite"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
+	}
 
 	fmt.Println("Google Suite data reset complete")
 	fmt.Println("Run 'mcpyeahyouknowme gsuite login' to re-authenticate")
@@ -252,11 +257,21 @@ func RunReset(dataDir string) {
 // InfoLines returns indented lines for the `info` command Google Suite section.
 func InfoLines(dataDir string) []string {
 	var lines []string
+	sc := core.LoadConfig(dataDir).Sources["gsuite"]
 	tokenPath := filepath.Join(dataDir, "gsuite_token.json")
+	if !sc.Enabled {
+		lines = append(lines, "   Status:     disabled")
+		for _, app := range allApps {
+			lines = append(lines, fmt.Sprintf("   %-12s disabled (source disabled)", app.displayName+":"))
+		}
+		return lines
+	}
 	if _, err := os.Stat(tokenPath); err != nil {
+		lines = append(lines, "   Status:     enabled (not authenticated)")
 		lines = append(lines, "   Logged in:  no (run 'mcpyeahyouknowme gsuite login')")
 		return lines
 	}
+	lines = append(lines, "   Status:     enabled")
 	if email, err := os.ReadFile(filepath.Join(dataDir, "gsuite_email.txt")); err == nil && len(email) > 0 {
 		lines = append(lines, fmt.Sprintf("   Logged in:  %s", string(email)))
 	} else {

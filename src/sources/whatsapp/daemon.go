@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"time"
 
 	"mcpyeahyouknowme/core"
@@ -65,6 +66,9 @@ func (w *Source) StartCore(ctx context.Context) error {
 	}
 	defer messageStore.Close()
 
+	authReset := make(chan struct{}, 1)
+	var authResetOnce sync.Once
+
 	client.AddEventHandler(func(evt interface{}) {
 		switch v := evt.(type) {
 		case *events.Message:
@@ -74,7 +78,11 @@ func (w *Source) StartCore(ctx context.Context) error {
 		case *events.Connected:
 			logger.Infof("Connected to WhatsApp")
 		case *events.LoggedOut:
-			logger.Warnf("Device logged out, please scan QR code to log in again")
+			handleLoggedOut(dir, logger, func() {
+				authResetOnce.Do(func() {
+					authReset <- struct{}{}
+				})
+			})
 		}
 	})
 
@@ -123,10 +131,24 @@ func (w *Source) StartCore(ctx context.Context) error {
 
 	fmt.Println("REST server is running.")
 
-	<-ctx.Done()
-	fmt.Println("Stopping WhatsApp client (context cancelled)...")
+	select {
+	case <-ctx.Done():
+		fmt.Println("Stopping WhatsApp client (context cancelled)...")
+	case <-authReset:
+		fmt.Println("Stopping WhatsApp client after session reset...")
+	}
 	client.Disconnect()
 	return nil
+}
+
+func handleLoggedOut(dataDir string, logger waLog.Logger, notify func()) {
+	logger.Warnf("Device session reset; disabling WhatsApp source until you run 'mcpyeahyouknowme whatsapp login' again")
+	if err := core.SetSourceDisabled(dataDir, "whatsapp"); err != nil {
+		logger.Warnf("Failed to persist disabled WhatsApp state: %v", err)
+	}
+	if notify != nil {
+		notify()
+	}
 }
 
 // RequiresAuth returns true because WhatsApp needs authentication before running.
@@ -615,6 +637,15 @@ func requestHistorySync(client *whatsmeow.Client) {
 // InfoLines returns indented lines for the `info` command WhatsApp section.
 func InfoLines(dDir string) []string {
 	var lines []string
+	sc := core.LoadConfig(dDir).Sources["whatsapp"]
+	switch {
+	case !sc.Enabled:
+		lines = append(lines, "   Status:     disabled")
+	case !IsLoggedIn(dDir):
+		lines = append(lines, "   Status:     enabled (not authenticated)")
+	default:
+		lines = append(lines, "   Status:     enabled")
+	}
 	waDB := filepath.Join(dDir, "whatsapp.db")
 	if _, err := os.Stat(waDB); err == nil {
 		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", waDB))
