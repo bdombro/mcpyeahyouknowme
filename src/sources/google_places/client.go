@@ -125,6 +125,7 @@ type apiErrorEnvelope struct {
 	} `json:"error"`
 }
 
+// SearchPlaces calls Places text search, clamps maxResults, and returns summarized live matches.
 func (c *PlacesClient) SearchPlaces(ctx context.Context, query string, maxResults int) ([]PlaceSummary, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, errors.New("query is required")
@@ -167,6 +168,7 @@ func (c *PlacesClient) SearchPlaces(ctx context.Context, query string, maxResult
 	return places, nil
 }
 
+// GetPlace issues the live details request for `placeID`, applying the details field mask and returning the normalized response shape.
 func (c *PlacesClient) GetPlace(ctx context.Context, placeID string) (*PlaceDetails, error) {
 	if strings.TrimSpace(placeID) == "" {
 		return nil, errors.New("place_id is required")
@@ -196,6 +198,7 @@ func (c *PlacesClient) GetPlace(ctx context.Context, placeID string) (*PlaceDeta
 	return &details, nil
 }
 
+// validate rejects client calls when the build or client is missing a Places API key.
 func (c *PlacesClient) validate() error {
 	if c == nil || c.apiKey == "" {
 		return errPlacesAPIKeyMissing
@@ -203,6 +206,7 @@ func (c *PlacesClient) validate() error {
 	return nil
 }
 
+// do executes a Places HTTP request, decodes success bodies, and rewrites non-2xx responses into API errors.
 func (c *PlacesClient) do(req *http.Request, dest interface{}) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil { // nocov
@@ -223,6 +227,7 @@ func (c *PlacesClient) do(req *http.Request, dest interface{}) error {
 	return nil
 }
 
+// apiError formats a non-2xx Places response body into one actionable Go error.
 func apiError(statusCode int, body []byte) error {
 	var envelope apiErrorEnvelope
 	if err := json.Unmarshal(body, &envelope); err == nil && envelope.Error.Message != "" {
@@ -235,6 +240,7 @@ func apiError(statusCode int, body []byte) error {
 	return fmt.Errorf("Google Places API error (%d): %s", statusCode, text)
 }
 
+// toSummary projects a raw Places API record into the smaller search-result payload clients get from text search.
 func (p placeRecord) toSummary() PlaceSummary {
 	return PlaceSummary{
 		PlaceID:          p.ID,
@@ -246,6 +252,7 @@ func (p placeRecord) toSummary() PlaceSummary {
 	}
 }
 
+// toDetails projects a raw Places API record into the richer details payload, preserving optional fields only when present.
 func (p placeRecord) toDetails() PlaceDetails {
 	details := PlaceDetails{
 		PlaceID:                  p.ID,
@@ -285,6 +292,7 @@ func (p placeRecord) toDetails() PlaceDetails {
 	return details
 }
 
+// locationPtr returns nil for zero coordinates so empty API values do not serialize as fake locations.
 func locationPtr(loc latLng) *Coordinates {
 	if loc == (latLng{}) {
 		return nil

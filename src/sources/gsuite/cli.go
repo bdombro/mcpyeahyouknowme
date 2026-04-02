@@ -193,6 +193,7 @@ func promptAppSelection() AppsConfig {
 	return apps
 }
 
+// enableAllApps flips every app on and prints each enabled label for the interactive CLI flow.
 func enableAllApps(apps *AppsConfig) {
 	for _, app := range allApps {
 		apps.SetEnabled(app.name, true)
@@ -200,7 +201,7 @@ func enableAllApps(apps *AppsConfig) {
 	}
 }
 
-// RunApps shows current app status and allows toggling.
+// RunApps shows current per-app status and persists interactive toggles back into config.json, clearing disabled app data on the way down.
 func RunApps(dataDir string) {
 	src := NewSource(dataDir)
 	defer src.Close()
@@ -341,10 +342,12 @@ func InfoLines(dataDir string) []string {
 	return lines
 }
 
+// cliAppName returns the shorter CLI-facing app label by trimming the shared Google prefix.
 func cliAppName(app *appDef) string {
 	return strings.TrimPrefix(app.displayName, "Google ")
 }
 
+// formatSyncStatus renders one app sync summary from sync state, last sync time, and row count.
 func formatSyncStatus(syncStatus string, lastSync time.Time, count int) string {
 	if strings.HasPrefix(syncStatus, "syncing") {
 		parts := strings.SplitN(syncStatus, ":", 2)
@@ -359,27 +362,32 @@ func formatSyncStatus(syncStatus string, lastSync time.Time, count int) string {
 	return fmt.Sprintf("%d synced", count)
 }
 
+// generateCodeVerifier returns a PKCE verifier for the desktop OAuth flow.
 func generateCodeVerifier() string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(b)
 }
 
+// generateCodeChallenge hashes a PKCE verifier into the S256 challenge Google expects.
 func generateCodeChallenge(verifier string) string {
 	hash := sha256.Sum256([]byte(verifier))
 	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(hash[:])
 }
 
+// generateRandomString returns a URL-safe random string for OAuth state and similar one-time values.
 func generateRandomString(length int) string {
 	b := make([]byte, length)
 	rand.Read(b)
 	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(b)[:length]
 }
 
+// openBrowser asks macOS to open url in the default browser so login can continue outside the terminal.
 func openBrowser(url string) error {
 	return exec.Command("open", url).Start()
 }
 
+// fetchGoogleEmail reads the authenticated account email so info output can show which account is linked.
 func fetchGoogleEmail(config *oauth2.Config, token *oauth2.Token) (string, error) {
 	client := config.Client(context.Background(), token)
 	resp, err := client.Get("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)")

@@ -100,7 +100,7 @@ type SearchStore struct {
 	embedder EmbedderInterface
 }
 
-// Close releases the search database connection.
+// Close releases the search DB handle so daemon, MCP, or CLI callers do not leave SQLite connections open.
 func (s *SearchStore) Close() error {
 	return s.db.Close()
 }
@@ -152,6 +152,7 @@ func (s *SearchStore) IndexEntries(entries []SearchEntry) error {
 	return nil
 }
 
+// rebuildFTSIfNeeded rebuilds the FTS index after bulk loads when entries exist but no FTS rows were created.
 func (s *SearchStore) rebuildFTSIfNeeded() {
 	var entryCount int
 	s.db.QueryRow("SELECT COUNT(*) FROM search_entries").Scan(&entryCount)
@@ -265,14 +266,14 @@ func (s *SearchStore) embedChunk(batchSize, limit int) (int, error) {
 	return len(chunk), nil
 }
 
-// UpdateSourceTimestamp records when a source was last indexed.
+// UpdateSourceTimestamp fire-and-forgets the source's latest successful index time into search_meta for incremental reindex decisions.
 func (s *SearchStore) UpdateSourceTimestamp(source string, t time.Time) {
 	s.db.Exec(`INSERT INTO search_meta (source, last_indexed) VALUES (?, ?)
 		ON CONFLICT(source) DO UPDATE SET last_indexed=excluded.last_indexed`,
 		source, t.Format(time.RFC3339))
 }
 
-// LastIndexed returns the time a source was last indexed, or zero time if never.
+// LastIndexed reads the stored index watermark for source, returning zero time when incremental indexing has never recorded one.
 func (s *SearchStore) LastIndexed(source string) time.Time {
 	var ts sql.NullString
 	s.db.QueryRow("SELECT last_indexed FROM search_meta WHERE source = ?", source).Scan(&ts)
@@ -283,7 +284,7 @@ func (s *SearchStore) LastIndexed(source string) time.Time {
 	return time.Time{}
 }
 
-// Search performs hybrid BM25 + vector search with RRF fusion and hierarchy weighting.
+// Search runs hybrid BM25+vector retrieval for `query`, falling back to BM25-only if query embedding fails, then returns weighted top results.
 func (s *SearchStore) Search(query string, limit int, sourceFilter, typeFilter string) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 20
@@ -316,6 +317,7 @@ type rankedEntry struct {
 	score   float64
 }
 
+// bm25SearchEntries runs FTS keyword search for query, applies optional filters, and returns ranked entry IDs.
 func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, typeFilter string) []rankedEntry {
 	safeQuery := strings.ReplaceAll(query, `"`, `""`)
 	ftsQuery := `"` + safeQuery + `"`
@@ -354,6 +356,7 @@ func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, t
 	return results
 }
 
+// vectorSearch embeds query, scores stored embeddings with cosine similarity, and returns top ranked entry IDs.
 func (s *SearchStore) vectorSearch(query string, limit int, sourceFilter, typeFilter string) ([]rankedEntry, error) {
 	queryEmb, err := s.embedder.EmbedQuery(query)
 	if err != nil {
@@ -412,7 +415,7 @@ func (s *SearchStore) vectorSearch(query string, limit int, sourceFilter, typeFi
 	return results, nil
 }
 
-// rrfFuse combines ranked lists using Reciprocal Rank Fusion.
+// rrfFuse merges BM25/vector ranked lists with Reciprocal Rank Fusion so hybrid search rewards agreement between retrieval modes.
 func rrfFuse(lists ...[]rankedEntry) []rankedEntry {
 	scores := make(map[int64]float64)
 	for _, list := range lists {
@@ -428,9 +431,7 @@ func rrfFuse(lists ...[]rankedEntry) []rankedEntry {
 	return result
 }
 
-// Hierarchy weighting is applied in loadResults where we have access to
-// the content_type for each entry.
-
+// loadResults hydrates ranked entry IDs, applies hierarchy weighting, and returns ordered MCP search results.
 func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) {
 	if len(ranked) == 0 {
 		return []SearchResult{}, nil
@@ -494,6 +495,7 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 	return results, nil
 }
 
+// searchMetadataHint returns follow-up guidance for a source/content-type pair so MCP callers can pivot correctly.
 func searchMetadataHint(source, contentType string) string {
 	return searchMetadataHints[source+":"+contentType]
 }
@@ -504,7 +506,7 @@ type SearchIndexStats struct {
 	Embedded int
 }
 
-// IndexStats returns summary statistics about the search index.
+// IndexStats returns entry and embedding counts so info/status surfaces can report indexing progress without loading results.
 func (s *SearchStore) IndexStats() SearchIndexStats {
 	stats := SearchIndexStats{}
 	s.db.QueryRow("SELECT COUNT(*) FROM search_entries").Scan(&stats.Entries)
@@ -531,6 +533,7 @@ func ReadOnlySearchIndexStats(dir string) SearchIndexStats {
 
 // ---------- Vector math helpers ----------
 
+// cosineSimilarity scores two equal-length vectors so semantic search can rank embedding matches.
 func cosineSimilarity(a, b []float32) float64 {
 	if len(a) != len(b) || len(a) == 0 {
 		return 0
@@ -548,6 +551,7 @@ func cosineSimilarity(a, b []float32) float64 {
 	return dot / denom
 }
 
+// float32sToBytes packs an embedding vector into SQLite blob bytes for storage.
 func float32sToBytes(f []float32) []byte {
 	buf := make([]byte, len(f)*4)
 	for i, v := range f {
@@ -560,6 +564,7 @@ func float32sToBytes(f []float32) []byte {
 	return buf
 }
 
+// bytesToFloat32s unpacks an embedding blob into float32 values for similarity scoring.
 func bytesToFloat32s(b []byte) []float32 {
 	if len(b)%4 != 0 {
 		return nil

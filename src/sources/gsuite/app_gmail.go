@@ -30,6 +30,7 @@ var gmailAppDef = &appDef{
 	tablesToDrop:  []string{"gmail_threads", "gmail_messages", "gmail_messages_fts"},
 }
 
+// initGmailSchema creates Gmail tables and runs lightweight migrations needed by newer body/thread indexing logic.
 func initGmailSchema(db *sql.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS gmail_messages (
@@ -95,6 +96,7 @@ func initGmailSchema(db *sql.DB) error {
 	return nil
 }
 
+// syncGmail refreshes synced Gmail messages into SQLite, rebuilds derived threads, and drops trashed-or-missing rows.
 func syncGmail(sctx syncContext) error { // nocov
 	ctx := sctx.Ctx.(context.Context)
 	sctx.SetStatus("syncing")
@@ -171,6 +173,7 @@ type gmailStoredRecord struct {
 	SizeEstimate   int64
 }
 
+// buildGmailStoredRecord flattens a Gmail API message into one canonical stored message row.
 func buildGmailStoredRecord(msg *gmail.Message) gmailStoredRecord {
 	if msg == nil {
 		return gmailStoredRecord{}
@@ -204,6 +207,7 @@ func buildGmailStoredRecord(msg *gmail.Message) gmailStoredRecord {
 	}
 }
 
+// storeGmailMessage upserts one synced Gmail message row, keeping body_raw canonical and thread rebuild inputs current.
 func storeGmailMessage(db *sql.DB, msg *gmail.Message) {
 	rec := buildGmailStoredRecord(msg)
 	// body_text is a legacy alias kept for backward compatibility; body_raw is canonical.
@@ -216,6 +220,7 @@ func storeGmailMessage(db *sql.DB, msg *gmail.Message) {
 		rec.Date, rec.Snippet, rec.BodyText, rec.BodyRaw, rec.BodyVisible, rec.HasAttachments, rec.SizeEstimate)
 }
 
+// parseGmailHeaders extracts the subset of mail headers used for storage, thread views, and search metadata.
 func parseGmailHeaders(msg *gmail.Message) map[string]string {
 	h := make(map[string]string)
 	if msg.Payload == nil {
@@ -230,6 +235,7 @@ func parseGmailHeaders(msg *gmail.Message) map[string]string {
 	return h
 }
 
+// extractGmailBody prefers text/plain, then stripped HTML, recursing through MIME parts to find readable body content.
 func extractGmailBody(payload *gmail.MessagePart) string {
 	if payload == nil {
 		return ""
@@ -280,6 +286,7 @@ var (
 	mobileSignatureLineRe = regexp.MustCompile(`(?i)^sent from my (iphone|ipad|android|mobile device)$`)
 )
 
+// deriveVisibleBody strips quoted-history noise when safe so search and thread views emphasize authored text.
 func deriveVisibleBody(raw string) string {
 	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
@@ -294,6 +301,7 @@ func deriveVisibleBody(raw string) string {
 	return visible
 }
 
+// stripQuotedReplyBlocks removes quoted reply/forward sections once authored content has been detected above them.
 func stripQuotedReplyBlocks(body string) string {
 	lines := strings.Split(body, "\n")
 	cut := len(lines)
@@ -316,10 +324,12 @@ func stripQuotedReplyBlocks(body string) string {
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
+// isStrongReplyBoundary reports whether line looks like a reply/forward separator worth cutting on.
 func isStrongReplyBoundary(line string) bool {
 	return replyBoundaryRe.MatchString(line) || forwardedBoundaryRe.MatchString(line)
 }
 
+// isQuotedHeaderBlock detects multi-line reply headers so visible-body trimming can drop quoted history safely.
 func isQuotedHeaderBlock(lines []string, start int) bool {
 	matched := 0
 	for i := start; i < len(lines) && i < start+5; i++ {
@@ -339,6 +349,7 @@ func isQuotedHeaderBlock(lines []string, start int) bool {
 	return matched >= 2
 }
 
+// hasAuthoredContent reports whether lines contain any non-empty non-quoted user-authored text.
 func hasAuthoredContent(lines []string) bool {
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -349,6 +360,7 @@ func hasAuthoredContent(lines []string) bool {
 	return false
 }
 
+// trimTrailingQuotedBlock removes a quoted `>` tail when real authored content exists before it.
 func trimTrailingQuotedBlock(lines []string) []string {
 	i := len(lines) - 1
 	sawQuoted := false
@@ -373,6 +385,7 @@ func trimTrailingQuotedBlock(lines []string) []string {
 	return trimTrailingBlankLines(lines)
 }
 
+// trimTrailingBlankLines drops trailing blank lines so stored visible bodies stay compact.
 func trimTrailingBlankLines(lines []string) []string {
 	end := len(lines)
 	for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
@@ -381,6 +394,7 @@ func trimTrailingBlankLines(lines []string) []string {
 	return lines[:end]
 }
 
+// trimTrailingMobileSignature removes short mobile signature tails when they follow a blank separator.
 func trimTrailingMobileSignature(lines []string) []string {
 	lines = trimTrailingBlankLines(lines)
 	if len(lines) < 2 {
@@ -396,6 +410,7 @@ func trimTrailingMobileSignature(lines []string) []string {
 	return trimTrailingBlankLines(lines[:len(lines)-2])
 }
 
+// shouldFallbackToRaw reports whether aggressive stripping removed too much content, so callers should keep the raw body.
 func shouldFallbackToRaw(raw, visible string) bool {
 	raw = strings.TrimSpace(raw)
 	visible = strings.TrimSpace(visible)
@@ -411,7 +426,7 @@ func shouldFallbackToRaw(raw, visible string) bool {
 	return len(raw) >= 500 && len(visible)*10 < len(raw)
 }
 
-// stripHTML does a basic HTML tag removal. Good enough for search indexing.
+// stripHTML does a lightweight tag strip during Gmail body extraction so stored/searchable text favors readable content over exact HTML fidelity.
 func stripHTML(s string) string {
 	var b strings.Builder
 	inTag := false
@@ -431,6 +446,7 @@ func stripHTML(s string) string {
 	return b.String()
 }
 
+// hasGmailAttachments reports whether any MIME part carries an attachment ID and filename.
 func hasGmailAttachments(payload *gmail.MessagePart) bool {
 	if payload == nil {
 		return false
@@ -451,6 +467,7 @@ var metaLabels = map[string]bool{
 	"UNREAD": true, "STARRED": true, "IMPORTANT": true,
 }
 
+// primaryFolder picks the best mailbox-style label so message listings expose one stable folder value.
 func primaryFolder(labelIDs []string) string {
 	priority := []string{"INBOX", "SENT", "DRAFT", "SPAM"}
 	labelSet := make(map[string]bool, len(labelIDs))
@@ -471,6 +488,7 @@ func primaryFolder(labelIDs []string) string {
 	return "ARCHIVE"
 }
 
+// registerGmailTools wires the SQLite-backed Gmail read tools plus the live attachment fetch path into MCP.
 func registerGmailTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"gmail_search",
 		core.ToolDescription("Search across all Gmail messages (excluding trash)", `{"query":"invoice overdue","limit":5}`),
@@ -508,6 +526,7 @@ func registerGmailTools(src *Source, prefix string, s toolAdder) {
 	})
 }
 
+// handleGmailSearch runs local FTS for req `query`/`limit`, returning synced message hits that include thread IDs for follow-up.
 func handleGmailSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, errResult := core.RequireStringArgument(req, "query", `{"query":"invoice overdue","limit":5}`)
 	if errResult != nil {
@@ -544,6 +563,7 @@ func handleGmailSearch(_ context.Context, src *Source, req mcp.CallToolRequest) 
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
+// handleGmailGetMessage looks up req `message_id` in SQLite and returns the stored headers, labels, folder, and raw body.
 func handleGmailGetMessage(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	msgID, errResult := core.RequireStringArgument(req, "message_id", `{"message_id":"190a2b3c4d"}`)
 	if errResult != nil {
@@ -571,6 +591,7 @@ func handleGmailGetMessage(_ context.Context, src *Source, req mcp.CallToolReque
 	})
 }
 
+// handleGmailGetThread loads req `thread_id`, returning reconstructed chronological messages with visible bodies unless `include_raw` asks for raw text too.
 func handleGmailGetThread(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	threadID, errResult := core.RequireStringArgument(req, "thread_id", `{"thread_id":"190a2b3c4d","include_raw":false}`)
 	if errResult != nil {
@@ -628,6 +649,7 @@ func handleGmailGetThread(_ context.Context, src *Source, req mcp.CallToolReques
 	})
 }
 
+// handleGmailListRecent returns recent synced Gmail messages for req `limit`, optionally narrowing to one stored folder.
 func handleGmailListRecent(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limit := core.IntArg(req.GetArguments(), "limit", 20)
 	folder, _ := req.GetArguments()["folder"].(string)
@@ -705,6 +727,7 @@ type gmailThreadSearchSummary struct {
 	lastDate     string
 }
 
+// gmailSearchEntriesForThread turns one derived thread plus its messages into subject, participant, and chunked transcript entries for global search.
 func gmailSearchEntriesForThread(sourceName string, summary gmailThreadSearchSummary, messages []gmailMessageRecord) []core.SearchEntry {
 	meta, _ := json.Marshal(map[string]interface{}{
 		"thread_id":     summary.threadID,
@@ -750,6 +773,7 @@ func gmailSearchEntriesForThread(sourceName string, summary gmailThreadSearchSum
 	return entries
 }
 
+// gmailSearchEntries walks the derived thread cache and expands each thread into global search entries.
 func gmailSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	threadRows, err := db.Query(`SELECT thread_id, subject, participants, message_count, first_date, last_date
 		FROM gmail_threads ORDER BY last_date DESC, thread_id`)
@@ -848,6 +872,7 @@ func gmailThreadsPopulated(db *sql.DB) bool {
 	return count > 0
 }
 
+// tableHasColumn reports whether tableName already has column so migrations can stay idempotent.
 func tableHasColumn(db *sql.DB, tableName, column string) (bool, error) {
 	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
 	if err != nil { // nocov
@@ -889,6 +914,7 @@ func mergeGmailMessageBodyFields(bodyText, bodyRaw, bodyVisible string) (nextBod
 	return nextBodyText, nextRaw, nextVisible, needsUpdate
 }
 
+// backfillGmailMessageBodies repairs legacy rows so raw and visible body columns are populated consistently.
 func backfillGmailMessageBodies(db *sql.DB) error {
 	rows, err := db.Query(`SELECT id, body_text, body_raw, body_visible FROM gmail_messages`)
 	if err != nil { // nocov
@@ -929,6 +955,7 @@ func backfillGmailMessageBodies(db *sql.DB) error {
 	return nil
 }
 
+// recreateGmailMessageFTS rebuilds the Gmail FTS table/triggers so searches index the current visible-body schema.
 func recreateGmailMessageFTS(db *sql.DB) error {
 	_, err := db.Exec(`
 	DROP TRIGGER IF EXISTS gmail_messages_ai;
@@ -961,6 +988,7 @@ func recreateGmailMessageFTS(db *sql.DB) error {
 	return err
 }
 
+// rebuildAllGmailThreads regenerates derived thread rows from canonical message rows after sync or migration.
 func rebuildAllGmailThreads(db *sql.DB) error {
 	messages, err := loadAllGmailMessages(db)
 	if err != nil { // nocov
@@ -982,6 +1010,7 @@ func rebuildAllGmailThreads(db *sql.DB) error {
 	return nil
 }
 
+// loadAllGmailMessages loads every stored Gmail message row so migrations and thread rebuilds can derive consistent caches.
 func loadAllGmailMessages(db *sql.DB) ([]gmailMessageRecord, error) {
 	rows, err := db.Query(`SELECT id, thread_id, subject, from_addr, to_addrs, cc_addrs, bcc_addrs, date, folder,
 		labels, COALESCE(NULLIF(body_raw, ''), body_text), COALESCE(NULLIF(body_visible, ''), ''), has_attachments
@@ -993,6 +1022,7 @@ func loadAllGmailMessages(db *sql.DB) ([]gmailMessageRecord, error) {
 	return scanGmailMessages(rows)
 }
 
+// loadGmailMessagesByThread loads and orders the stored messages for one thread so thread reads and search chunking stay consistent.
 func loadGmailMessagesByThread(db *sql.DB, threadID string) ([]gmailMessageRecord, error) {
 	rows, err := db.Query(`SELECT id, thread_id, subject, from_addr, to_addrs, cc_addrs, bcc_addrs, date, folder,
 		labels, COALESCE(NULLIF(body_raw, ''), body_text), COALESCE(NULLIF(body_visible, ''), ''), has_attachments
@@ -1004,6 +1034,7 @@ func loadGmailMessagesByThread(db *sql.DB, threadID string) ([]gmailMessageRecor
 	return scanGmailMessages(rows)
 }
 
+// scanGmailMessages scans stored Gmail rows, derives missing visible bodies, and sorts them chronologically.
 func scanGmailMessages(rows *sql.Rows) ([]gmailMessageRecord, error) {
 	var messages []gmailMessageRecord
 	for rows.Next() {
@@ -1030,6 +1061,7 @@ func scanGmailMessages(rows *sql.Rows) ([]gmailMessageRecord, error) {
 	return messages, nil
 }
 
+// gmailMessageLess orders two messages chronologically, falling back to raw date strings and IDs when needed.
 func gmailMessageLess(a, b gmailMessageRecord) bool {
 	ta := parseGmailMessageDate(a.Date)
 	tb := parseGmailMessageDate(b.Date)
@@ -1047,6 +1079,7 @@ func gmailMessageLess(a, b gmailMessageRecord) bool {
 	}
 }
 
+// parseGmailMessageDate parses common Gmail date header formats into time values for stable thread ordering.
 func parseGmailMessageDate(value string) time.Time {
 	if value == "" {
 		return time.Time{}
@@ -1060,6 +1093,7 @@ func parseGmailMessageDate(value string) time.Time {
 	return time.Time{}
 }
 
+// buildGmailThreadRecords groups stored messages by thread and derives normalized thread rows.
 func buildGmailThreadRecords(messages []gmailMessageRecord) []gmailThreadRecord {
 	grouped := make(map[string][]gmailMessageRecord)
 	for _, msg := range messages {
@@ -1080,6 +1114,7 @@ func buildGmailThreadRecords(messages []gmailMessageRecord) []gmailThreadRecord 
 	return records
 }
 
+// buildThreadRecord derives one thread summary/transcript row from its ordered message slice.
 func buildThreadRecord(messages []gmailMessageRecord) gmailThreadRecord {
 	if len(messages) == 0 {
 		return gmailThreadRecord{}
@@ -1108,6 +1143,7 @@ func buildThreadRecord(messages []gmailMessageRecord) gmailThreadRecord {
 	}
 }
 
+// joinParticipants deduplicates sender and recipient addresses so thread metadata has a stable participant list.
 func joinParticipants(messages []gmailMessageRecord) string {
 	seen := make(map[string]bool)
 	var ordered []string
@@ -1130,6 +1166,7 @@ func joinParticipants(messages []gmailMessageRecord) string {
 	return strings.Join(ordered, ", ")
 }
 
+// buildThreadTranscript joins thread chunks into one visible transcript for the derived thread cache.
 func buildThreadTranscript(subject, participants string, messages []gmailMessageRecord) string {
 	chunks := buildGmailThreadChunks(subject, participants, messages)
 	var parts []string
@@ -1139,6 +1176,7 @@ func buildThreadTranscript(subject, participants string, messages []gmailMessage
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }
 
+// loadGmailThreadMeta reads one cached derived thread row so thread reads can reuse stored metadata instead of rebuilding it.
 func loadGmailThreadMeta(db *sql.DB, threadID string) (gmailThreadRecord, error) {
 	var record gmailThreadRecord
 	err := db.QueryRow(`SELECT thread_id, subject, participants, message_count, first_date, last_date, last_message_id, thread_text_visible
@@ -1151,6 +1189,7 @@ func loadGmailThreadMeta(db *sql.DB, threadID string) (gmailThreadRecord, error)
 	return record, err
 }
 
+// buildGmailThreadChunks groups transcript entries into bounded chunks for global search indexing.
 func buildGmailThreadChunks(subject, participants string, messages []gmailMessageRecord) []gmailThreadChunk {
 	const (
 		targetSize = 3000
@@ -1222,6 +1261,7 @@ func buildGmailThreadChunks(subject, participants string, messages []gmailMessag
 	return chunks
 }
 
+// formatThreadChunkHeader builds the shared subject/participant header prepended to each indexed thread chunk.
 func formatThreadChunkHeader(subject, participants string) string {
 	var b strings.Builder
 	if subject != "" {
@@ -1240,6 +1280,7 @@ func formatThreadChunkHeader(subject, participants string) string {
 	return b.String()
 }
 
+// formatThreadTranscriptEntry renders one message into transcript text for thread views and chunking.
 func formatThreadTranscriptEntry(msg gmailMessageRecord) string {
 	body := strings.TrimSpace(msg.BodyVisible)
 	if body == "" {
@@ -1266,6 +1307,7 @@ func formatThreadTranscriptEntry(msg gmailMessageRecord) string {
 	return b.String()
 }
 
+// splitLongThreadEntry splits oversized transcript entries so chunked search rows stay under the size limit.
 func splitLongThreadEntry(entry string, limit int) []string {
 	if limit <= 0 || len(entry) <= limit {
 		return []string{entry}

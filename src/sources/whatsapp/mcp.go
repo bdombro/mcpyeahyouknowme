@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// RegisterTools adds all WhatsApp MCP tools to the server.
+// RegisterTools wires WhatsApp's SQLite-backed read tools and REST-backed write tools into the MCP server under the source prefix.
 func (w *Source) RegisterTools(s *server.MCPServer) {
 	svc := w.svc
 	p := w.Name() + "_"

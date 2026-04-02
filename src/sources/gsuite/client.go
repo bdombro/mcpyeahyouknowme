@@ -43,7 +43,7 @@ var oauthScopes = []string{
 	"https://www.googleapis.com/auth/presentations.readonly",
 }
 
-// getOAuthConfig returns the OAuth2 config for all Google Workspace apps.
+// getOAuthConfig builds the shared OAuth client config every GSuite login, refresh, and live API path uses.
 func (g *Source) getOAuthConfig() *oauth2.Config {
 	return &oauth2.Config{
 		ClientID:     GoogleClientID,
@@ -54,6 +54,7 @@ func (g *Source) getOAuthConfig() *oauth2.Config {
 	}
 }
 
+// describeOAuthExchangeError rewrites known token-exchange failures into actionable rebuild/login guidance.
 func describeOAuthExchangeError(err error) string {
 	if err == nil {
 		return ""
@@ -71,6 +72,7 @@ func describeOAuthExchangeError(err error) string {
 	return err.Error()
 }
 
+// classifyGSuiteError maps OAuth/API failures into daemon retry buckets so core can disable or retry appropriately.
 func classifyGSuiteError(err error) gsuiteErrKind {
 	if err == nil {
 		return gsuiteErrOther
@@ -124,7 +126,7 @@ func classifyGSuiteError(err error) gsuiteErrKind {
 	}
 }
 
-// loadToken loads the OAuth token from disk.
+// loadToken reads the persisted OAuth token from disk into g.token so daemon sync and live API calls can authenticate.
 func (g *Source) loadToken() error {
 	tokenPath := filepath.Join(g.dataDir, "gsuite_token.json")
 	data, err := os.ReadFile(tokenPath)
@@ -139,7 +141,7 @@ func (g *Source) loadToken() error {
 	return nil
 }
 
-// saveToken saves the OAuth token to disk.
+// saveToken updates g.token and persists the refreshed token to disk so later daemon polls and MCP calls reuse it.
 func (g *Source) saveToken(token *oauth2.Token) error {
 	g.token = token
 	tokenPath := filepath.Join(g.dataDir, "gsuite_token.json")
@@ -150,7 +152,7 @@ func (g *Source) saveToken(token *oauth2.Token) error {
 	return os.WriteFile(tokenPath, data, 0600)
 }
 
-// isAuthenticated checks if we have a valid (or refreshable) token.
+// isAuthenticated applies the daemon's auth gate: g.token must exist, and expired access tokens are only acceptable when a refresh token exists.
 func (g *Source) isAuthenticated() bool {
 	if g.token == nil {
 		return false

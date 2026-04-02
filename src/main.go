@@ -13,6 +13,7 @@ var (
 	BuildVersion = "dev"
 )
 
+// main sets the process-wide tokenizer cache path before any command runs, then hands process args to CLI dispatch.
 func main() {
 	os.Setenv("GO_TOKENIZER", filepath.Join(core.DataDir(), "cache", "tokenizer"))
 	dispatchCLI(os.Args[1:])

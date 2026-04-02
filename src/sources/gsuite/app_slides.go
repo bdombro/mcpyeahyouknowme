@@ -25,6 +25,7 @@ var slidesAppDef = &appDef{
 	tablesToDrop:  []string{"slides_presentations", "slides_presentations_fts"},
 }
 
+// initSlidesSchema creates the Slides tables, FTS index, and triggers used by sync and MCP reads.
 func initSlidesSchema(db *sql.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS slides_presentations (
@@ -69,6 +70,7 @@ func initSlidesSchema(db *sql.DB) error {
 	return nil
 }
 
+// syncSlides refreshes synced presentations into SQLite and removes local rows missing from the latest Drive listing.
 func syncSlides(sctx syncContext) error { // nocov
 	ctx := sctx.Ctx.(context.Context)
 	sctx.SetStatus("syncing")
@@ -140,6 +142,7 @@ type slidesRecord struct {
 	SlideCount   int
 }
 
+// buildSlidesRecord flattens Drive and Slides API payloads into one stored presentation row.
 func buildSlidesRecord(file *drive.File, pres *slides.Presentation, selfEmail string) slidesRecord {
 	if file == nil {
 		return slidesRecord{}
@@ -159,6 +162,7 @@ func buildSlidesRecord(file *drive.File, pres *slides.Presentation, selfEmail st
 	return record
 }
 
+// extractPresentationText renders slide text into plain content for storage and search.
 func extractPresentationText(pres *slides.Presentation) string {
 	var b strings.Builder
 	for i, slide := range pres.Slides {
@@ -179,6 +183,7 @@ func extractPresentationText(pres *slides.Presentation) string {
 	return b.String()
 }
 
+// registerSlidesTools wires the local-DB Slides read tools into MCP so clients can query synced decks without live API calls.
 func registerSlidesTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"slides_search",
 		core.ToolDescription("Search across all Google Slides presentations", `{"query":"launch deck","limit":5}`),
@@ -201,6 +206,7 @@ func registerSlidesTools(src *Source, prefix string, s toolAdder) {
 	})
 }
 
+// handleSlidesSearch runs local FTS for req `query`/`limit`, returning snippet hits from synced presentations instead of calling Google live.
 func handleSlidesSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, errResult := core.RequireStringArgument(req, "query", `{"query":"launch deck","limit":5}`)
 	if errResult != nil {
@@ -235,6 +241,7 @@ func handleSlidesSearch(_ context.Context, src *Source, req mcp.CallToolRequest)
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
+// handleSlidesGetPresentation looks up req `presentation_id` in SQLite and returns the stored deck text plus metadata.
 func handleSlidesGetPresentation(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	presID, errResult := core.RequireStringArgument(req, "presentation_id", `{"presentation_id":"1AbcDefGhIj"}`)
 	if errResult != nil {
@@ -259,6 +266,7 @@ func handleSlidesGetPresentation(_ context.Context, src *Source, req mcp.CallToo
 	})
 }
 
+// handleSlidesListRecent returns the newest synced presentations from SQLite for req `limit`, or an empty JSON payload when no DB exists.
 func handleSlidesListRecent(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limit := core.IntArg(req.GetArguments(), "limit", 20)
 	if src.db == nil {
@@ -285,6 +293,7 @@ func handleSlidesListRecent(_ context.Context, src *Source, req mcp.CallToolRequ
 	return core.JsonResult(map[string]interface{}{"presentations": results, "count": len(results)})
 }
 
+// slidesSearchEntries turns synced presentation rows into title, owner, and chunked slide-text entries for global search.
 func slidesSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT id, title, content, modified_time, owners FROM slides_presentations`)
 	if err != nil { // nocov

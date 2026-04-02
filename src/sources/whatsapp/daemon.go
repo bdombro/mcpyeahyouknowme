@@ -141,6 +141,7 @@ func (w *Source) StartCore(ctx context.Context) error {
 	return nil
 }
 
+// handleLoggedOut disables the source after a hard auth reset and notifies any waiting shutdown path.
 func handleLoggedOut(dataDir string, logger waLog.Logger, notify func()) {
 	logger.Warnf("Device session reset; disabling WhatsApp source until you run 'mcpyeahyouknowme whatsapp login' again")
 	if err := core.SetSourceDisabled(dataDir, "whatsapp"); err != nil {
@@ -151,12 +152,12 @@ func handleLoggedOut(dataDir string, logger waLog.Logger, notify func()) {
 	}
 }
 
-// RequiresAuth returns true because WhatsApp needs authentication before running.
+// RequiresAuth tells the core daemon not to start the live WhatsApp client until a paired session exists.
 func (w *Source) RequiresAuth() bool {
 	return true
 }
 
-// handleMessage processes a real-time incoming message event.
+// handleMessage turns one live WhatsApp event into stored chat/message rows, plus group participant refreshes when relevant.
 func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *events.Message, logger waLog.Logger) {
 	if msg.Message == nil {
 		return
@@ -218,7 +219,7 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 	}
 }
 
-// GetChatName determines the appropriate name for a chat based on JID and other info.
+// GetChatName resolves the best display name for a chat, upgrading placeholders from history/live metadata and mutating the chats table when improved.
 func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types.JID, chatJID string, conversation interface{}, sender string, logger waLog.Logger) string {
 	var existingName string
 	err := messageStore.db.QueryRow("SELECT name FROM chats WHERE jid = ?", chatJID).Scan(&existingName)
@@ -294,7 +295,7 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 	return name
 }
 
-// handleHistorySync processes a WhatsApp history sync event.
+// handleHistorySync stores backfilled chats, participants, and messages from history sync so search and MCP reads see older conversation data.
 func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, historySync *events.HistorySync, logger waLog.Logger) {
 	fmt.Printf("Received history sync event with %d conversations\n", len(historySync.Data.Conversations))
 
@@ -427,7 +428,7 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 	fmt.Printf("History sync complete. Stored %d messages.\n", syncedCount)
 }
 
-// startRESTServer starts an HTTP server for sending messages and downloading media.
+// startRESTServer launches the daemon-side write API on `port`, exposing send/download endpoints that proxy to the live WhatsApp client.
 func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port int, dataDir string) {
 	mux := http.NewServeMux()
 
@@ -500,7 +501,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	}()
 }
 
-// extractTextContent returns the human-readable text content of a WhatsApp message.
+// extractTextContent normalizes many WhatsApp protobuf message shapes into the text that live/history ingest stores and indexes.
 func extractTextContent(msg *waProto.Message) string {
 	if msg == nil {
 		return ""
@@ -574,7 +575,7 @@ func extractTextContent(msg *waProto.Message) string {
 	return ""
 }
 
-// extractMediaInfo extracts media metadata from a WhatsApp message.
+// extractMediaInfo pulls download metadata from supported media message types so later REST-triggered downloads can be reconstructed.
 func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, url string, mediaKey []byte, fileSHA256 []byte, fileEncSHA256 []byte, fileLength uint64) {
 	if msg == nil {
 		return "", "", "", nil, nil, nil, 0
@@ -603,7 +604,7 @@ func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, 
 	return "", "", "", nil, nil, nil, 0
 }
 
-// requestHistorySync asks the primary device for additional on-demand history.
+// requestHistorySync asks the paired phone for more history, a manual side effect used to backfill older local data.
 func requestHistorySync(client *whatsmeow.Client) {
 	if client == nil {
 		fmt.Println("Client is not initialized. Cannot request history sync.")

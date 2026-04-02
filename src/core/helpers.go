@@ -19,7 +19,7 @@ var (
 	knownSources   []string
 )
 
-// DataDir returns the application data directory (~/.local/share/mcpyeahyouknowme).
+// DataDir returns the shared app data root so CLI, daemon, MCP, models, and SQLite files resolve to one stable location.
 func DataDir() string {
 	dataDirOnce.Do(func() {
 		home, err := os.UserHomeDir()
@@ -31,7 +31,7 @@ func DataDir() string {
 	return dataDirValue
 }
 
-// IntArg extracts an integer from an MCP args map, returning def if absent.
+// IntArg reads key from MCP-style args, coercing numeric JSON values to int and falling back to def when absent or non-numeric.
 func IntArg(args map[string]interface{}, key string, def int) int {
 	if v, ok := args[key]; ok {
 		switch n := v.(type) {
@@ -44,7 +44,7 @@ func IntArg(args map[string]interface{}, key string, def int) int {
 	return def
 }
 
-// BoolArg extracts a bool from an MCP args map, returning def if absent.
+// BoolArg reads key from MCP-style args, returning def when the caller omitted it or passed a non-bool.
 func BoolArg(args map[string]interface{}, key string, def bool) bool {
 	if v, ok := args[key]; ok {
 		if b, ok := v.(bool); ok {
@@ -54,7 +54,7 @@ func BoolArg(args map[string]interface{}, key string, def bool) bool {
 	return def
 }
 
-// JsonResult marshals v as indented JSON into a CallToolResult text response.
+// JsonResult serializes v into the text payload shape MCP handlers return, converting marshal failures into tool errors.
 func JsonResult(v interface{}) (*mcp.CallToolResult, error) {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -63,7 +63,7 @@ func JsonResult(v interface{}) (*mcp.CallToolResult, error) {
 	return mcp.NewToolResultText(string(data)), nil
 }
 
-// ToolDescription appends a compact example argument shape when provided.
+// ToolDescription builds short MCP tool help text, appending one compact argument example so clients can retry correctly.
 func ToolDescription(summary, example string) string {
 	if example == "" {
 		return summary
@@ -71,7 +71,7 @@ func ToolDescription(summary, example string) string {
 	return fmt.Sprintf("%s Example arguments: %s", summary, example)
 }
 
-// NewReadOnlyTool creates a read-only MCP tool with accurate annotations.
+// NewReadOnlyTool wraps mcp.NewTool with read-only annotations so clients can reason about safe calls from schema alone.
 func NewReadOnlyTool(name, description string, opts ...mcp.ToolOption) mcp.Tool {
 	toolOpts := []mcp.ToolOption{
 		mcp.WithDescription(description),
@@ -82,7 +82,7 @@ func NewReadOnlyTool(name, description string, opts ...mcp.ToolOption) mcp.Tool 
 	return mcp.NewTool(name, append(toolOpts, opts...)...)
 }
 
-// NewMutatingTool creates a mutating MCP tool with accurate annotations.
+// NewMutatingTool wraps mcp.NewTool with mutating annotations so clients treat the tool as state-changing and non-idempotent.
 func NewMutatingTool(name, description string, opts ...mcp.ToolOption) mcp.Tool {
 	toolOpts := []mcp.ToolOption{
 		mcp.WithDescription(description),
@@ -93,6 +93,7 @@ func NewMutatingTool(name, description string, opts ...mcp.ToolOption) mcp.Tool 
 	return mcp.NewTool(name, append(toolOpts, opts...)...)
 }
 
+// missingArgumentResult builds a retry-oriented MCP error for a missing required arg, optionally showing the caller a valid payload shape.
 func missingArgumentResult(key, example string) *mcp.CallToolResult {
 	msg := fmt.Sprintf("%s parameter is required", key)
 	if example != "" {
@@ -101,8 +102,7 @@ func missingArgumentResult(key, example string) *mcp.CallToolResult {
 	return mcp.NewToolResultError(msg)
 }
 
-// RequireStringArgument returns an actionable MCP error when a required string
-// argument is missing or not a string.
+// RequireStringArgument is the standard required-string gate for MCP handlers, returning a retryable tool error instead of a raw parse failure.
 func RequireStringArgument(req mcp.CallToolRequest, key, example string) (string, *mcp.CallToolResult) {
 	value, err := req.RequireString(key)
 	if err == nil {
@@ -111,8 +111,7 @@ func RequireStringArgument(req mcp.CallToolRequest, key, example string) (string
 	return "", missingArgumentResult(key, example)
 }
 
-// RequireNumberArgument returns an actionable MCP error when a required number
-// argument is missing or not numeric.
+// RequireNumberArgument is the standard required-number gate for MCP handlers, accepting common numeric types and otherwise returning a retryable tool error.
 func RequireNumberArgument(req mcp.CallToolRequest, key, example string) (float64, *mcp.CallToolResult) {
 	value, ok := req.GetArguments()[key]
 	if !ok {
@@ -134,8 +133,7 @@ func RequireNumberArgument(req mcp.CallToolRequest, key, example string) (float6
 	}
 }
 
-// RequireIntArgument returns an actionable MCP error when a required integer
-// argument is missing or not numeric.
+// RequireIntArgument layers integer coercion on RequireNumberArgument so MCP handlers get an int plus the same retryable error contract.
 func RequireIntArgument(req mcp.CallToolRequest, key, example string) (int, *mcp.CallToolResult) {
 	value, errResult := RequireNumberArgument(req, key, example)
 	if errResult != nil {
@@ -144,8 +142,7 @@ func RequireIntArgument(req mcp.CallToolRequest, key, example string) (int, *mcp
 	return int(value), nil
 }
 
-// RequireBoolArgument returns an actionable MCP error when a required boolean
-// argument is missing or not a bool.
+// RequireBoolArgument is the standard required-bool gate for MCP handlers, returning a retryable tool error when the arg is missing or not boolean.
 func RequireBoolArgument(req mcp.CallToolRequest, key, example string) (bool, *mcp.CallToolResult) {
 	value, ok := req.GetArguments()[key]
 	if !ok {
@@ -158,8 +155,7 @@ func RequireBoolArgument(req mcp.CallToolRequest, key, example string) (bool, *m
 	return b, nil
 }
 
-// IsLowValueContent reports whether text is too numeric/punctuation-heavy to be
-// worth indexing as a semantic content chunk.
+// IsLowValueContent applies the semantic-search chunk filter, rejecting long text that is too numeric/punctuation-heavy to justify embedding.
 func IsLowValueContent(text string) bool {
 	nonWhitespace := 0
 	letters := 0
@@ -189,14 +185,14 @@ func RegisterKnownSource(name string) {
 	knownSources = append(knownSources, name)
 }
 
-// KnownSources returns the currently registered source names.
+// KnownSources returns a copy of the registered source names so config code can iterate without mutating shared state.
 func KnownSources() []string {
 	knownSourcesMu.RLock()
 	defer knownSourcesMu.RUnlock()
 	return append([]string(nil), knownSources...)
 }
 
-// NormalizeConfig ensures config.json contains a stable entry for every known source.
+// NormalizeConfig adds missing source slots into cfg and returns it so LoadConfig/SaveConfig preserve every known source in config.json.
 func NormalizeConfig(cfg Config) Config {
 	if cfg.Sources == nil {
 		cfg.Sources = map[string]SourceConfig{}
@@ -209,7 +205,7 @@ func NormalizeConfig(cfg Config) Config {
 	return cfg
 }
 
-// LoadConfig reads config.json from dataDir; returns an empty Config on any error.
+// LoadConfig reads config.json from dataDir, warning on parse failure and returning a normalized empty config on any read/parse error.
 func LoadConfig(dataDir string) Config {
 	path := ConfigPath(dataDir)
 	data, err := os.ReadFile(path)
@@ -242,12 +238,12 @@ func SaveConfig(dataDir string, cfg Config) error {
 	return os.Rename(tmp, path)
 }
 
-// ConfigPath returns the path to config.json within dataDir.
+// ConfigPath resolves the config.json path inside dataDir so all config readers and writers hit the same file.
 func ConfigPath(dataDir string) string {
 	return filepath.Join(dataDir, "config.json")
 }
 
-// UpdateSourceConfig loads, updates, and persists a single source config entry.
+// UpdateSourceConfig is the single-source config patch helper, loading normalized config, mutating one source via `update`, then persisting it.
 func UpdateSourceConfig(dataDir, name string, update func(*SourceConfig)) error {
 	cfg := LoadConfig(dataDir)
 	sc := cfg.Sources[name]
@@ -256,7 +252,7 @@ func UpdateSourceConfig(dataDir, name string, update func(*SourceConfig)) error 
 	return SaveConfig(dataDir, cfg)
 }
 
-// SetSourceEnabled persists the top-level enabled state for a source.
+// SetSourceEnabled persists a source's enabled bit and clears any pending reset flag so the daemon can start it normally.
 func SetSourceEnabled(dataDir, name string, enabled bool) error {
 	return UpdateSourceConfig(dataDir, name, func(sc *SourceConfig) {
 		sc.Enabled = enabled

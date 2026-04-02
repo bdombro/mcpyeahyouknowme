@@ -24,6 +24,7 @@ var tasksAppDef = &appDef{
 	tablesToDrop:  []string{"tasks_items", "tasks_items_fts"},
 }
 
+// initTasksSchema creates the Tasks tables, FTS index, and triggers used by sync and MCP reads.
 func initTasksSchema(db *sql.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS tasks_items (
@@ -71,6 +72,7 @@ func initTasksSchema(db *sql.DB) error {
 	return nil
 }
 
+// syncTasks refreshes task lists/items into SQLite and removes local tasks absent from the latest Tasks API listing.
 func syncTasks(sctx syncContext) error { // nocov
 	ctx := sctx.Ctx.(context.Context)
 	sctx.SetStatus("syncing")
@@ -142,6 +144,7 @@ type taskRecord struct {
 	Parent        string
 }
 
+// buildTaskRecord flattens a Google Tasks item plus its list into one stored task row.
 func buildTaskRecord(taskList *tasks.TaskList, task *tasks.Task) taskRecord {
 	record := taskRecord{}
 	if task == nil {
@@ -165,6 +168,7 @@ func buildTaskRecord(taskList *tasks.TaskList, task *tasks.Task) taskRecord {
 	return record
 }
 
+// registerTasksTools wires the local-DB Tasks read tools into MCP so clients can inspect synced tasks without live API calls.
 func registerTasksTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"tasks_search",
 		core.ToolDescription("Search across Google Tasks", `{"query":"submit expense report","limit":5}`),
@@ -182,6 +186,7 @@ func registerTasksTools(src *Source, prefix string, s toolAdder) {
 	})
 }
 
+// handleTasksSearch runs local FTS for req `query`/`limit`, returning synced task hits with list and status metadata.
 func handleTasksSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, errResult := core.RequireStringArgument(req, "query", `{"query":"submit expense report","limit":5}`)
 	if errResult != nil {
@@ -214,6 +219,7 @@ func handleTasksSearch(_ context.Context, src *Source, req mcp.CallToolRequest) 
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
+// handleTasksList returns synced tasks from SQLite for req `limit`, optionally narrowing by req `status`.
 func handleTasksList(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limit := core.IntArg(req.GetArguments(), "limit", 20)
 	status, _ := req.GetArguments()["status"].(string)
@@ -247,6 +253,7 @@ func handleTasksList(_ context.Context, src *Source, req mcp.CallToolRequest) (*
 	return core.JsonResult(map[string]interface{}{"tasks": results, "count": len(results)})
 }
 
+// tasksSearchEntries turns synced task rows into global search entries enriched with list, due-date, and status metadata.
 func tasksSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT id, title, notes, status, due, tasklist_title, updated FROM tasks_items`)
 	if err != nil { // nocov

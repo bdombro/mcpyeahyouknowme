@@ -25,6 +25,7 @@ var sheetsAppDef = &appDef{
 	tablesToDrop:  []string{"sheets_spreadsheets", "sheets_spreadsheets_fts"},
 }
 
+// initSheetsSchema creates the Sheets tables, FTS index, and triggers used by sync and MCP reads.
 func initSheetsSchema(db *sql.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS sheets_spreadsheets (
@@ -67,6 +68,7 @@ func initSheetsSchema(db *sql.DB) error {
 	return nil
 }
 
+// syncSheets refreshes synced spreadsheets into SQLite and removes local rows missing from the latest Drive listing.
 func syncSheets(sctx syncContext) error { // nocov
 	ctx := sctx.Ctx.(context.Context)
 	sctx.SetStatus("syncing")
@@ -138,6 +140,7 @@ type sheetsRecord struct {
 	SheetCount   int
 }
 
+// buildSheetsRecord flattens Drive and Sheets API payloads into one stored spreadsheet row.
 func buildSheetsRecord(file *drive.File, ss *sheets.Spreadsheet, selfEmail string) sheetsRecord {
 	if file == nil {
 		return sheetsRecord{}
@@ -157,6 +160,7 @@ func buildSheetsRecord(file *drive.File, ss *sheets.Spreadsheet, selfEmail strin
 	return record
 }
 
+// extractSpreadsheetText renders sheet titles and formatted cell values into plain text for storage and search.
 func extractSpreadsheetText(ss *sheets.Spreadsheet) string {
 	var b strings.Builder
 	for i, sheet := range ss.Sheets {
@@ -183,6 +187,7 @@ func extractSpreadsheetText(ss *sheets.Spreadsheet) string {
 	return b.String()
 }
 
+// registerSheetsTools wires the local-DB Sheets read tools into MCP so clients can query synced spreadsheets without live API calls.
 func registerSheetsTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"sheets_search",
 		core.ToolDescription("Search across all Google Sheets", `{"query":"headcount","limit":5}`),
@@ -205,6 +210,7 @@ func registerSheetsTools(src *Source, prefix string, s toolAdder) {
 	})
 }
 
+// handleSheetsSearch runs local FTS for req `query`/`limit`, returning snippet hits from synced spreadsheets rather than calling Google live.
 func handleSheetsSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, errResult := core.RequireStringArgument(req, "query", `{"query":"headcount","limit":5}`)
 	if errResult != nil {
@@ -239,6 +245,7 @@ func handleSheetsSearch(_ context.Context, src *Source, req mcp.CallToolRequest)
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
+// handleSheetsGetSpreadsheet looks up req `spreadsheet_id` in SQLite and returns the stored rendered sheet content plus metadata.
 func handleSheetsGetSpreadsheet(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	sheetID, errResult := core.RequireStringArgument(req, "spreadsheet_id", `{"spreadsheet_id":"1AbcDefGhIj"}`)
 	if errResult != nil {
@@ -263,6 +270,7 @@ func handleSheetsGetSpreadsheet(_ context.Context, src *Source, req mcp.CallTool
 	})
 }
 
+// handleSheetsListRecent returns the newest synced spreadsheets from SQLite for req `limit`, or an empty JSON payload when no DB exists.
 func handleSheetsListRecent(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limit := core.IntArg(req.GetArguments(), "limit", 20)
 	if src.db == nil {
@@ -289,6 +297,7 @@ func handleSheetsListRecent(_ context.Context, src *Source, req mcp.CallToolRequ
 	return core.JsonResult(map[string]interface{}{"spreadsheets": results, "count": len(results)})
 }
 
+// sheetsSearchEntries turns synced spreadsheet rows into title, owner, and chunked cell-content entries for global search.
 func sheetsSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT id, title, content, modified_time, owners FROM sheets_spreadsheets`)
 	if err != nil { // nocov

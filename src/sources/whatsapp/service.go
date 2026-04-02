@@ -62,7 +62,7 @@ type MCPService struct {
 	httpCli *http.Client
 }
 
-// NewMCPService creates an MCPService backed by the given store and REST API URL.
+// NewMCPService builds the WhatsApp MCP facade, combining direct SQLite reads with REST writes routed through apiURL.
 func NewMCPService(store *MessageStore, apiURL string) *MCPService {
 	return &MCPService{
 		store:   store,
@@ -73,6 +73,7 @@ func NewMCPService(store *MessageStore, apiURL string) *MCPService {
 
 // ---------- Formatting ----------
 
+// formatMessage renders one message into the human-readable MCP text format.
 func (s *MCPService) formatMessage(msg MCPMessage) string {
 	var b strings.Builder
 	ts := msg.Timestamp.Format("2006-01-02 15:04:05")
@@ -93,6 +94,7 @@ func (s *MCPService) formatMessage(msg MCPMessage) string {
 	return b.String()
 }
 
+// formatMessages renders a message slice into MCP text output, or a friendly empty-state string.
 func (s *MCPService) formatMessages(msgs []MCPMessage) string {
 	if len(msgs) == 0 {
 		return "No messages to display."
@@ -106,7 +108,7 @@ func (s *MCPService) formatMessages(msgs []MCPMessage) string {
 
 // ---------- Read: Messages ----------
 
-// ListMessages returns messages matching the given filters.
+// ListMessages is the main message-read entrypoint: it chooses FTS when `query` is set, otherwise chronological filters/pagination.
 func (s *MCPService) ListMessages(after, before, sender, chatJID, query string, limit, page int, includeContext bool, ctxBefore, ctxAfter int) (string, error) {
 	if query != "" {
 		return s.bm25MessageSearch(query, limit, chatJID, after, before, sender, includeContext, ctxBefore, ctxAfter)
@@ -114,6 +116,7 @@ func (s *MCPService) ListMessages(after, before, sender, chatJID, query string, 
 	return s.listMessagesChronological(after, before, sender, chatJID, limit, page, includeContext, ctxBefore, ctxAfter)
 }
 
+// listMessagesChronological loads filtered messages newest-first, optionally expanding surrounding chat context.
 func (s *MCPService) listMessagesChronological(after, before, sender, chatJID string, limit, page int, includeContext bool, ctxBefore, ctxAfter int) (string, error) {
 	parts := []string{"SELECT messages.timestamp, messages.sender, chats.name, messages.content, messages.is_from_me, chats.jid, messages.id, messages.media_type FROM messages JOIN chats ON messages.chat_jid = chats.jid"}
 	var where []string
@@ -156,6 +159,7 @@ func (s *MCPService) listMessagesChronological(after, before, sender, chatJID st
 	return s.formatMessages(msgs), nil
 }
 
+// bm25MessageSearch runs FTS search, hydrates ranked hits, and optionally expands surrounding chat context.
 func (s *MCPService) bm25MessageSearch(query string, limit int, chatJID, after, before, sender string, includeContext bool, ctxBefore, ctxAfter int) (string, error) {
 	ranked := s.bm25Search(query, limit*5, chatJID, after, before)
 
@@ -197,6 +201,7 @@ type searchResult struct {
 	score   float64
 }
 
+// bm25Search returns ranked message IDs from the FTS table, with optional chat and time filters.
 func (s *MCPService) bm25Search(query string, limit int, chatJID, after, before string) []searchResult {
 	safeQuery := strings.ReplaceAll(query, `"`, `""`)
 	ftsQuery := `"` + safeQuery + `"`
@@ -241,7 +246,7 @@ func (s *MCPService) bm25Search(query string, limit int, chatJID, after, before 
 
 // ---------- Read: Message Context ----------
 
-// GetMessageContext returns a message plus surrounding context messages.
+// GetMessageContext loads `messageID` plus before/after neighbors from the same chat so callers can inspect local conversation context.
 func (s *MCPService) GetMessageContext(messageID string, beforeN, afterN int) (*MCPMessageContext, error) {
 	row := s.store.db.QueryRow(`
 		SELECT messages.timestamp, messages.sender, chats.name, messages.content,
@@ -275,6 +280,7 @@ func (s *MCPService) GetMessageContext(messageID string, beforeN, afterN int) (*
 	return &MCPMessageContext{Message: target, Before: beforeMsgs, After: afterMsgs}, nil
 }
 
+// messagesAround returns nearby messages from one chat before or after a timestamp boundary.
 func (s *MCPService) messagesAround(chatJID, ts, op, order string, n int) []MCPMessage {
 	rows, err := s.store.db.Query(fmt.Sprintf(`
 		SELECT messages.timestamp, messages.sender, chats.name, messages.content,
@@ -291,6 +297,7 @@ func (s *MCPService) messagesAround(chatJID, ts, op, order string, n int) []MCPM
 	return scanMessages(rows)
 }
 
+// expandContext replaces each hit with surrounding context messages so MCP callers see local conversation flow.
 func (s *MCPService) expandContext(msgs []MCPMessage, before, after int) []MCPMessage {
 	var expanded []MCPMessage
 	for _, msg := range msgs {
@@ -308,7 +315,7 @@ func (s *MCPService) expandContext(msgs []MCPMessage, before, after int) []MCPMe
 
 // ---------- Read: Chats ----------
 
-// ListChats returns chats matching the given query/sort/pagination parameters.
+// ListChats returns paged chat summaries, optionally fuzzy-filtered by name/participant and optionally including the last message row.
 func (s *MCPService) ListChats(query string, limit, page int, includeLast bool, sortBy string) ([]MCPChat, error) {
 	parts := []string{`SELECT chats.jid, chats.name, chats.last_message_time,
 		messages.content, messages.sender, messages.is_from_me FROM chats`}
@@ -382,6 +389,7 @@ func (s *MCPService) ListChats(query string, limit, page int, includeLast bool, 
 	return chats, nil
 }
 
+// fuzzyMatchChats returns chat JIDs whose names, IDs, or participant names fuzzy-match query.
 func (s *MCPService) fuzzyMatchChats(query string) []string {
 	jids := make(map[string]struct{})
 
@@ -411,6 +419,7 @@ func (s *MCPService) fuzzyMatchChats(query string) []string {
 	return result
 }
 
+// findChatsByParticipantName returns chats linked to contacts whose full or push name matches query.
 func (s *MCPService) findChatsByParticipantName(query string) []string {
 	if s.store.contactsDB == nil {
 		return nil
@@ -465,7 +474,7 @@ func (s *MCPService) findChatsByParticipantName(query string) []string {
 
 // ---------- Read: Single Chat ----------
 
-// GetChat returns a single chat by JID.
+// GetChat loads one chat by JID, optionally joining the latest message so callers can show a richer chat summary.
 func (s *MCPService) GetChat(chatJID string, includeLast bool) (*MCPChat, error) {
 	q := `SELECT c.jid, c.name, c.last_message_time, m.content, m.sender, m.is_from_me
 		FROM chats c`
@@ -495,7 +504,7 @@ func (s *MCPService) GetChat(chatJID string, includeLast bool) (*MCPChat, error)
 	return &chat, nil
 }
 
-// GetDirectChatByContact finds the direct chat for a phone number.
+// GetDirectChatByContact finds the non-group chat whose JID matches `phone`, returning the latest message metadata when present.
 func (s *MCPService) GetDirectChatByContact(phone string) (*MCPChat, error) {
 	q := `SELECT c.jid, c.name, c.last_message_time, m.content, m.sender, m.is_from_me
 		FROM chats c
@@ -522,7 +531,7 @@ func (s *MCPService) GetDirectChatByContact(phone string) (*MCPChat, error) {
 	return &chat, nil
 }
 
-// GetContactChats returns all chats involving a contact JID.
+// GetContactChats returns paged chats where `jid` appeared as sender or direct-chat JID, so callers can pivot from a contact to conversations.
 func (s *MCPService) GetContactChats(jid string, limit, page int) ([]MCPChat, error) {
 	rows, err := s.store.db.Query(`
 		SELECT DISTINCT c.jid, c.name, c.last_message_time,
@@ -562,7 +571,7 @@ func (s *MCPService) GetContactChats(jid string, limit, page int) ([]MCPChat, er
 
 // ---------- Read: Contacts ----------
 
-// SearchContacts searches WhatsApp contacts by name or phone number.
+// SearchContacts searches chats plus whatsmeow contacts for `query`, merging and deduplicating contact-shaped results.
 func (s *MCPService) SearchContacts(query string) ([]MCPContact, error) {
 	pattern := "%" + query + "%"
 	rows, err := s.store.db.Query(`
@@ -631,7 +640,7 @@ func (s *MCPService) SearchContacts(query string) ([]MCPContact, error) {
 
 // ---------- Read: Last Interaction ----------
 
-// GetLastInteraction returns the most recent message involving the given JID.
+// GetLastInteraction returns the newest message involving `jid`, formatted for direct display rather than raw JSON.
 func (s *MCPService) GetLastInteraction(jid string) (string, error) {
 	row := s.store.db.QueryRow(`
 		SELECT m.timestamp, m.sender, c.name, m.content, m.is_from_me, c.jid, m.id, m.media_type
@@ -673,21 +682,22 @@ type apiDownloadResponse struct {
 	Path     string `json:"path,omitempty"`
 }
 
-// SendMessage sends a text message via the daemon REST API.
+// SendMessage posts a text send request through the core daemon because MCP never writes directly to SQLite or WhatsApp.
 func (s *MCPService) SendMessage(recipient, message string) (bool, string, error) {
 	return s.postSend(apiSendRequest{Recipient: recipient, Message: message})
 }
 
-// SendFile sends a file via the daemon REST API.
+// SendFile posts a media send request through the core daemon, with `mediaPath` resolved on the machine running WhatsApp.
 func (s *MCPService) SendFile(recipient, mediaPath string) (bool, string, error) {
 	return s.postSend(apiSendRequest{Recipient: recipient, MediaPath: mediaPath})
 }
 
-// SendAudioMessage sends an audio file as a voice message via the daemon REST API.
+// SendAudioMessage posts an audio send request through the core daemon, expecting daemon-side voice-message handling.
 func (s *MCPService) SendAudioMessage(recipient, mediaPath string) (bool, string, error) {
 	return s.postSend(apiSendRequest{Recipient: recipient, MediaPath: mediaPath})
 }
 
+// postSend posts one send request to the core daemon and returns its success/message payload.
 func (s *MCPService) postSend(req apiSendRequest) (bool, string, error) {
 	body, _ := json.Marshal(req)
 	resp, err := s.httpCli.Post(s.apiURL+"/send", "application/json", bytes.NewReader(body))
@@ -724,6 +734,7 @@ func (s *MCPService) DownloadMedia(messageID, chatJID string) (string, error) {
 
 // ---------- Row scanning helpers ----------
 
+// scanMessages scans query rows into MCP messages, skipping malformed rows instead of failing the whole result.
 func scanMessages(rows *sql.Rows) []MCPMessage {
 	var msgs []MCPMessage
 	for rows.Next() {
@@ -751,6 +762,7 @@ type scannable interface {
 	Scan(dest ...interface{}) error
 }
 
+// scanMessageRow scans one row-like source into an MCP message for search and context helpers.
 func scanMessageRow(row scannable) (MCPMessage, error) {
 	var ts, sender, chatName, content, chatJID, id string
 	var isFromMe bool

@@ -2,7 +2,7 @@ package google_places
 
 import "net/http"
 
-// NewSource creates a Google Places source rooted at dataDir.
+// NewSource builds the live-only Google Places source; `dataDir` is ignored because this source stores no local state.
 func NewSource(dataDir string) *Source {
 	_ = dataDir
 	return &Source{

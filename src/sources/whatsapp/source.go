@@ -9,6 +9,7 @@ import (
 	"mcpyeahyouknowme/core"
 )
 
+// init registers the whatsapp source name so config normalization keeps a stable entry for it.
 func init() {
 	core.RegisterKnownSource("whatsapp")
 }
@@ -20,7 +21,7 @@ type Source struct {
 	dataDir string
 }
 
-// NewSource creates a WhatsApp source rooted at dataDir.
+// NewSource builds the MCP/core WhatsApp source around dataDir, falling back to a degraded empty-result store if SQLite cannot open.
 func NewSource(dataDir string) *Source {
 	store, err := NewMessageStore(dataDir)
 	if err != nil {
@@ -37,8 +38,11 @@ func NewSourceFromStore(store *MessageStore, apiURL string) *Source {
 	return &Source{store: store, svc: NewMCPService(store, apiURL)}
 }
 
+// Name returns the source key used for config, registry lookup, and tool prefixes.
 func (w *Source) Name() string        { return "whatsapp" }
+// Description returns the human label shown in CLI and status output.
 func (w *Source) Description() string { return "WhatsApp" }
+// Close releases the message store connections so callers do not leak SQLite handles.
 func (w *Source) Close() error        { return w.store.Close() }
 
 // Reset removes all WhatsApp data files. Called by the daemon after stopping

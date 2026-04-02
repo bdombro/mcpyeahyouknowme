@@ -13,10 +13,10 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// RequiresAuth returns true because Google Suite needs OAuth.
+// RequiresAuth tells the core daemon not to start GSuite sync until OAuth state exists.
 func (g *Source) RequiresAuth() bool { return true }
 
-// StartCore runs the periodic sync for all enabled Google Workspace apps.
+// StartCore runs the 5-minute GSuite poll loop, retrying transient app errors but disabling the source on hard auth loss.
 func (g *Source) StartCore(ctx context.Context) error { // nocov
 	fmt.Println("Starting Google Suite sync daemon...")
 	if !g.isAuthenticated() { // nocov
@@ -53,6 +53,7 @@ func (g *Source) StartCore(ctx context.Context) error { // nocov
 	})
 }
 
+// syncAllApps reloads enabled apps, runs each app sync, records status, and persists refreshed OAuth tokens.
 func (g *Source) syncAllApps(ctx context.Context) error { // nocov
 	if g.db == nil { // nocov
 		var err error
@@ -121,6 +122,7 @@ func (g *Source) syncAllApps(ctx context.Context) error { // nocov
 	return nil
 }
 
+// getLastSyncTime returns the stored last-sync timestamp for appName, or zero when none was recorded.
 func (g *Source) getLastSyncTime(appName string) time.Time {
 	if g.db == nil {
 		return time.Time{}
@@ -134,6 +136,7 @@ func (g *Source) getLastSyncTime(appName string) time.Time {
 	return t
 }
 
+// setLastSyncTime stores the most recent successful sync time for appName in sync_state.
 func (g *Source) setLastSyncTime(appName string, t time.Time) {
 	if g.db == nil {
 		return
@@ -142,6 +145,7 @@ func (g *Source) setLastSyncTime(appName string, t time.Time) {
 		appName+"_last_sync", t.Format(time.RFC3339))
 }
 
+// getSyncStatus returns the last transient sync status string for appName so info can show progress.
 func (g *Source) getSyncStatus(appName string) string {
 	if g.db == nil {
 		return ""
@@ -151,6 +155,7 @@ func (g *Source) getSyncStatus(appName string) string {
 	return value
 }
 
+// setSyncStatus stores the current sync status string for appName so long-running syncs surface progress.
 func (g *Source) setSyncStatus(appName, status string) {
 	if g.db == nil {
 		return

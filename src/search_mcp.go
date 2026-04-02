@@ -18,7 +18,7 @@ type searchToolStore interface {
 	Search(query string, limit int, sourceFilter, typeFilter string) ([]SearchResult, error)
 }
 
-// RegisterSearchTool adds the global search MCP tool.
+// RegisterSearchTool centralizes global-search MCP wiring so startup can expose one hybrid search entrypoint backed by `store`.
 func RegisterSearchTool(s *server.MCPServer, store searchToolStore) {
 	s.AddTool(core.NewReadOnlyTool("search",
 		core.ToolDescription(searchToolDescription, searchToolExample),

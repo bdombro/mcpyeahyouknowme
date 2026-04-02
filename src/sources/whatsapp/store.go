@@ -23,6 +23,7 @@ type MessageStore struct {
 	contactsDB *sql.DB
 }
 
+// Close releases the message and contacts database handles so callers do not leak SQLite connections.
 func (store *MessageStore) Close() error {
 	if store.contactsDB != nil {
 		store.contactsDB.Close()
@@ -30,6 +31,7 @@ func (store *MessageStore) Close() error {
 	return store.db.Close()
 }
 
+// StoreChat upserts one chat row with its latest known display name and last-message time.
 func (store *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time) error {
 	_, err := store.db.Exec(
 		"INSERT OR REPLACE INTO chats (jid, name, last_message_time) VALUES (?, ?, ?)",
@@ -38,6 +40,7 @@ func (store *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time
 	return err
 }
 
+// StoreMessage upserts one message row, including optional media metadata, unless the payload is empty.
 func (store *MessageStore) StoreMessage(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool,
 	mediaType, filename, url string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error {
 	if content == "" && mediaType == "" {
@@ -53,6 +56,7 @@ func (store *MessageStore) StoreMessage(id, chatJID, sender, content string, tim
 	return err
 }
 
+// GetMessages returns recent messages for one chat so callers can render chat history.
 func (store *MessageStore) GetMessages(chatJID string, limit int) ([]Message, error) {
 	rows, err := store.db.Query(
 		"SELECT sender, content, timestamp, is_from_me, media_type, filename FROM messages WHERE chat_jid = ? ORDER BY timestamp DESC LIMIT ?",
@@ -78,6 +82,7 @@ func (store *MessageStore) GetMessages(chatJID string, limit int) ([]Message, er
 	return messages, nil
 }
 
+// GetChats returns chat last-message times keyed by JID for callers that need simple chat summaries.
 func (store *MessageStore) GetChats() (map[string]time.Time, error) {
 	rows, err := store.db.Query("SELECT jid, last_message_time FROM chats ORDER BY last_message_time DESC")
 	if err != nil { // nocov
@@ -99,6 +104,7 @@ func (store *MessageStore) GetChats() (map[string]time.Time, error) {
 	return chats, nil
 }
 
+// StoreMediaInfo updates stored media download metadata for one message row.
 func (store *MessageStore) StoreMediaInfo(id, chatJID, url string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error {
 	_, err := store.db.Exec(
 		"UPDATE messages SET url = ?, media_key = ?, file_sha256 = ?, file_enc_sha256 = ?, file_length = ? WHERE id = ? AND chat_jid = ?",
@@ -107,6 +113,7 @@ func (store *MessageStore) StoreMediaInfo(id, chatJID, url string, mediaKey, fil
 	return err
 }
 
+// GetMediaInfo returns stored media metadata for one message so downloads can be reconstructed later.
 func (store *MessageStore) GetMediaInfo(id, chatJID string) (string, string, string, []byte, []byte, []byte, uint64, error) {
 	var mediaType, filename, url string
 	var mediaKey, fileSHA256, fileEncSHA256 []byte
@@ -120,16 +127,17 @@ func (store *MessageStore) GetMediaInfo(id, chatJID string) (string, string, str
 	return mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength, err
 }
 
-// looksLikeGroupPlaceholder returns true for names like "Group 120363364944939917".
+// looksLikeGroupPlaceholder flags fallback group names so chat-name resolution knows they are safe to replace.
 func looksLikeGroupPlaceholder(name string) bool {
 	return strings.HasPrefix(name, "Group ") && looksLikePhoneNumber(strings.TrimPrefix(name, "Group "))
 }
 
-// isSynthesizedName returns true for parenthesized names like "(Kevin, Eileen)".
+// isSynthesizedName flags synthesized display names so real chat/contact names can replace them during later resolution.
 func isSynthesizedName(name string) bool {
 	return strings.HasPrefix(name, "(") && strings.HasSuffix(name, ")")
 }
 
+// StoreGroupParticipants replaces stored participant membership for one group from a fresh sync snapshot.
 func (store *MessageStore) StoreGroupParticipants(groupJID string, participantJIDs []string) error {
 	tx, err := store.db.Begin()
 	if err != nil { // nocov

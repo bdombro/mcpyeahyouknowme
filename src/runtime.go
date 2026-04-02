@@ -15,7 +15,7 @@ import (
 	"mcpyeahyouknowme/sources/registry"
 )
 
-// runCore starts data source core services with config polling (10s interval).
+// runCore is the long-lived daemon loop: it polls config, starts/stops/reset sources, and kicks optional search indexing on each tick.
 func runCore() {
 	dir := core.DataDir()
 	cfg := loadConfig(dir)
@@ -128,6 +128,7 @@ func runCore() {
 	}
 }
 
+// shouldRestartSource reports whether auth changed while enable/reset state stayed stable, so core should rebuild the source.
 func shouldRestartSource(prev, next core.SourceConfig) bool {
 	return prev.Enabled == next.Enabled &&
 		prev.Reset == next.Reset &&
@@ -177,7 +178,7 @@ func startSource(dir, name string, running map[string]context.CancelFunc) {
 	}()
 }
 
-// handleReset calls source.Reset(), then persists the source as disabled.
+// handleReset calls source.Reset(), persists the source disabled, and zeroes cfg state so this poll tick stops treating it as active.
 func handleReset(dir, name string, cfg *core.Config) {
 	src := registry.NewSource(name, dir)
 	if src != nil {

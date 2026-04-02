@@ -47,6 +47,7 @@ func fuzzyMatch(query, text string) bool {
 	return fuzzyMatchThreshold(query, text, 0.6)
 }
 
+// fuzzyMatchThreshold powers chat/contact discovery, using a caller-supplied threshold to balance typo tolerance against false positives.
 func fuzzyMatchThreshold(query, text string, threshold float64) bool {
 	if text == "" {
 		return false
@@ -78,14 +79,17 @@ func fuzzyMatchThreshold(query, text string, threshold float64) bool {
 	return true
 }
 
+// toLower centralizes lowercase normalization so fuzzy chat/contact matching stays consistent across helper paths.
 func toLower(s string) string {
 	return strings.ToLower(s)
 }
 
+// containsSubstring is the cheap pre-check fuzzy matching uses before paying for slower similarity work.
 func containsSubstring(haystack, needle string) bool {
 	return len(needle) <= len(haystack) && indexSubstring(haystack, needle) >= 0
 }
 
+// indexSubstring is the byte-level substring primitive behind the custom fuzzy matcher, returning -1 when `sub` is absent.
 func indexSubstring(s, sub string) int {
 	n := len(sub)
 	for i := 0; i+n <= len(s); i++ {
@@ -96,6 +100,7 @@ func indexSubstring(s, sub string) int {
 	return -1
 }
 
+// splitWords splits s on ASCII whitespace so fuzzy matching can compare word-by-word.
 func splitWords(s string) []string {
 	var words []string
 	start := -1
@@ -115,6 +120,7 @@ func splitWords(s string) []string {
 	return words
 }
 
+// nullStr unwraps nullable SQL strings so MCP formatting and search indexing can avoid repeating `.Valid` checks everywhere.
 func nullStr(ns sql.NullString) string {
 	if ns.Valid {
 		return ns.String
@@ -122,6 +128,7 @@ func nullStr(ns sql.NullString) string {
 	return ""
 }
 
+// jidPhone returns the phone/user part before the WhatsApp JID suffix.
 func jidPhone(jid string) string {
 	if idx := strings.Index(jid, "@"); idx > 0 {
 		return jid[:idx]
@@ -129,6 +136,7 @@ func jidPhone(jid string) string {
 	return jid
 }
 
+// parseTime parses the timestamp formats stored across WhatsApp sync paths into time.Time.
 func parseTime(s string) time.Time {
 	t, err := time.Parse(time.RFC3339Nano, s)
 	if err != nil {

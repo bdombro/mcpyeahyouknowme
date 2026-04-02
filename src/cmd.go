@@ -25,6 +25,7 @@ type Command struct {
 	Run         func(args []string)
 }
 
+// commandTree builds the canonical CLI graph so dispatch, usage, and shell completions stay in sync from one definition.
 func commandTree() []Command {
 	dataDir := core.DataDir()
 	return []Command{
@@ -192,6 +193,7 @@ func commandTree() []Command {
 	}
 }
 
+// dispatchCLI resolves top-level args into a command run, printing usage to stderr and exiting non-zero when input is invalid.
 func dispatchCLI(args []string) {
 	if len(args) == 0 {
 		printUsage()
@@ -206,6 +208,7 @@ func dispatchCLI(args []string) {
 	}
 }
 
+// dispatchCommands walks one command level, runs the matched handler with remaining args, and returns user-facing usage errors instead of exiting.
 func dispatchCommands(commands []Command, args []string) string {
 	cmd := findCommand(commands, args[0])
 	if cmd == nil {
@@ -227,6 +230,7 @@ func dispatchCommands(commands []Command, args []string) string {
 	return ""
 }
 
+// findCommand returns the command metadata for name so dispatch, usage, and completions can share the same lookup path.
 func findCommand(commands []Command, name string) *Command {
 	for i := range commands {
 		if commands[i].Name == name {
@@ -236,6 +240,7 @@ func findCommand(commands []Command, name string) *Command {
 	return nil
 }
 
+// printUsage renders grouped help to stderr from the command tree so manual use and bad-input paths show the same surface area.
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "Usage: mcpyeahyouknowme <command> [flags]")
 	fmt.Fprintln(os.Stderr, "")
@@ -272,14 +277,17 @@ func printUsage() {
 	}
 }
 
+// usageLine formats one aligned help row from a usage string and summary for human-readable CLI output.
 func usageLine(usage, summary string) string {
 	return fmt.Sprintf("  %-28s %s", usage, summary)
 }
 
+// topLevelCommands exposes the root command list so completion generators do not rebuild their own command inventory.
 func topLevelCommands() []Command {
 	return commandTree()
 }
 
+// commandNames extracts command names so shell completion code can suggest only legal tokens.
 func commandNames(commands []Command) []string {
 	names := make([]string, 0, len(commands))
 	for _, cmd := range commands {
@@ -288,6 +296,7 @@ func commandNames(commands []Command) []string {
 	return names
 }
 
+// choiceValues extracts argument choice values so shell completion code can suggest constrained non-command inputs.
 func choiceValues(choices []Choice) []string {
 	values := make([]string, 0, len(choices))
 	for _, choice := range choices {
@@ -296,6 +305,7 @@ func choiceValues(choices []Choice) []string {
 	return values
 }
 
+// shellCompletionWords returns the supported shell names in the space-delimited format bash completion generation expects.
 func shellCompletionWords() string {
 	return strings.Join(choiceValues(findCommand(commandTree(), "completions").ArgChoices), " ")
 }

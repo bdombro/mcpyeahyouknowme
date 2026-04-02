@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// FormatSizeMB renders a byte count as megabytes with one decimal place.
+// FormatSizeMB formats byte counts for human-facing status output, clamping zero or negative values to `0.0 MB`.
 func FormatSizeMB(bytes int64) string {
 	if bytes <= 0 {
 		return "0.0 MB"
@@ -53,6 +53,7 @@ func SQLiteObjectSizeBytes(db *sql.DB, prefixes []string) (int64, error) {
 	return total, rows.Err()
 }
 
+// approximateSQLiteObjectSizeBytes falls back to summing estimated table sizes when dbstat is unavailable.
 func approximateSQLiteObjectSizeBytes(db *sql.DB, prefixes []string) (int64, error) {
 	tableNames, err := sqliteTableNames(db)
 	if err != nil {
@@ -73,6 +74,7 @@ func approximateSQLiteObjectSizeBytes(db *sql.DB, prefixes []string) (int64, err
 	return total, nil
 }
 
+// sqliteTableNames lists table names from sqlite_master so size estimation can inspect matching objects.
 func sqliteTableNames(db *sql.DB) ([]string, error) {
 	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table'`)
 	if err != nil {
@@ -91,6 +93,7 @@ func sqliteTableNames(db *sql.DB) ([]string, error) {
 	return names, rows.Err()
 }
 
+// approximateSQLiteTableSizeBytes estimates one table's payload bytes by summing text-cast column lengths.
 func approximateSQLiteTableSizeBytes(db *sql.DB, tableName string) (int64, error) {
 	columns, err := sqliteTableColumns(db, tableName)
 	if err != nil {
@@ -114,6 +117,7 @@ func approximateSQLiteTableSizeBytes(db *sql.DB, tableName string) (int64, error
 	return total, nil
 }
 
+// sqliteTableColumns lists column names for tableName so approximate size queries can include every field.
 func sqliteTableColumns(db *sql.DB, tableName string) ([]string, error) {
 	rows, err := db.Query(fmt.Sprintf(`PRAGMA table_info("%s")`, quoteSQLiteIdentifier(tableName)))
 	if err != nil {
@@ -137,10 +141,12 @@ func sqliteTableColumns(db *sql.DB, tableName string) ([]string, error) {
 	return columns, rows.Err()
 }
 
+// quoteSQLiteIdentifier escapes double quotes so identifiers can be interpolated into SQLite statements safely.
 func quoteSQLiteIdentifier(value string) string {
 	return strings.ReplaceAll(value, `"`, `""`)
 }
 
+// matchesSQLiteObject reports whether name matches a tracked object prefix, including shadow tables.
 func matchesSQLiteObject(name string, prefixes []string) bool {
 	for _, prefix := range prefixes {
 		if name == prefix || strings.HasPrefix(name, prefix+"_") {

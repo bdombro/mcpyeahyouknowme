@@ -26,6 +26,7 @@ var docsAppDef = &appDef{
 	tablesToDrop:  []string{"docs_documents", "docs_documents_fts"},
 }
 
+// initDocsSchema creates the Docs tables, FTS index, and triggers used by sync and MCP reads.
 func initDocsSchema(db *sql.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS docs_documents (
@@ -71,6 +72,7 @@ func initDocsSchema(db *sql.DB) error {
 	return nil
 }
 
+// syncDocs refreshes synced Docs metadata/content into SQLite and deletes rows for documents no longer returned by Drive.
 func syncDocs(sctx syncContext) error { // nocov
 	ctx := sctx.Ctx.(context.Context)
 	sctx.SetStatus("syncing")
@@ -143,6 +145,7 @@ type docsRecord struct {
 	Owners       string
 }
 
+// buildDocsRecord flattens Drive/Docs API payloads into one stored document row for SQLite.
 func buildDocsRecord(file *drive.File, doc *docs.Document, selfEmail string) docsRecord {
 	if file == nil {
 		return docsRecord{}
@@ -158,6 +161,7 @@ func buildDocsRecord(file *drive.File, doc *docs.Document, selfEmail string) doc
 	}
 }
 
+// extractDocumentText concatenates paragraph text from a Docs document so search and get-document can return plain text.
 func extractDocumentText(doc *docs.Document) string {
 	var text string
 	for _, element := range doc.Body.Content {
@@ -172,6 +176,7 @@ func extractDocumentText(doc *docs.Document) string {
 	return text
 }
 
+// registerDocsTools wires the local-DB Docs read tools into MCP so clients can search or fetch synced docs without live Google calls.
 func registerDocsTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"docs_search",
 		core.ToolDescription("Search across all Google Docs", `{"query":"quarterly roadmap","limit":5}`),
@@ -194,6 +199,7 @@ func registerDocsTools(src *Source, prefix string, s toolAdder) {
 	})
 }
 
+// handleDocsSearch runs local FTS for req `query`/`limit`, returning snippet hits from synced docs instead of calling Google live.
 func handleDocsSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, errResult := core.RequireStringArgument(req, "query", `{"query":"quarterly roadmap","limit":5}`)
 	if errResult != nil {
@@ -228,6 +234,7 @@ func handleDocsSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
+// handleDocsGetDocument looks up req `document_id` in SQLite and returns the stored body plus metadata, or a tool error if missing.
 func handleDocsGetDocument(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	docID, errResult := core.RequireStringArgument(req, "document_id", `{"document_id":"1AbcDefGhIj"}`)
 	if errResult != nil {
@@ -251,6 +258,7 @@ func handleDocsGetDocument(_ context.Context, src *Source, req mcp.CallToolReque
 	})
 }
 
+// handleDocsListRecent returns the newest synced docs from SQLite for req `limit`, with an empty JSON payload when no DB is available.
 func handleDocsListRecent(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limit := core.IntArg(req.GetArguments(), "limit", 20)
 	if src.db == nil {
@@ -275,6 +283,7 @@ func handleDocsListRecent(_ context.Context, src *Source, req mcp.CallToolReques
 	return core.JsonResult(map[string]interface{}{"documents": results, "count": len(results)})
 }
 
+// docsSearchEntries turns synced doc rows into title, owner, and chunked body entries so global search can index them incrementally.
 func docsSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT id, title, content, modified_time, owners FROM docs_documents`)
 	if err != nil { // nocov
@@ -347,6 +356,7 @@ func buildContentEntries(sourceName, id, title, content, modTime, owners,
 
 // --- shared helpers ---
 
+// formatDriveOwners formats Drive owners, excluding selfEmail, so titles and metadata keep useful collaborator context.
 func formatDriveOwners(owners []*drive.User, selfEmail string) string {
 	parts := make([]string, 0, len(owners))
 	for _, o := range owners {
@@ -364,6 +374,7 @@ func formatDriveOwners(owners []*drive.User, selfEmail string) string {
 	return strings.Join(parts, ", ")
 }
 
+// deleteOrphanedRows deletes local rows whose IDs disappeared from the latest remote listing.
 func deleteOrphanedRows(db *sql.DB, table string, remoteIDs map[string]bool) {
 	rows, err := db.Query("SELECT id FROM " + table)
 	if err != nil { // nocov
@@ -386,6 +397,7 @@ func deleteOrphanedRows(db *sql.DB, table string, remoteIDs map[string]bool) {
 	}
 }
 
+// countTable returns the row count for one table so info output can summarize synced app data.
 func countTable(db *sql.DB, table string) (int, error) {
 	var n int
 	err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&n)

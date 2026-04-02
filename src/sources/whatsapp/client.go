@@ -30,7 +30,7 @@ type SendMessageRequest struct {
 	MediaPath string `json:"media_path,omitempty"`
 }
 
-// sendWhatsAppMessage sends a text or media message to the given recipient.
+// sendWhatsAppMessage is the daemon-side live send path: it resolves `recipient`, optionally uploads `mediaPath`, then sends through the connected client.
 func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string) (bool, string) {
 	if !client.IsConnected() {
 		return false, "Not connected to WhatsApp"
@@ -188,14 +188,20 @@ type mediaDownloader struct {
 	fileEncSHA256 []byte
 }
 
+// GetDirectPath returns the WhatsApp direct path so whatsmeow can fetch the encrypted payload.
 func (d *mediaDownloader) GetDirectPath() string    { return d.directPath }
+// GetURL returns the media URL so whatsmeow can fetch the encrypted payload.
 func (d *mediaDownloader) GetURL() string           { return d.url }
+// GetMediaKey returns the media key used to decrypt the downloaded payload.
 func (d *mediaDownloader) GetMediaKey() []byte      { return d.mediaKey }
+// GetFileLength returns the stored media length so whatsmeow can validate the download.
 func (d *mediaDownloader) GetFileLength() uint64    { return d.fileLength }
+// GetFileSHA256 returns the plaintext SHA so whatsmeow can validate the download.
 func (d *mediaDownloader) GetFileSHA256() []byte    { return d.fileSHA256 }
+// GetFileEncSHA256 returns the encrypted SHA so whatsmeow can validate the download.
 func (d *mediaDownloader) GetFileEncSHA256() []byte { return d.fileEncSHA256 }
 
-// downloadMedia downloads media from WhatsApp servers and saves it to {dataDir}/downloads/.
+// downloadMedia is the daemon-side live download path: it reconstructs media params from SQLite, fetches from WhatsApp, and writes under `dataDir/downloads`.
 func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, messageID, chatJID string, dataDir string) (bool, string, string, string, error) {
 	var mediaType, filename, url string
 	var mediaKey, fileSHA256, fileEncSHA256 []byte

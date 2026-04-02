@@ -11,6 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+// runMcp starts the stdio MCP server, registering tools for available authenticated sources and global search.
 func runMcp() {
 	dir := core.DataDir()
 	cfg := core.LoadConfig(dir)

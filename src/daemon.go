@@ -12,11 +12,13 @@ import (
 
 const plistName = "com.mcpyeahyouknowme.core"
 
+// plistPath returns the LaunchAgent plist path so daemon commands target the installed service file.
 func plistPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "Library", "LaunchAgents", plistName+".plist")
 }
 
+// requireDaemonInstalled returns the installed plist path, or exits after printing install guidance.
 func requireDaemonInstalled() string {
 	plist := plistPath()
 	if _, err := os.Stat(plist); os.IsNotExist(err) {
@@ -26,6 +28,7 @@ func requireDaemonInstalled() string {
 	return plist
 }
 
+// runStart reloads the LaunchAgent plist so macOS starts the core daemon.
 func runStart() {
 	plist := requireDaemonInstalled()
 	exec.Command("launchctl", "unload", plist).Run()
@@ -36,6 +39,7 @@ func runStart() {
 	fmt.Println("Started core daemon")
 }
 
+// runStop unloads the LaunchAgent plist so macOS stops the core daemon.
 func runStop() {
 	plist := requireDaemonInstalled()
 	if err := exec.Command("launchctl", "unload", plist).Run(); err != nil {
@@ -45,6 +49,7 @@ func runStop() {
 	fmt.Println("Stopped core daemon")
 }
 
+// runRestart reloads the LaunchAgent plist so macOS restarts the core daemon process.
 func runRestart() {
 	plist := requireDaemonInstalled()
 	exec.Command("launchctl", "unload", plist).Run()
@@ -55,6 +60,7 @@ func runRestart() {
 	fmt.Println("Restarted core daemon")
 }
 
+// removeDaemon unloads and deletes the LaunchAgent plist so the daemon no longer auto-starts.
 func removeDaemon() {
 	plist := plistPath()
 	exec.Command("launchctl", "unload", plist).Run()
@@ -65,6 +71,7 @@ func removeDaemon() {
 	}
 }
 
+// runReset removes the daemon and all app data so the install returns to a clean state.
 func runReset() {
 	removeDaemon()
 
@@ -80,6 +87,7 @@ func runReset() {
 	fmt.Printf("Removed all data: %s\n", dDir)
 }
 
+// runUninstall prints the supported uninstall path and the side effects the script handles.
 func runUninstall() {
 	fmt.Println("⚠️  For a complete uninstall, please use the uninstall script:")
 	fmt.Println()
@@ -103,6 +111,7 @@ func runUninstall() {
 	fmt.Println("  6. sudo rm /usr/local/bin/mcpyeahyouknowme")
 }
 
+// runCompletions prints shell completion code for shell, or exits if the shell is unsupported.
 func runCompletions(shell string) {
 	switch shell {
 	case "bash":
@@ -115,6 +124,7 @@ func runCompletions(shell string) {
 	}
 }
 
+// printBashCompletions writes the bash completion function so users can source it in their shell.
 func printBashCompletions() {
 	topLevel := strings.Join(commandNames(topLevelCommands()), " ")
 	whatsAppSubs := strings.Join(commandNames(findCommand(topLevelCommands(), "whatsapp").Subcommands), " ")
@@ -147,6 +157,7 @@ complete -o nospace -F _mcpyeahyouknowme mcpyeahyouknowme
 `, topLevel, whatsAppSubs, gsuiteSubs, shellCompletionWords())
 }
 
+// printZshCompletions writes the zsh completion function so users can source it in their shell.
 func printZshCompletions() {
 	fmt.Printf(`_mcpyeahyouknowme() {
     local -a cmds wa_cmds gs_cmds comp_args
@@ -189,6 +200,7 @@ compdef _mcpyeahyouknowme mcpyeahyouknowme
 		zshChoiceEntries(findCommand(topLevelCommands(), "completions").ArgChoices))
 }
 
+// zshEntries formats command metadata as zsh `_describe` entries for completion menus.
 func zshEntries(commands []Command) string {
 	lines := make([]string, 0, len(commands))
 	for _, cmd := range commands {
@@ -197,6 +209,7 @@ func zshEntries(commands []Command) string {
 	return strings.Join(lines, "\n")
 }
 
+// zshChoiceEntries formats argument choices as zsh `_describe` entries for completion menus.
 func zshChoiceEntries(choices []Choice) string {
 	lines := make([]string, 0, len(choices))
 	for _, choice := range choices {

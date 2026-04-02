@@ -17,7 +17,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-// IsLoggedIn returns true if a valid WhatsApp session exists in whatsapp.db.
+// IsLoggedIn checks whether whatsapp.db currently contains a non-empty paired-device JID, which is the CLI's cheap auth gate.
 func IsLoggedIn(dataDir string) bool {
 	waDB := filepath.Join(dataDir, "whatsapp.db")
 	if _, err := os.Stat(waDB); err != nil {

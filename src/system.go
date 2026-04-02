@@ -54,6 +54,7 @@ func availableMemoryMB() int64 {
 	return (freePages + inactivePages) * pageSize / (1024 * 1024)
 }
 
+// parseVMStatValue extracts one vm_stat page count from a labeled line so memory math can proceed.
 func parseVMStatValue(line string) int64 {
 	parts := strings.SplitN(line, ":", 2)
 	if len(parts) != 2 {
@@ -65,6 +66,7 @@ func parseVMStatValue(line string) int64 {
 	return v
 }
 
+// daemonRSSBytes returns the daemon RSS in bytes by resolving the LaunchAgent PID and querying `ps`.
 func daemonRSSBytes(label string) int64 {
 	out, err := exec.Command("launchctl", "list", label).Output()
 	if err != nil {
@@ -81,6 +83,7 @@ func daemonRSSBytes(label string) int64 {
 	return parseProcessRSSBytes(string(psOut))
 }
 
+// parseLaunchctlPID extracts the numeric PID from `launchctl list` output for a loaded service.
 func parseLaunchctlPID(output string) int {
 	re := regexp.MustCompile(`"PID"\s*=\s*(\d+)`)
 	matches := re.FindStringSubmatch(output)
@@ -91,6 +94,7 @@ func parseLaunchctlPID(output string) int {
 	return pid
 }
 
+// parseProcessRSSBytes converts `ps` RSS kilobytes into bytes, or zero when parsing fails.
 func parseProcessRSSBytes(output string) int64 {
 	rssKB, err := strconv.ParseInt(strings.TrimSpace(output), 10, 64)
 	if err != nil || rssKB <= 0 {

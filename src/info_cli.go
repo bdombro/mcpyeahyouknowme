@@ -16,10 +16,12 @@ import (
 	"mcpyeahyouknowme/sources/whatsapp"
 )
 
+// runInfo is the thin CLI entrypoint that writes the full status report to stdout for humans and startup logs.
 func runInfo() {
 	fmt.Print(renderInfo())
 }
 
+// renderInfo builds the info report string so CLI and daemon startup can show consistent status output.
 func renderInfo() string {
 	dDir := core.DataDir()
 	var b strings.Builder
@@ -84,6 +86,7 @@ func renderInfo() string {
 	return b.String()
 }
 
+// writeSearchIndexSection appends search index status lines for dataDir, including size and indexing progress.
 func writeSearchIndexSection(b *strings.Builder, dataDir string, daemonRunning bool) {
 	fmt.Fprintln(b, "\U0001f50d Search Index")
 	stats := ReadOnlySearchIndexStats(dataDir)
@@ -111,6 +114,7 @@ func writeSearchIndexSection(b *strings.Builder, dataDir string, daemonRunning b
 	fmt.Fprintln(b)
 }
 
+// writeSourceSection appends one source status block, including availability or source-specific info lines.
 func writeSourceSection(b *strings.Builder, title, sourceName, dataDir string, infoLines func(string) []string) {
 	fmt.Fprintln(b, title)
 	if available, reason := registry.IsAvailable(sourceName); !available {

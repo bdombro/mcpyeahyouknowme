@@ -25,6 +25,7 @@ var contactsAppDef = &appDef{
 	tablesToDrop:  []string{"contacts_people", "contacts_people_fts"},
 }
 
+// initContactsSchema creates the Contacts tables, FTS index, and triggers used by sync and MCP reads.
 func initContactsSchema(db *sql.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS contacts_people (
@@ -71,6 +72,7 @@ func initContactsSchema(db *sql.DB) error {
 	return nil
 }
 
+// syncContacts refreshes Google contacts into SQLite and removes local rows missing from the latest People listing.
 func syncContacts(sctx syncContext) error { // nocov
 	ctx := sctx.Ctx.(context.Context)
 	sctx.SetStatus("syncing")
@@ -135,6 +137,7 @@ type contactRecord struct {
 	UpdatedTime   string
 }
 
+// buildContactRecord flattens a People API person into one stored contact row for SQLite.
 func buildContactRecord(p *people.Person) contactRecord {
 	record := contactRecord{}
 	if p == nil {
@@ -176,6 +179,7 @@ func buildContactRecord(p *people.Person) contactRecord {
 	return record
 }
 
+// deleteOrphanedRowsByResourceName deletes local contact rows whose resource names disappeared from the latest sync.
 func deleteOrphanedRowsByResourceName(db *sql.DB, table string, remoteIDs map[string]bool) {
 	rows, err := db.Query("SELECT resource_name FROM " + table)
 	if err != nil { // nocov
@@ -198,6 +202,7 @@ func deleteOrphanedRowsByResourceName(db *sql.DB, table string, remoteIDs map[st
 	}
 }
 
+// registerContactsTools wires the local-DB Contacts read tools into MCP so clients query synced people data without live API calls.
 func registerContactsTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"contacts_search",
 		core.ToolDescription("Search across Google Contacts", `{"query":"Alice Smith","limit":5}`),
@@ -214,6 +219,7 @@ func registerContactsTools(src *Source, prefix string, s toolAdder) {
 	})
 }
 
+// handleContactsSearch runs local FTS for req `query`/`limit`, returning synced contact hits with identity metadata.
 func handleContactsSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, errResult := core.RequireStringArgument(req, "query", `{"query":"Alice Smith","limit":5}`)
 	if errResult != nil {
@@ -246,6 +252,7 @@ func handleContactsSearch(_ context.Context, src *Source, req mcp.CallToolReques
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
+// handleContactsList returns synced contacts from SQLite in display-name order for req `limit`.
 func handleContactsList(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limit := core.IntArg(req.GetArguments(), "limit", 50)
 	if src.db == nil {
@@ -271,6 +278,7 @@ func handleContactsList(_ context.Context, src *Source, req mcp.CallToolRequest)
 	return core.JsonResult(map[string]interface{}{"contacts": results, "count": len(results)})
 }
 
+// contactsSearchEntries turns synced contact rows into global search entries keyed by People resource name.
 func contactsSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT resource_name, display_name, emails, phones, organizations, notes, updated_time
 		FROM contacts_people`)

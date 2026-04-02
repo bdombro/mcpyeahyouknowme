@@ -9,7 +9,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// NewSearchStore opens (or creates) search.db in the given directory.
+// NewSearchStore opens or creates search.db for daemon/MCP/CLI ownership, applying WAL and busy-timeout settings before use.
 func NewSearchStore(dir string, embedder EmbedderInterface) (*SearchStore, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("create search dir: %w", err)
@@ -40,6 +40,7 @@ func NewSearchStoreFromDB(db *sql.DB, embedder EmbedderInterface) (*SearchStore,
 	return &SearchStore{db: db, embedder: embedder}, nil
 }
 
+// initSearchSchema creates the search tables, FTS triggers, and metadata tables used by indexing and queries.
 func initSearchSchema(db *sql.DB) error {
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS search_entries (

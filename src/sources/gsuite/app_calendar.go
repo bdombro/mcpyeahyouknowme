@@ -26,6 +26,7 @@ var calendarAppDef = &appDef{
 	tablesToDrop:  []string{"calendar_events", "calendar_events_fts"},
 }
 
+// initCalendarSchema creates the Calendar tables, FTS index, and triggers used by sync and MCP reads.
 func initCalendarSchema(db *sql.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS calendar_events (
@@ -78,6 +79,7 @@ func initCalendarSchema(db *sql.DB) error {
 	return nil
 }
 
+// syncCalendar refreshes recent calendar events into SQLite and removes local rows absent from the latest API window.
 func syncCalendar(sctx syncContext) error { // nocov
 	ctx := sctx.Ctx.(context.Context)
 	sctx.SetStatus("syncing")
@@ -162,6 +164,7 @@ type calendarEventRecord struct {
 	HTMLLink     string
 }
 
+// buildCalendarEventRecord flattens Calendar API data into one stored event row for SQLite.
 func buildCalendarEventRecord(cal *calendar.CalendarListEntry, ev *calendar.Event) calendarEventRecord {
 	record := calendarEventRecord{}
 	if ev == nil {
@@ -189,6 +192,7 @@ func buildCalendarEventRecord(cal *calendar.CalendarListEntry, ev *calendar.Even
 	return record
 }
 
+// formatCalendarOrganizer formats organizer identity so search and get-event return a readable owner string.
 func formatCalendarOrganizer(org *calendar.EventOrganizer) string {
 	if org == nil {
 		return ""
@@ -199,6 +203,7 @@ func formatCalendarOrganizer(org *calendar.EventOrganizer) string {
 	return org.Email
 }
 
+// formatCalendarAttendees formats attendee identities into readable strings for storage and search.
 func formatCalendarAttendees(attendees []*calendar.EventAttendee) []string {
 	names := make([]string, 0, len(attendees))
 	for _, attendee := range attendees {
@@ -214,6 +219,7 @@ func formatCalendarAttendees(attendees []*calendar.EventAttendee) []string {
 	return names
 }
 
+// parseEventTimes normalizes all-day and timed event boundaries into stored strings plus an all-day flag.
 func parseEventTimes(ev *calendar.Event) (start, end string, allDay int) {
 	if ev.Start != nil {
 		if ev.Start.Date != "" {
@@ -233,6 +239,7 @@ func parseEventTimes(ev *calendar.Event) (start, end string, allDay int) {
 	return
 }
 
+// registerCalendarTools wires the local-DB Calendar read tools into MCP so clients query synced events instead of the live API.
 func registerCalendarTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"calendar_search",
 		core.ToolDescription("Search across Google Calendar events", `{"query":"dentist","limit":5}`),
@@ -256,6 +263,7 @@ func registerCalendarTools(src *Source, prefix string, s toolAdder) {
 	})
 }
 
+// handleCalendarSearch runs local FTS for req `query`/`limit`, returning synced event hits with scheduling metadata for follow-up.
 func handleCalendarSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, errResult := core.RequireStringArgument(req, "query", `{"query":"dentist","limit":5}`)
 	if errResult != nil {
@@ -291,6 +299,7 @@ func handleCalendarSearch(_ context.Context, src *Source, req mcp.CallToolReques
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
+// handleCalendarGetEvent looks up req `event_id` in SQLite and returns the full stored event record, or a tool error if missing.
 func handleCalendarGetEvent(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	eventID, errResult := core.RequireStringArgument(req, "event_id", `{"event_id":"abc123"}`)
 	if errResult != nil {
@@ -321,6 +330,7 @@ func handleCalendarGetEvent(_ context.Context, src *Source, req mcp.CallToolRequ
 	})
 }
 
+// handleCalendarListUpcoming returns synced events between now and req `days`, capped by req `limit`, for upcoming-schedule views.
 func handleCalendarListUpcoming(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	days := core.IntArg(req.GetArguments(), "days", 7)
 	limit := core.IntArg(req.GetArguments(), "limit", 20)
@@ -351,6 +361,7 @@ func handleCalendarListUpcoming(_ context.Context, src *Source, req mcp.CallTool
 	return core.JsonResult(map[string]interface{}{"events": results, "count": len(results)})
 }
 
+// calendarSearchEntries turns synced event rows into summary and description entries so global search can rank calendar matches well.
 func calendarSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT id, summary, description, location, start_time, end_time, organizer, attendees, updated_time
 		FROM calendar_events`)

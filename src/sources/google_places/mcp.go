@@ -9,6 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+// registerTools registers read-only live Places tools under the source prefix, surfacing network/API failures as tool errors.
 func registerTools(src *Source, s *server.MCPServer) {
 	prefix := src.Name() + "_"
 

@@ -14,6 +14,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// init registers the gsuite source name so config normalization keeps a stable entry for it.
 func init() {
 	core.RegisterKnownSource("gsuite")
 }
@@ -67,12 +68,12 @@ type AppsConfig struct {
 	Slides   bool `json:"slides"`
 }
 
-// DefaultAppsConfig returns config with all apps disabled until explicitly enabled.
+// DefaultAppsConfig starts every Google app disabled so login or CLI selection must opt sources into sync and MCP exposure.
 func DefaultAppsConfig() AppsConfig {
 	return AppsConfig{}
 }
 
-// IsEnabled returns whether a specific app is enabled.
+// IsEnabled answers whether appName is enabled so sync, search, and tool registration can gate per-app behavior.
 func (ac AppsConfig) IsEnabled(appName string) bool {
 	switch appName {
 	case "docs":
@@ -94,7 +95,7 @@ func (ac AppsConfig) IsEnabled(appName string) bool {
 	}
 }
 
-// SetEnabled sets a specific app's enabled state.
+// SetEnabled flips one app flag in-place so login and app toggles can persist the desired sync/tool surface.
 func (ac *AppsConfig) SetEnabled(appName string, enabled bool) {
 	switch appName {
 	case "docs":
@@ -122,7 +123,7 @@ type Source struct {
 	apps    AppsConfig
 }
 
-// NewSource creates a new Google Workspace source rooted at dataDir.
+// NewSource opens the unified GSuite DB and cached auth/app config from dataDir, tolerating DB-open failure so status and config reads can still work.
 func NewSource(dataDir string) *Source {
 	db, err := openGSuiteDB(dataDir)
 	if err != nil {
@@ -134,14 +135,17 @@ func NewSource(dataDir string) *Source {
 	return src
 }
 
-// IsLoggedIn returns true if a Google OAuth token exists.
+// IsLoggedIn reports whether a token file exists so CLI and registry code can gate auth-required flows cheaply.
 func IsLoggedIn(dataDir string) bool {
 	_, err := os.Stat(filepath.Join(dataDir, "gsuite_token.json"))
 	return err == nil
 }
 
+// Name returns the source key used for config, registry lookup, and tool prefixes.
 func (g *Source) Name() string        { return "gsuite" }
+// Description returns the human label shown in CLI and status output.
 func (g *Source) Description() string { return "Google Suite" }
+// Close releases the gsuite database handle so callers do not leak SQLite connections.
 func (g *Source) Close() error {
 	if g.db != nil {
 		return g.db.Close()
@@ -177,7 +181,7 @@ func (g *Source) ResetApp(appName string) error {
 	return nil
 }
 
-// SearchEntries returns all indexable content from all enabled apps.
+// SearchEntries gathers indexable rows from enabled apps for global search, skipping per-app extraction failures rather than failing the whole source.
 func (g *Source) SearchEntries() ([]core.SearchEntry, error) {
 	if g.db == nil {
 		return nil, nil
@@ -196,7 +200,7 @@ func (g *Source) SearchEntries() ([]core.SearchEntry, error) {
 	return all, nil
 }
 
-// loadAppsConfig reads the per-app config from config.json.
+// loadAppsConfig reads per-app enablement from config.json so daemon polls and CLI toggles share one persisted source of truth.
 func (g *Source) loadAppsConfig() AppsConfig {
 	cfg := core.LoadConfig(g.dataDir)
 	sc := cfg.Sources["gsuite"]
@@ -212,7 +216,7 @@ func (g *Source) loadAppsConfig() AppsConfig {
 	return wrapper.Apps
 }
 
-// saveAppsConfig writes the per-app config to config.json.
+// saveAppsConfig persists per-app enablement back into the gsuite source auth blob and updates the in-memory copy as a side effect.
 func (g *Source) saveAppsConfig(apps AppsConfig) error {
 	g.apps = apps
 	authData, _ := json.Marshal(struct {

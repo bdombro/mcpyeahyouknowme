@@ -9,6 +9,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// openGSuiteDB opens gsuite.db with WAL/busy-timeout settings and initializes shared app schema.
 func openGSuiteDB(dataDir string) (*sql.DB, error) {
 	if err := os.MkdirAll(dataDir, 0755); err != nil { // nocov
 		return nil, err
@@ -27,6 +28,7 @@ func openGSuiteDB(dataDir string) (*sql.DB, error) {
 	return db, nil
 }
 
+// initGSuiteDB creates shared sync metadata plus every known app schema up front so app toggles do not require later schema bootstrap.
 func initGSuiteDB(db *sql.DB) error {
 	// Shared sync state table
 	_, err := db.Exec(`
