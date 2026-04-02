@@ -144,13 +144,27 @@ func TestInfoLines_enabled(t *testing.T) {
 
 	lines := InfoLines(dataDir)
 	foundEnabled := false
+	foundDir := false
+	foundCounts := false
 	for _, l := range lines {
 		if l == "   Status:     enabled" {
 			foundEnabled = true
 		}
+		if l == "   Dir:        "+dir {
+			foundDir = true
+		}
+		if l == "               (1 md, 0 pdf, 0 images)" {
+			foundCounts = true
+		}
 	}
 	if !foundEnabled {
 		t.Fatalf("expected enabled status, got %v", lines)
+	}
+	if !foundDir {
+		t.Fatalf("expected dir line, got %v", lines)
+	}
+	if !foundCounts {
+		t.Fatalf("expected counts line, got %v", lines)
 	}
 }
 
@@ -220,12 +234,18 @@ func TestSource_SearchEntries_withFiles(t *testing.T) {
 	}
 }
 
-// Verifies formatDirLine produces the expected output string.
-func TestFormatDirLine(t *testing.T) {
+// Verifies formatDirLines produces separate path and count lines for one configured directory.
+func TestFormatDirLines(t *testing.T) {
 	counts := map[string]int{"md": 5, "pdf": 2, "image": 3}
-	line := formatDirLine("/my/notes", counts)
-	if line != "   Dir:        /my/notes (5 md, 2 pdf, 3 images)" {
-		t.Fatalf("formatDirLine = %q", line)
+	lines := formatDirLines("/my/notes", counts)
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %v", lines)
+	}
+	if lines[0] != "   Dir:        /my/notes" {
+		t.Fatalf("path line = %q", lines[0])
+	}
+	if lines[1] != "               (5 md, 2 pdf, 3 images)" {
+		t.Fatalf("count line = %q", lines[1])
 	}
 }
 

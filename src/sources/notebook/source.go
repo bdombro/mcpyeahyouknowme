@@ -118,7 +118,7 @@ func InfoLines(dataDir string) []string {
 	lines := []string{"   Status:     enabled"}
 	for _, dir := range cfg.Dirs {
 		counts := countFilesInDir(dir)
-		lines = append(lines, formatDirLine(dir, counts))
+		lines = append(lines, formatDirLines(dir, counts)...)
 	}
 	dbSize := core.FileGroupSizeBytes(filepath.Join(dataDir, "notebook.db"))
 	if dbSize > 0 {
@@ -153,12 +153,14 @@ func countFilesInDir(dir string) map[string]int {
 	return counts
 }
 
-// formatDirLine builds the indented info line for one configured directory.
-func formatDirLine(dir string, counts map[string]int) string {
-	return "   Dir:        " + dir +
-		" (" + itoa(counts["md"]) + " md, " +
-		itoa(counts["pdf"]) + " pdf, " +
-		itoa(counts["image"]) + " images)"
+// Builds the indented info lines for one configured directory so long paths and file counts stay readable in CLI output.
+func formatDirLines(dir string, counts map[string]int) []string {
+	return []string{
+		"   Dir:        " + dir,
+		"               (" + itoa(counts["md"]) + " md, " +
+			itoa(counts["pdf"]) + " pdf, " +
+			itoa(counts["image"]) + " images)",
+	}
 }
 
 // itoa converts an int to string without importing strconv.
