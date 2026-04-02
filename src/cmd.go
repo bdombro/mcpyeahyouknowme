@@ -7,6 +7,7 @@ import (
 
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/gsuite"
+	"mcpyeahyouknowme/sources/notebook"
 	"mcpyeahyouknowme/sources/whatsapp"
 )
 
@@ -173,6 +174,45 @@ func commandTree() []Command {
 			},
 		},
 		{
+			Name:    "notebook",
+			Summary: "Notebook commands",
+			Section: "Notebook",
+			Subcommands: []Command{
+				{
+					Name:    "add",
+					Summary: "Add a directory to the notebook index",
+					Usage:   "notebook add <path>",
+					Run: func(args []string) {
+						notebook.RunAdd(dataDir, args)
+					},
+				},
+				{
+					Name:    "remove",
+					Summary: "Remove a directory from the notebook index",
+					Usage:   "notebook remove <path>",
+					Run: func(args []string) {
+						notebook.RunRemove(dataDir, args)
+					},
+				},
+				{
+					Name:    "list",
+					Summary: "List configured notebook directories",
+					Usage:   "notebook list",
+					Run: func(_ []string) {
+						notebook.RunList(dataDir)
+					},
+				},
+				{
+					Name:    "reset",
+					Summary: "Clear all notebook configuration and cache",
+					Usage:   "notebook reset",
+					Run: func(_ []string) {
+						notebook.RunReset(dataDir)
+					},
+				},
+			},
+		},
+		{
 			Name:    "login",
 			Summary: "Legacy WhatsApp login alias (deprecated)",
 			Usage:   "login",
@@ -250,6 +290,7 @@ func printUsage() {
 		"Core Daemon",
 		"WhatsApp",
 		"Google Suite",
+		"Notebook",
 		"Maintenance",
 		"Legacy (deprecated)",
 	}

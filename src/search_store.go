@@ -61,6 +61,12 @@ var hierarchyWeights = map[string]float64{
 	"presentation_title":   2.0,
 	"presentation_owner":   2.0,
 	"presentation_content": 1.0,
+	// Notebook
+	"note_title":   2.0,
+	"note_content": 1.0,
+	"pdf_title":    2.0,
+	"pdf_content":  1.0,
+	"image":        1.5,
 }
 
 var searchMetadataHints = map[string]string{
@@ -85,6 +91,11 @@ var searchMetadataHints = map[string]string{
 	"gsuite:presentation_title":         `metadata contains {"presentation_id","modified_time"}; use presentation_id with gsuite_slides_get_presentation`,
 	"gsuite:presentation_owner":         `metadata contains {"presentation_id","modified_time"}; use presentation_id with gsuite_slides_get_presentation`,
 	"gsuite:presentation_content":       `metadata contains {"presentation_id","modified_time"}; use presentation_id with gsuite_slides_get_presentation`,
+	"notebook:note_title":               `metadata contains {"path","dir"}; use path with notebook_read`,
+	"notebook:note_content":             `metadata contains {"path","dir","chunk"}; use path with notebook_read`,
+	"notebook:pdf_title":                `metadata contains {"path","dir"}; use path with notebook_read_pdf`,
+	"notebook:pdf_content":              `metadata contains {"path","dir","chunk"}; use path with notebook_read_pdf`,
+	"notebook:image":                    `metadata contains {"path","dir","labels"}; use path with notebook_get_image`,
 }
 
 const rrfK = 60 // constant for Reciprocal Rank Fusion

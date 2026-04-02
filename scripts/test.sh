@@ -77,6 +77,7 @@ filter_coverage() {
 	keep_pat+='|mcpyeahyouknowme/sources/whatsapp/(service|store|helpers)\.go:'
 	keep_pat+='|mcpyeahyouknowme/sources/gsuite/(source|mcp|client|store|app_.*)\.go:'
 	keep_pat+='|mcpyeahyouknowme/sources/google_places/(source|mcp|client)\.go:'
+	keep_pat+='|mcpyeahyouknowme/sources/notebook/(source|mcp|store|scanner|extract|vision)\.go:'
 	keep_pat+=')'
 	grep -E "$keep_pat" "$raw" \
 		| grep -v '_init\.go:' \

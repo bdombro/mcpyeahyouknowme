@@ -4,6 +4,7 @@ import (
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/google_places"
 	"mcpyeahyouknowme/sources/gsuite"
+	"mcpyeahyouknowme/sources/notebook"
 	"mcpyeahyouknowme/sources/whatsapp"
 )
 
@@ -44,6 +45,13 @@ var All = []Descriptor{
 		IsAuthenticated:   func(_ string) bool { return google_places.IsConfigured() },
 		IndexGlobally:     false,
 		RunsCore:          false,
+	},
+	{
+		Name:            "notebook",
+		New:             func(dataDir string) core.DataSource { return notebook.NewSource(dataDir) },
+		IsAuthenticated: func(dataDir string) bool { return notebook.IsConfigured(dataDir) },
+		IndexGlobally:   true,
+		RunsCore:        false,
 	},
 }
 

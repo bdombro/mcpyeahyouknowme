@@ -10,7 +10,7 @@ A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.
 
 The build script sources `.env` from the repository root (if present) and bakes `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and optional `GOOGLE_PLACE_API_KEY` into the binary via `-ldflags`. Copy `.env.example` to `.env` and fill in the values before building if you want those sources available. The shipped desktop OAuth flow uses PKCE, but Google currently still requires the desktop client secret during token exchange.
 
-No CGO is required — the project uses [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), a pure-Go SQLite port.
+CGO is required only for the `notebook` source's macOS Vision OCR integration. All other sources use [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), a pure-Go SQLite port. `CGO_ENABLED=1` is the macOS default; no build script changes are needed for Vision.
 
 ## Commands
 
@@ -77,6 +77,53 @@ mcpyeahyouknowme reindex --clear
 ```
 
 Manually rebuilds the search index and embeddings for all available sources. Runs synchronously with progress output. The `--clear` flag wipes existing entries and embeddings before re-indexing.
+
+### Notebook Commands
+
+```
+mcpyeahyouknowme notebook add <path>
+mcpyeahyouknowme notebook remove <path>
+mcpyeahyouknowme notebook list
+mcpyeahyouknowme notebook reset
+```
+
+Manages local directories indexed by the `notebook` source.
+
+- **`add <path>`** — Resolves the path to an absolute directory, verifies it exists, appends it to the configured list (deduplicating), and enables the source. The core daemon (or `mcpyeahyouknowme reindex`) will index the contents on the next tick.
+- **`remove <path>`** — Removes the directory from the configured list and prunes its entries from `notebook.db`. If no directories remain, disables the source.
+- **`list`** — Prints all configured directories with per-type file counts (markdown, PDF, image).
+- **`reset`** — Clears all notebook configuration and deletes `notebook.db`. Requires interactive confirmation.
+
+### Notebook File Indexing
+
+The `notebook` source indexes `.md`, `.txt`, `.pdf`, and image files (`.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.heic`, `.heif`, `.tiff`, `.bmp`) from configured directories. Indexing runs on each daemon 10-second tick via `SearchEntries()`.
+
+**Change tracking** — `notebook.db` stores `(path, mod_time, size)` per file. On each tick, only new or modified files are re-extracted; unchanged files are served from cache.
+
+**Markdown extraction** — Title comes from the first `# H1` heading, or the filename stem. Content is the full file body. Files larger than 4 KB are chunked into `~4 KB` pieces for embedding.
+
+**PDF extraction** — Uses `github.com/ledongthuc/pdf` for pure-Go text extraction. If extracted text contains fewer than 10 words (a scanned document), falls back to macOS Vision OCR (`OCRPDFPages`), which renders each page to a `CGImage` via CoreGraphics and runs `VNRecognizeTextRequest`. Title comes from the filename stem.
+
+**Image extraction** — Uses macOS Vision (`VNRecognizeTextRequest` + `VNClassifyImageRequest`) via CGO Objective-C to extract OCR text and classification labels. The search entry includes label text in the content field.
+
+Hidden directories (names starting with `.`) are skipped during the walk.
+
+### Notebook MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `notebook_list` | List files across configured dirs. Optional `type` filter (md/pdf/image) and `query` substring filter. Returns path, title, type, mod_time. |
+| `notebook_read` | Read a markdown or text file by path. Validates the path is inside a configured directory. |
+| `notebook_read_pdf` | Extract and return PDF text by path, using Vision OCR fallback for scanned documents. |
+| `notebook_get_image` | Return a base64-encoded image for AI interpretation. Path validation required. |
+
+Search results include metadata hints pointing to these tools:
+
+| Content Type | Metadata |
+|-------------|----------|
+| `note_title` / `note_content` | `{"path","dir"[,"chunk"]}` — use path with `notebook_read` |
+| `pdf_title` / `pdf_content` | `{"path","dir"[,"chunk"]}` — use path with `notebook_read_pdf` |
+| `image` | `{"path","dir","labels"}` — use path with `notebook_get_image` |
 
 ## Multi-Source Architecture
 
@@ -147,6 +194,7 @@ Current sources:
 | WhatsApp | `whatsapp_` | `sources/whatsapp/` | Messages, chats, contacts via local SQLite + REST API |
 | Google Suite | `gsuite_` | `sources/gsuite/` | Docs, Sheets, Gmail, Calendar, Tasks, Contacts, and Slides via Google APIs with periodic sync |
 | Google Places | `google_places_` | `sources/google_places/` | Live business and address lookup via the Places API; no local cache or indexing |
+| Notebook | `notebook_` | `sources/notebook/` | Markdown, PDF, and image files from user-configured local directories |
 
 ### Daemon Management
 
@@ -632,3 +680,5 @@ Without this, Gatekeeper blocks execution — the first invocation is killed (SI
 - [google.golang.org/api](https://pkg.go.dev/google.golang.org/api) — Google APIs (Docs v1, Drive v3)
 - **ONNX Runtime** (optional, auto-downloaded) — native shared library for embedding inference, downloaded by `./scripts/install.sh` to `~/.local/share/mcpyeahyouknowme/lib/`
 - **ffmpeg** (optional) — required only for automatic audio format conversion in `send_audio_message`
+- [ledongthuc/pdf](https://github.com/ledongthuc/pdf) — pure-Go PDF text extraction for the `notebook` source
+- **macOS Vision framework** (macOS only) — on-device OCR and image classification for the `notebook` source, called via CGO Objective-C

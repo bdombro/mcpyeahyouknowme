@@ -16,6 +16,8 @@ func TestDispatchCommands(t *testing.T) {
 		{"invalid whatsapp subcommand", []string{"whatsapp", "invalid"}, "Unknown whatsapp subcommand: invalid"},
 		{"missing gsuite subcommand", []string{"gsuite"}, "Error: gsuite subcommand required"},
 		{"invalid gsuite subcommand", []string{"gsuite", "invalid"}, "Unknown gsuite subcommand: invalid"},
+		{"missing notebook subcommand", []string{"notebook"}, "Error: notebook subcommand required"},
+		{"invalid notebook subcommand", []string{"notebook", "invalid"}, "Unknown notebook subcommand: invalid"},
 		{"unknown command", []string{"unknown"}, "Unknown command: unknown"},
 	}
 
@@ -32,7 +34,7 @@ func TestDispatchCommands(t *testing.T) {
 func TestCommandNames(t *testing.T) {
 	expected := []string{
 		"mcp", "info", "completions", "core", "start", "stop",
-		"restart", "reindex", "uninstall", "whatsapp", "gsuite", "login", "reset",
+		"restart", "reindex", "uninstall", "whatsapp", "gsuite", "notebook", "login", "reset",
 	}
 	if got := commandNames(topLevelCommands()); !reflect.DeepEqual(got, expected) {
 		t.Errorf("commandNames() = %v, want %v", got, expected)
@@ -47,6 +49,7 @@ func TestSubcommandNames(t *testing.T) {
 	}{
 		{"whatsapp", []string{"login", "reset"}},
 		{"gsuite", []string{"login", "apps", "reset"}},
+		{"notebook", []string{"add", "remove", "list", "reset"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.command, func(t *testing.T) {

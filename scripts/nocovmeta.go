@@ -44,6 +44,7 @@ func main() {
 		"sources/whatsapp/*.go",
 		"sources/gsuite/*.go",
 		"sources/google_places/*.go",
+		"sources/notebook/*.go",
 	}
 
 	seen := make(map[string]struct{}) // paths can appear in more than one pattern

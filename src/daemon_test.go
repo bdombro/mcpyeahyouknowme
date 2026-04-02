@@ -37,6 +37,7 @@ func TestCommandsListCompleteness(t *testing.T) {
 		"uninstall":   true,
 		"whatsapp":    true,
 		"gsuite":      true,
+		"notebook":    true,
 		"login":       true,
 		"reset":       true,
 	}

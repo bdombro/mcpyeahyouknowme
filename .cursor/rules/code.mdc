@@ -14,3 +14,4 @@ alwaysApply: true
 - Prefer dependency injection (interfaces) over concrete types.
 - Source-package-specific structure lives in `datasources.mdc`.
 - Don't return unexported types from exported functions.
+- All new changes must pass lint test via `./scripts/lint.sh`

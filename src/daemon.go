@@ -129,6 +129,7 @@ func printBashCompletions() {
 	topLevel := strings.Join(commandNames(topLevelCommands()), " ")
 	whatsAppSubs := strings.Join(commandNames(findCommand(topLevelCommands(), "whatsapp").Subcommands), " ")
 	gsuiteSubs := strings.Join(commandNames(findCommand(topLevelCommands(), "gsuite").Subcommands), " ")
+	notebookSubs := strings.Join(commandNames(findCommand(topLevelCommands(), "notebook").Subcommands), " ")
 
 	fmt.Printf(`_mcpyeahyouknowme() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
@@ -147,6 +148,9 @@ func printBashCompletions() {
             gsuite)
                 COMPREPLY=( $(compgen -W "%s" -- "$cur") )
                 ;;
+            notebook)
+                COMPREPLY=( $(compgen -W "%s" -- "$cur") )
+                ;;
             completions)
                 COMPREPLY=( $(compgen -W "%s" -- "$cur") )
                 ;;
@@ -154,13 +158,13 @@ func printBashCompletions() {
     fi
 }
 complete -o nospace -F _mcpyeahyouknowme mcpyeahyouknowme
-`, topLevel, whatsAppSubs, gsuiteSubs, shellCompletionWords())
+`, topLevel, whatsAppSubs, gsuiteSubs, notebookSubs, shellCompletionWords())
 }
 
 // printZshCompletions writes the zsh completion function so users can source it in their shell.
 func printZshCompletions() {
 	fmt.Printf(`_mcpyeahyouknowme() {
-    local -a cmds wa_cmds gs_cmds comp_args
+    local -a cmds wa_cmds gs_cmds nb_cmds comp_args
 
     cmds=(
 %s
@@ -169,6 +173,9 @@ func printZshCompletions() {
 %s
     )
     gs_cmds=(
+%s
+    )
+    nb_cmds=(
 %s
     )
     comp_args=(
@@ -181,6 +188,8 @@ func printZshCompletions() {
         _describe -t wa_commands 'whatsapp command' wa_cmds
     elif (( CURRENT == 3 )) && [[ "${words[2]}" == gsuite ]]; then
         _describe -t gs_commands 'gsuite command' gs_cmds
+    elif (( CURRENT == 3 )) && [[ "${words[2]}" == notebook ]]; then
+        _describe -t nb_commands 'notebook command' nb_cmds
     else
         case "${words[2]}" in
             completions)
@@ -197,6 +206,7 @@ compdef _mcpyeahyouknowme mcpyeahyouknowme
 `, zshEntries(topLevelCommands()),
 		zshEntries(findCommand(topLevelCommands(), "whatsapp").Subcommands),
 		zshEntries(findCommand(topLevelCommands(), "gsuite").Subcommands),
+		zshEntries(findCommand(topLevelCommands(), "notebook").Subcommands),
 		zshChoiceEntries(findCommand(topLevelCommands(), "completions").ArgChoices))
 }
 
