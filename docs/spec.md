@@ -41,7 +41,7 @@ Authenticates with Google using OAuth 2.0 for the unified Google Suite source. O
 mcpyeahyouknowme core
 ```
 
-Runs all enabled data source core services and the search indexer. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on port 8080. For Google Suite: syncs each enabled Google app every 5 minutes via the corresponding Google APIs. The daemon also indexes all sources into `search.db` on startup and periodically on each 10-second tick, with adaptive embedding batch sizes based on available memory. Requires authentication for each enabled source.
+Runs all enabled data source core services and the search indexer. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on `127.0.0.1:8080` (loopback only). For Google Suite: syncs each enabled Google app every 5 minutes via the corresponding Google APIs. The daemon also indexes all sources into `search.db` on startup and periodically on each 10-second tick, with adaptive embedding batch sizes based on available memory. Requires authentication for each enabled source.
 
 Re-authentication may be required after ~20 days for WhatsApp. Google OAuth access tokens refresh automatically as long as the refresh token remains valid, but repeated Google `401 Invalid Credentials` or token refresh `invalid_grant` errors should be treated as persistent credential/configuration problems rather than transient network blips.
 
@@ -51,7 +51,7 @@ Re-authentication may be required after ~20 days for WhatsApp. Google OAuth acce
 mcpyeahyouknowme mcp
 ```
 
-Starts the built-in MCP server over stdio transport. This is what Claude Desktop and Cursor invoke to interact with WhatsApp. It reads directly from the local SQLite databases for queries (including `search.db` for hybrid search) and proxies write operations (send, download) through the core daemon's REST API at `localhost:8080`. The core daemon must be running for write operations. Search indexing is handled by the daemon, not the MCP server.
+Starts the built-in MCP server over stdio transport. This is what Claude Desktop and Cursor invoke to interact with WhatsApp. It reads directly from the local SQLite databases for queries (including `search.db` for hybrid search) and proxies write operations (send, download) through the core daemon's REST API at `127.0.0.1:8080`. The core daemon must be running for write operations. Search indexing is handled by the daemon, not the MCP server.
 
 Configure in your AI client:
 
@@ -256,7 +256,7 @@ WhatsApp's servers and the multidevice protocol have several known limitations t
 
 ## REST API
 
-The core daemon starts an HTTP server on port **8080** with two endpoints:
+The core daemon starts an HTTP server on **127.0.0.1:8080** with two endpoints. It listens on loopback only, so other machines on the LAN cannot reach it.
 
 ### POST /api/send
 
@@ -363,7 +363,7 @@ Metadata shapes per WhatsApp content type:
 
 **Read path**: Queries `messages.db` and `whatsapp.db` directly via SQLite. The core daemon does not need to be running for read-only operations.
 
-**Write path**: Sending messages and downloading media go through the core daemon's REST API at `http://localhost:8080/api`. The core daemon must be running.
+**Write path**: Sending messages and downloading media go through the core daemon's REST API at `http://127.0.0.1:8080/api`. The core daemon must be running.
 
 #### Contact & Chat Discovery
 
@@ -619,7 +619,7 @@ Without this, Gatekeeper blocks execution — the first invocation is killed (SI
 | Data directory | `~/.local/share/mcpyeahyouknowme/` |
 | Messages database | `~/.local/share/mcpyeahyouknowme/messages.db` |
 | Contacts database | `~/.local/share/mcpyeahyouknowme/whatsapp.db` |
-| Core daemon REST API | `http://localhost:8080/api` |
+| Core daemon REST API | `http://127.0.0.1:8080/api` |
 
 ## Dependencies
 

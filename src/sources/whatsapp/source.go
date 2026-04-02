@@ -28,7 +28,7 @@ func NewSource(dataDir string) *Source {
 		// Return a source with nil store; MCP tools will return empty results.
 		store = &MessageStore{db: &sql.DB{}}
 	}
-	svc := NewMCPService(store, "http://localhost:8080/api")
+	svc := NewMCPService(store, "http://127.0.0.1:8080/api")
 	return &Source{store: store, svc: svc, dataDir: dataDir}
 }
 

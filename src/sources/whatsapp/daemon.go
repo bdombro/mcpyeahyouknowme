@@ -493,7 +493,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	})
 
 	go func() {
-		addr := fmt.Sprintf(":%d", port)
+		addr := fmt.Sprintf("127.0.0.1:%d", port)
 		fmt.Printf("Starting REST API server on %s\n", addr)
 		if err := http.ListenAndServe(addr, mux); err != nil {
 			fmt.Printf("REST server error: %v\n", err)
