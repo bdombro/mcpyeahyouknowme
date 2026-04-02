@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"mcpyeahyouknowme/core"
 )
 
 // Verifies plistPath returns an absolute LaunchAgents plist path for the installed daemon.
@@ -55,6 +57,38 @@ func TestCommandsListCompleteness(t *testing.T) {
 
 	if len(expected) > 0 {
 		t.Errorf("Missing expected commands: %v", expected)
+	}
+}
+
+// Verifies the top-level reset command is exposed under Maintenance and dispatches through the shared reset runner.
+func TestCommandTree_ResetCommandRunsMaintenanceReset(t *testing.T) {
+	oldRunner := resetAllRunner
+	defer func() {
+		resetAllRunner = oldRunner
+	}()
+
+	called := false
+	gotDir := ""
+	resetAllRunner = func(dataDir string) {
+		called = true
+		gotDir = dataDir
+	}
+
+	cmd := findCommand(commandTree(), "reset")
+	if cmd == nil {
+		t.Fatal("reset command not found")
+	}
+	if cmd.Section != "Maintenance" {
+		t.Fatalf("reset command section = %q, want %q", cmd.Section, "Maintenance")
+	}
+
+	cmd.Run(nil)
+
+	if !called {
+		t.Fatal("reset command did not call resetAllRunner")
+	}
+	if gotDir != core.DataDir() {
+		t.Fatalf("reset command dataDir = %q, want %q", gotDir, core.DataDir())
 	}
 }
 

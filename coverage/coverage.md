@@ -13,15 +13,15 @@
 | [`app_tasks.go`](#app_tasksgo) | 71 | 72 | 98.6% |
 | `client.go` | 246 | 246 | 100.0% |
 | `embedding.go` | 24 | 24 | 100.0% |
-| `extract.go` | 50 | 50 | 100.0% |
+| `extract.go` | 55 | 55 | 100.0% |
 | `helpers.go` | 73 | 73 | 100.0% |
 | `mcp.go` | 120 | 120 | 100.0% |
-| `scanner.go` | 98 | 98 | 100.0% |
-| `search_store.go` | 232 | 232 | 100.0% |
+| `scanner.go` | 99 | 99 | 100.0% |
+| `search_store.go` | 244 | 244 | 100.0% |
 | `service.go` | 401 | 401 | 100.0% |
 | `source.go` | 148 | 148 | 100.0% |
 | `store.go` | 139 | 139 | 100.0% |
-| **Total** | **2623** | **2636** | **99.5%** |
+| **Total** | **2641** | **2654** | **99.5%** |
 
 ## Uncovered Blocks
 

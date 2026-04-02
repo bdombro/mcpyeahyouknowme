@@ -112,6 +112,15 @@ func commandTree() []Command {
 			},
 		},
 		{
+			Name:    "reset",
+			Summary: "Reset all source connections and data",
+			Usage:   "reset",
+			Section: "Maintenance",
+			Run: func(_ []string) {
+				resetAllRunner(dataDir)
+			},
+		},
+		{
 			Name:    "uninstall",
 			Summary: "Instructions for proper uninstall (use ./scripts/uninstall.sh)",
 			Usage:   "uninstall",
@@ -247,15 +256,6 @@ func commandTree() []Command {
 			Section: "Legacy (deprecated)",
 			Run: func(args []string) {
 				whatsapp.RunLogin(dataDir, args)
-			},
-		},
-		{
-			Name:    "reset",
-			Summary: "Legacy full reset alias (deprecated)",
-			Usage:   "reset",
-			Section: "Legacy (deprecated)",
-			Run: func(_ []string) {
-				runReset()
 			},
 		},
 	}

@@ -232,6 +232,7 @@ mcpyeahyouknowme restart
 
 ```
 mcpyeahyouknowme info
+mcpyeahyouknowme reset
 mcpyeahyouknowme whatsapp reset
 mcpyeahyouknowme gsuite reset
 mcpyeahyouknowme browser_history reset
@@ -240,6 +241,7 @@ mcpyeahyouknowme browser_history reset
 | Command | Description |
 |---------|-------------|
 | `info` | Shows build metadata; core daemon install/running status including network state and optional RSS; global data directory status; a Search Index section with entry/indexed counts and DB size; and per-source sections sorted alphabetically, including unavailable reasons when a source is not built/configured. The core daemon prints the same report on startup. |
+| `reset` | Prompts for confirmation, resets every registered source connection and its local data, clears the global search index, and rewrites `config.json` to a fully disabled normalized state. It preserves the installed daemon, embedding models, tokenizer cache, logs, and binary. |
 | `whatsapp reset` | Removes WhatsApp auth/session data, clears local synced data, and leaves the source disabled in config until the user logs in again. |
 | `gsuite reset` | Prompts for confirmation, removes the Google Suite token and local synced data, and leaves the source disabled in config until the user logs in again. |
 | `browser_history reset` | Prompts for confirmation, removes local browser history snapshot files, and leaves the source disabled in config until re-enabled. |

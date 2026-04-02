@@ -6,8 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"mcpyeahyouknowme/core"
 )
 
 const plistName = "com.mcpyeahyouknowme.core"
@@ -58,33 +56,6 @@ func runRestart() {
 		os.Exit(1)
 	}
 	fmt.Println("Restarted core daemon")
-}
-
-// removeDaemon unloads and deletes the LaunchAgent plist so the daemon no longer auto-starts.
-func removeDaemon() {
-	plist := plistPath()
-	exec.Command("launchctl", "unload", plist).Run()
-	if err := os.Remove(plist); err != nil && !os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "Error removing plist: %v\n", err)
-	} else if err == nil {
-		fmt.Println("Removed core daemon")
-	}
-}
-
-// runReset removes the daemon and all app data so the install returns to a clean state.
-func runReset() {
-	removeDaemon()
-
-	dDir := core.DataDir()
-	if _, err := os.Stat(dDir); os.IsNotExist(err) {
-		fmt.Println("Nothing to reset (data directory does not exist)")
-		return
-	}
-	if err := os.RemoveAll(dDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Error removing data directory %s: %v\n", dDir, err)
-		os.Exit(1)
-	}
-	fmt.Printf("Removed all data: %s\n", dDir)
 }
 
 // runUninstall prints the supported uninstall path and the side effects the script handles.
