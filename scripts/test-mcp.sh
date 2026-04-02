@@ -62,8 +62,9 @@ main() {
 	# step_1_run_case "Search for 'Missing Cat'" "search" '{"query":"Missing Cat","limit":5}'
 	# step_1_run_case "Search for 'Crashed ship' - should match shipwreck" "search" '{"query":"Crashed ship","limit":5}'
 	# step_1_run_case "Search for 'malt beverage' - should match beer" "search" '{"query":"malt beverage","limit":5}'
-	step_1_run_case "Search for 'squarespace holidays'" "search" '{"query":"squarespace holidays","limit":5}'
-	step_1_run_case "Search without required query (expected error)" "search" '{}'
+	# step_1_run_case "Search for 'squarespace holidays'" "search" '{"query":"squarespace holidays","limit":5}'
+	step_1_run_case "Search for 'john thomas daughters'" "search" '{"query":"john thomas daughters","limit":5}'
+	# step_1_run_case "Search without required query (expected error)" "search" '{}'
 	# step_1_run_case "Google Places search for 'Blue Bottle Coffee Oakland'" "google_places_search_places" '{"query":"Blue Bottle Coffee Oakland","max_results":1}'
 }
 

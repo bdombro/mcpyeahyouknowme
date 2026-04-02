@@ -1,12 +1,15 @@
 package core
 
 import (
+	"database/sql"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	_ "modernc.org/sqlite"
 )
 
 // Verifies IntArg accepts native int values from MCP-style argument maps.
@@ -218,6 +221,97 @@ func TestRequireIntArgument_success(t *testing.T) {
 	if result != nil {
 		t.Fatal("expected nil error result")
 	}
+}
+
+// Verifies ClearSearchSource removes only one source's rows from search.db and leaves other indexed rows intact.
+func TestClearSearchSource_deletesMatchingRows(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "search.db")
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.Exec(`
+		CREATE TABLE search_entries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			source TEXT NOT NULL,
+			source_id TEXT NOT NULL,
+			content_type TEXT NOT NULL,
+			title TEXT,
+			content TEXT NOT NULL,
+			metadata TEXT,
+			timestamp DATETIME,
+			UNIQUE(source, source_id, content_type)
+		);
+		INSERT INTO search_entries (source, source_id, content_type, title, content)
+		VALUES
+			('gsuite', 'thread-1', 'email_thread_subject', 'John Thomas', 'John Thomas has 3 kids'),
+			('notebook', 'note-1', 'note_title', 'John Thomas', 'John Thomas');
+	`); err != nil {
+		t.Fatalf("seed search db: %v", err)
+	}
+
+	if err := ClearSearchSource(dir, "gsuite"); err != nil {
+		t.Fatalf("ClearSearchSource: %v", err)
+	}
+
+	var gsuiteCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM search_entries WHERE source = 'gsuite'`).Scan(&gsuiteCount); err != nil {
+		t.Fatalf("count gsuite rows: %v", err)
+	}
+	if gsuiteCount != 0 {
+		t.Fatalf("expected gsuite rows to be deleted, got %d", gsuiteCount)
+	}
+	var notebookCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM search_entries WHERE source = 'notebook'`).Scan(&notebookCount); err != nil {
+		t.Fatalf("count notebook rows: %v", err)
+	}
+	if notebookCount != 1 {
+		t.Fatalf("expected notebook row to remain, got %d", notebookCount)
+	}
+}
+
+// Verifies ClearSearchSource is a no-op when the shared search index file has not been created yet.
+func TestClearSearchSource_missingFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := ClearSearchSource(dir, "gsuite"); err != nil {
+		t.Fatalf("ClearSearchSource: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "search.db")); !os.IsNotExist(err) {
+		t.Fatalf("expected search.db to remain absent, stat err = %v", err)
+	}
+}
+
+// Verifies ClearSearchSource tolerates malformed or schema-less DBs so resets still finish after partial cleanup.
+func TestClearSearchSource_missingTableAndStatError(t *testing.T) {
+	t.Run("missing table", func(t *testing.T) {
+		dir := t.TempDir()
+		db, err := sql.Open("sqlite", "file:"+filepath.Join(dir, "search.db")+"?_pragma=foreign_keys(on)")
+		if err != nil {
+			t.Fatalf("sql.Open: %v", err)
+		}
+		t.Cleanup(func() { db.Close() })
+		if _, err := db.Exec(`CREATE TABLE placeholder (id INTEGER PRIMARY KEY)`); err != nil {
+			t.Fatalf("create placeholder: %v", err)
+		}
+
+		if err := ClearSearchSource(dir, "gsuite"); err != nil {
+			t.Fatalf("ClearSearchSource: %v", err)
+		}
+	})
+
+	t.Run("stat error", func(t *testing.T) {
+		dir := t.TempDir()
+		filePath := filepath.Join(dir, "not-a-directory")
+		if err := os.WriteFile(filePath, []byte("x"), 0644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		if err := ClearSearchSource(filePath, "gsuite"); err == nil {
+			t.Fatal("expected stat error for file-backed data dir")
+		}
+	})
 }
 
 // Verifies RequireBoolArgument accepts boolean input and returns no MCP error on valid input.

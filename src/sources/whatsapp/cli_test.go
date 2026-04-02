@@ -9,8 +9,8 @@ import (
 
 	"mcpyeahyouknowme/core"
 
-	_ "modernc.org/sqlite"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	_ "modernc.org/sqlite"
 )
 
 // Verifies WhatsApp info output reports an empty disabled state before any session or message DB exists.
@@ -127,5 +127,95 @@ func TestHandleLoggedOut_disablesSource(t *testing.T) {
 	}
 	if core.LoadConfig(dir).Sources["whatsapp"].Enabled {
 		t.Fatal("expected whatsapp source to be disabled")
+	}
+}
+
+// Verifies RunReset removes WhatsApp DBs, disables the source, and clears stale WhatsApp rows from search.db.
+func TestRunReset_clearsSearchRows(t *testing.T) {
+	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "whatsapp", true); err != nil {
+		t.Fatalf("SetSourceEnabled: %v", err)
+	}
+	for _, rel := range []string{
+		"messages.db",
+		"messages.db-wal",
+		"messages.db-shm",
+		"whatsapp.db",
+		"whatsapp.db-wal",
+		"whatsapp.db-shm",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte("seed"), 0644); err != nil {
+			t.Fatalf("WriteFile(%s): %v", rel, err)
+		}
+	}
+	seedWhatsAppSearchIndex(t, dir)
+
+	RunReset(dir)
+
+	for _, rel := range []string{
+		"messages.db",
+		"messages.db-wal",
+		"messages.db-shm",
+		"whatsapp.db",
+		"whatsapp.db-wal",
+		"whatsapp.db-shm",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, rel)); !os.IsNotExist(err) {
+			t.Fatalf("expected %s to be removed, stat err = %v", rel, err)
+		}
+	}
+	if core.LoadConfig(dir).Sources["whatsapp"].Enabled {
+		t.Fatal("expected whatsapp to be disabled after reset")
+	}
+	assertSearchSourceCount(t, dir, "whatsapp", 0)
+	assertSearchSourceCount(t, dir, "notebook", 1)
+}
+
+// seedWhatsAppSearchIndex creates a minimal shared search index so RunReset can verify only WhatsApp rows are cleared.
+func seedWhatsAppSearchIndex(t *testing.T, dataDir string) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "search.db")+"?_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE search_entries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			source TEXT NOT NULL,
+			source_id TEXT NOT NULL,
+			content_type TEXT NOT NULL,
+			title TEXT,
+			content TEXT NOT NULL,
+			metadata TEXT,
+			timestamp DATETIME,
+			UNIQUE(source, source_id, content_type)
+		);
+		INSERT INTO search_entries (source, source_id, content_type, title, content)
+		VALUES
+			('whatsapp', 'chat-1', 'chat_name', 'Family Chat', 'Family Chat'),
+			('notebook', 'note-1', 'note_title', 'John Thomas', 'John Thomas');
+	`); err != nil {
+		t.Fatalf("seed search db: %v", err)
+	}
+}
+
+// assertSearchSourceCount checks the remaining search rows for one source after WhatsApp reset mutates the shared index.
+func assertSearchSourceCount(t *testing.T, dataDir, source string, want int) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "search.db")+"?_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	defer db.Close()
+
+	var got int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM search_entries WHERE source = ?`, source).Scan(&got); err != nil {
+		t.Fatalf("count search rows for %s: %v", source, err)
+	}
+	if got != want {
+		t.Fatalf("search row count for %s = %d, want %d", source, got, want)
 	}
 }

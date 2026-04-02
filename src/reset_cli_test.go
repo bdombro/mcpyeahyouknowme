@@ -68,11 +68,15 @@ func TestRunResetAll_cancelled(t *testing.T) {
 			oldStdout := resetAllStdout
 			oldStderr := resetAllStderr
 			oldSearchReset := resetAllSearchReset
+			oldDaemonPID := resetAllDaemonPID
+			oldRestartDaemon := resetAllRestartDaemon
 			defer func() {
 				resetAllStdin = oldStdin
 				resetAllStdout = oldStdout
 				resetAllStderr = oldStderr
 				resetAllSearchReset = oldSearchReset
+				resetAllDaemonPID = oldDaemonPID
+				resetAllRestartDaemon = oldRestartDaemon
 			}()
 
 			var stdout bytes.Buffer
@@ -106,6 +110,8 @@ func TestRunResetAll_yesRunsReset(t *testing.T) {
 	oldDescriptors := resetAllDescriptors
 	oldSearchReset := resetAllSearchReset
 	oldSaveConfig := resetAllSaveConfig
+	oldDaemonPID := resetAllDaemonPID
+	oldRestartDaemon := resetAllRestartDaemon
 	defer func() {
 		resetAllStdin = oldStdin
 		resetAllStdout = oldStdout
@@ -113,12 +119,16 @@ func TestRunResetAll_yesRunsReset(t *testing.T) {
 		resetAllDescriptors = oldDescriptors
 		resetAllSearchReset = oldSearchReset
 		resetAllSaveConfig = oldSaveConfig
+		resetAllDaemonPID = oldDaemonPID
+		resetAllRestartDaemon = oldRestartDaemon
 	}()
 
 	var stdout bytes.Buffer
 	resetAllStdin = strings.NewReader("yes\n")
 	resetAllStdout = &stdout
 	resetAllStderr = &bytes.Buffer{}
+	resetAllDaemonPID = func() int { return 4321 }
+	resetAllRestartDaemon = func() error { return errors.New("restart failed") }
 	resetAllDescriptors = func() []registry.Descriptor {
 		return []registry.Descriptor{
 			{
@@ -153,18 +163,24 @@ func TestDoResetAll_clearsSourceFilesSearchAndConfig(t *testing.T) {
 	oldDescriptors := resetAllDescriptors
 	oldSearchReset := resetAllSearchReset
 	oldSaveConfig := resetAllSaveConfig
+	oldDaemonPID := resetAllDaemonPID
+	oldRestartDaemon := resetAllRestartDaemon
 	defer func() {
 		resetAllStdout = oldStdout
 		resetAllStderr = oldStderr
 		resetAllDescriptors = oldDescriptors
 		resetAllSearchReset = oldSearchReset
 		resetAllSaveConfig = oldSaveConfig
+		resetAllDaemonPID = oldDaemonPID
+		resetAllRestartDaemon = oldRestartDaemon
 	}()
 
 	tmpDir := t.TempDir()
 	resetAllStdout = &bytes.Buffer{}
 	resetAllStderr = &bytes.Buffer{}
 	resetAllDescriptors = func() []registry.Descriptor { return registry.All }
+	resetAllDaemonPID = func() int { return 4321 }
+	resetAllRestartDaemon = func() error { return errors.New("restart failed") }
 	resetAllSearchReset = func(dataDir string) error {
 		return core.DefaultReset(dataDir, []string{
 			"search.db",
@@ -262,18 +278,24 @@ func TestDoResetAll_logsWarnings(t *testing.T) {
 	oldDescriptors := resetAllDescriptors
 	oldSearchReset := resetAllSearchReset
 	oldSaveConfig := resetAllSaveConfig
+	oldDaemonPID := resetAllDaemonPID
+	oldRestartDaemon := resetAllRestartDaemon
 	defer func() {
 		resetAllStdout = oldStdout
 		resetAllStderr = oldStderr
 		resetAllDescriptors = oldDescriptors
 		resetAllSearchReset = oldSearchReset
 		resetAllSaveConfig = oldSaveConfig
+		resetAllDaemonPID = oldDaemonPID
+		resetAllRestartDaemon = oldRestartDaemon
 	}()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	resetAllStdout = &stdout
 	resetAllStderr = &stderr
+	resetAllDaemonPID = func() int { return 4321 }
+	resetAllRestartDaemon = func() error { return errors.New("restart failed") }
 	resetAllDescriptors = func() []registry.Descriptor {
 		return []registry.Descriptor{
 			{
@@ -309,6 +331,7 @@ func TestDoResetAll_logsWarnings(t *testing.T) {
 		"Warning: panic close panic: boom",
 		"Warning: search index reset: search failed",
 		"Warning: could not reset config.json: config failed",
+		"Warning: could not restart daemon after reset: restart failed",
 	} {
 		if !strings.Contains(gotErr, want) {
 			t.Fatalf("doResetAll stderr missing %q in:\n%s", want, gotErr)
@@ -316,6 +339,48 @@ func TestDoResetAll_logsWarnings(t *testing.T) {
 	}
 	if got := stdout.String(); !strings.Contains(got, "All connections and data reset.") {
 		t.Fatalf("doResetAll stdout = %q, want final summary", got)
+	}
+}
+
+// TestDoResetAll_restartsDaemonWhenRunning verifies global reset restarts the running daemon so it reopens a fresh search index after file deletion.
+func TestDoResetAll_restartsDaemonWhenRunning(t *testing.T) {
+	oldStdout := resetAllStdout
+	oldStderr := resetAllStderr
+	oldDescriptors := resetAllDescriptors
+	oldSearchReset := resetAllSearchReset
+	oldSaveConfig := resetAllSaveConfig
+	oldDaemonPID := resetAllDaemonPID
+	oldRestartDaemon := resetAllRestartDaemon
+	defer func() {
+		resetAllStdout = oldStdout
+		resetAllStderr = oldStderr
+		resetAllDescriptors = oldDescriptors
+		resetAllSearchReset = oldSearchReset
+		resetAllSaveConfig = oldSaveConfig
+		resetAllDaemonPID = oldDaemonPID
+		resetAllRestartDaemon = oldRestartDaemon
+	}()
+
+	var stdout bytes.Buffer
+	resetAllStdout = &stdout
+	resetAllStderr = &bytes.Buffer{}
+	resetAllDescriptors = func() []registry.Descriptor { return nil }
+	resetAllSearchReset = func(string) error { return nil }
+	resetAllSaveConfig = func(string, core.Config) error { return nil }
+	resetAllDaemonPID = func() int { return 1234 }
+	restarted := false
+	resetAllRestartDaemon = func() error {
+		restarted = true
+		return nil
+	}
+
+	doResetAll(t.TempDir())
+
+	if !restarted {
+		t.Fatal("expected daemon restart when PID is present")
+	}
+	if got := stdout.String(); !strings.Contains(got, "  Restarted daemon") {
+		t.Fatalf("expected restart message, got %q", got)
 	}
 }
 

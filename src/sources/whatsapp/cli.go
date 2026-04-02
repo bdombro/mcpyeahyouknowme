@@ -164,5 +164,8 @@ func RunReset(dataDir string) {
 	if err := core.SetSourceDisabled(dataDir, "whatsapp"); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
 	}
+	if err := core.ClearSearchSource(dataDir, "whatsapp"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not clear search index: %v\n", err)
+	}
 	fmt.Println("WhatsApp data reset complete.")
 }

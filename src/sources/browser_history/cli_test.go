@@ -1,6 +1,7 @@
 package browser_history
 
 import (
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -114,6 +115,7 @@ func TestRunReset_confirmed(t *testing.T) {
 	if err := os.WriteFile(snapshotPath, []byte("db"), 0644); err != nil {
 		t.Fatalf("write snapshot: %v", err)
 	}
+	seedBrowserSearchIndex(t, dataDir)
 
 	withStdin(t, "yes\n", func() {
 		RunReset(dataDir)
@@ -126,6 +128,8 @@ func TestRunReset_confirmed(t *testing.T) {
 	if sc.Enabled || len(sc.Auth) != 0 {
 		t.Fatalf("reset config = %+v", sc)
 	}
+	assertBrowserSearchSourceCount(t, dataDir, "browser_history", 0)
+	assertBrowserSearchSourceCount(t, dataDir, "notebook", 1)
 }
 
 // Verifies reset command prints warnings when snapshot cleanup or config persistence fails.
@@ -155,6 +159,55 @@ func TestRunReset_warningPaths(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "could not update config.json: update failed") {
 		t.Fatalf("expected config warning, got %q", stderr)
+	}
+}
+
+// seedBrowserSearchIndex creates a minimal shared search index so browser_history reset can verify it clears only its own rows.
+func seedBrowserSearchIndex(t *testing.T, dataDir string) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "search.db")+"?_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE search_entries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			source TEXT NOT NULL,
+			source_id TEXT NOT NULL,
+			content_type TEXT NOT NULL,
+			title TEXT,
+			content TEXT NOT NULL,
+			metadata TEXT,
+			timestamp DATETIME,
+			UNIQUE(source, source_id, content_type)
+		);
+		INSERT INTO search_entries (source, source_id, content_type, title, content)
+		VALUES
+			('browser_history', 'url-1', 'browser_visit', 'Example', 'https://example.com'),
+			('notebook', 'note-1', 'note_title', 'John Thomas', 'John Thomas');
+	`); err != nil {
+		t.Fatalf("seed search db: %v", err)
+	}
+}
+
+// assertBrowserSearchSourceCount checks the remaining row count for one source after browser_history reset mutates search.db.
+func assertBrowserSearchSourceCount(t *testing.T, dataDir, source string, want int) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "search.db")+"?_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	defer db.Close()
+
+	var got int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM search_entries WHERE source = ?`, source).Scan(&got); err != nil {
+		t.Fatalf("count search rows for %s: %v", source, err)
+	}
+	if got != want {
+		t.Fatalf("search row count for %s = %d, want %d", source, got, want)
 	}
 }
 

@@ -1,6 +1,7 @@
 package gsuite
 
 import (
+	"database/sql"
 	"io"
 	"os"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 	"time"
 
 	"mcpyeahyouknowme/core"
+
+	_ "modernc.org/sqlite"
 )
 
 // Verifies login detection follows token-file presence without needing a live Google auth flow.
@@ -157,6 +160,103 @@ func TestRunReset_Abort(t *testing.T) {
 
 	if _, err := os.Stat(dir + "/gsuite_token.json"); os.IsNotExist(err) {
 		t.Error("token should not be deleted when reset is aborted")
+	}
+}
+
+// Verifies reset confirmation removes GSuite local files, disables the source, and clears stale GSuite rows from search.db.
+func TestRunReset_confirmedClearsSearchRows(t *testing.T) {
+	dir := t.TempDir()
+	for _, rel := range []string{
+		"gsuite.db",
+		"gsuite.db-wal",
+		"gsuite.db-shm",
+		"gsuite_token.json",
+		"gsuite_email.txt",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte("seed"), 0644); err != nil {
+			t.Fatalf("WriteFile(%s): %v", rel, err)
+		}
+	}
+	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
+		t.Fatalf("SetSourceEnabled: %v", err)
+	}
+	seedGSuiteSearchIndex(t, dir)
+
+	oldStdin := os.Stdin
+	r, w, _ := os.Pipe()
+	os.Stdin = r
+	if _, err := w.WriteString("yes\n"); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	w.Close()
+	defer func() { os.Stdin = oldStdin }()
+
+	RunReset(dir)
+
+	for _, rel := range []string{
+		"gsuite.db",
+		"gsuite.db-wal",
+		"gsuite.db-shm",
+		"gsuite_token.json",
+		"gsuite_email.txt",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, rel)); !os.IsNotExist(err) {
+			t.Fatalf("expected %s to be removed, stat err = %v", rel, err)
+		}
+	}
+	if core.LoadConfig(dir).Sources["gsuite"].Enabled {
+		t.Fatal("expected gsuite to be disabled after reset")
+	}
+	assertGSuiteSearchSourceCount(t, dir, "gsuite", 0)
+	assertGSuiteSearchSourceCount(t, dir, "notebook", 1)
+}
+
+// seedGSuiteSearchIndex creates a minimal shared search index so the reset test can verify only GSuite rows are cleared.
+func seedGSuiteSearchIndex(t *testing.T, dataDir string) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "search.db")+"?_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE search_entries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			source TEXT NOT NULL,
+			source_id TEXT NOT NULL,
+			content_type TEXT NOT NULL,
+			title TEXT,
+			content TEXT NOT NULL,
+			metadata TEXT,
+			timestamp DATETIME,
+			UNIQUE(source, source_id, content_type)
+		);
+		INSERT INTO search_entries (source, source_id, content_type, title, content)
+		VALUES
+			('gsuite', 'thread-1', 'email_thread_subject', 'John Thomas', 'John Thomas has 3 kids'),
+			('notebook', 'note-1', 'note_title', 'John Thomas', 'John Thomas');
+	`); err != nil {
+		t.Fatalf("seed search db: %v", err)
+	}
+}
+
+// assertGSuiteSearchSourceCount checks the remaining row count for one source after GSuite reset mutates search.db.
+func assertGSuiteSearchSourceCount(t *testing.T, dataDir, source string, want int) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "search.db")+"?_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	defer db.Close()
+
+	var got int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM search_entries WHERE source = ?`, source).Scan(&got); err != nil {
+		t.Fatalf("count search rows for %s: %v", source, err)
+	}
+	if got != want {
+		t.Fatalf("search row count for %s = %d, want %d", source, got, want)
 	}
 }
 

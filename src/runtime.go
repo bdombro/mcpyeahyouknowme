@@ -101,21 +101,20 @@ func runCore() {
 	fmt.Printf("Data directory: %s\n", dir)
 
 	running := map[string]context.CancelFunc{}
+	embedder := NewLazyEmbedder(filepath.Join(dir, "models"))
+	searchStore, err := NewSearchStore(dir, embedder)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: search index unavailable: %v\n", err)
+	}
 
 	for name, sc := range cfg.Sources {
 		if sc.Reset {
-			handleReset(dir, name, &cfg)
+			handleReset(dir, name, &cfg, searchStore)
 			continue
 		}
 		if sc.Enabled {
 			startSource(dir, name, running)
 		}
-	}
-
-	embedder := NewLazyEmbedder(filepath.Join(dir, "models"))
-	searchStore, err := NewSearchStore(dir, embedder)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: search index unavailable: %v\n", err)
 	}
 
 	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst bool) {
@@ -172,7 +171,7 @@ func runCore() {
 						cancel()
 						delete(running, name)
 					}
-					handleReset(dir, name, &newCfg)
+					handleReset(dir, name, &newCfg, searchStore)
 				}
 			}
 			for name, cancel := range running {
@@ -275,12 +274,18 @@ func startSource(dir, name string, running map[string]context.CancelFunc) {
 	}()
 }
 
-// handleReset calls source.Reset(), persists the source disabled, and zeroes cfg state so this poll tick stops treating it as active.
-func handleReset(dir, name string, cfg *core.Config) {
+// Clears one source's local state and indexed rows so daemon-driven resets disable the source without leaving stale search hits behind.
+func handleReset(dir, name string, cfg *core.Config, searchStore *SearchStore) {
 	src := registry.NewSource(name, dir)
 	if src != nil {
+		defer src.Close()
 		if err := src.Reset(dir); err != nil {
 			fmt.Fprintf(os.Stderr, "Reset error for %s: %v\n", name, err)
+		}
+	}
+	if searchStore != nil {
+		if err := searchStore.DeleteBySource(name); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not clear %s from search index: %v\n", name, err)
 		}
 	}
 	if err := core.SetSourceDisabled(dir, name); err != nil {

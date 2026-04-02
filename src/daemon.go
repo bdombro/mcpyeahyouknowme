@@ -49,13 +49,21 @@ func runStop() {
 
 // runRestart reloads the LaunchAgent plist so macOS restarts the core daemon process.
 func runRestart() {
-	plist := requireDaemonInstalled()
-	exec.Command("launchctl", "unload", plist).Run()
-	if err := exec.Command("launchctl", "load", plist).Run(); err != nil {
+	if err := restartInstalledDaemon(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error restarting daemon: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Println("Restarted core daemon")
+}
+
+// Restarts the installed LaunchAgent so CLI reset paths can reopen daemon-owned SQLite handles after on-disk files are cleared.
+func restartInstalledDaemon() error {
+	plist := requireDaemonInstalled()
+	exec.Command("launchctl", "unload", plist).Run()
+	if err := exec.Command("launchctl", "load", plist).Run(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // runUninstall prints the supported uninstall path and the side effects the script handles.

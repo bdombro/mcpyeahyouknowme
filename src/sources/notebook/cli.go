@@ -5,11 +5,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"mcpyeahyouknowme/core"
 )
+
+const daemonLabel = "com.mcpyeahyouknowme.core"
+
+var daemonUserHomeDir = os.UserHomeDir
+var daemonStatPath = os.Stat
+var daemonLaunchctlList = func(label string) ([]byte, error) {
+	return exec.Command("launchctl", "list", label).Output()
+}
+var daemonSignalProcess = func(pid int, signal syscall.Signal) error {
+	return syscall.Kill(pid, signal)
+}
 
 // RunAdd adds a directory to the notebook source configuration, enabling the source on first add.
 func RunAdd(dataDir string, args []string) {
@@ -48,7 +63,7 @@ func RunAdd(dataDir string, args []string) {
 		fmt.Fprintf(os.Stderr, "Warning: could not save config: %v\n", err)
 	}
 	fmt.Printf("Added notebook directory: %s\n", abs)
-	fmt.Println("The background app will index new files soon if it is running or when started.")
+	signalDaemonReindex()
 }
 
 // RunRemove removes a directory from the notebook source configuration, disabling the source when no dirs remain.
@@ -94,6 +109,7 @@ func RunRemove(dataDir string, args []string) {
 		fmt.Fprintf(os.Stderr, "Warning: could not save config: %v\n", err)
 	}
 	fmt.Printf("Removed notebook directory: %s\n", abs)
+	signalDaemonReindex()
 }
 
 // RunList prints all configured notebook directories with per-type file counts.
@@ -136,7 +152,52 @@ func RunReset(dataDir string) {
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
 	}
+	if err := core.ClearSearchSource(dataDir, "notebook"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not clear search index: %v\n", err)
+	}
 	fmt.Println("Notebook configuration reset.")
+}
+
+// signalDaemonReindex sends SIGUSR1 to the running daemon so it picks up config changes immediately instead of waiting for the next poll cycle.
+func signalDaemonReindex() {
+	pid := daemonPID()
+	switch {
+	case pid <= 0:
+		fmt.Println("Start the daemon to begin indexing.")
+	case daemonSignalProcess(pid, syscall.SIGUSR1) == nil:
+		fmt.Println("Indexing will begin shortly.")
+	default:
+		fmt.Println("The daemon is running and will pick up notebook changes on its next refresh cycle.")
+	}
+}
+
+// daemonPID returns the LaunchAgent PID when the core daemon is installed and running, or zero otherwise.
+func daemonPID() int {
+	if _, err := daemonStatPath(daemonPlistPath()); err != nil {
+		return 0
+	}
+	out, err := daemonLaunchctlList(daemonLabel)
+	if err != nil || len(out) == 0 {
+		return 0
+	}
+	return parseLaunchctlPID(string(out))
+}
+
+// daemonPlistPath builds the LaunchAgent plist path used by the installed core daemon.
+func daemonPlistPath() string {
+	home, _ := daemonUserHomeDir()
+	return filepath.Join(home, "Library", "LaunchAgents", daemonLabel+".plist")
+}
+
+// parseLaunchctlPID extracts the numeric PID from `launchctl list` output for the core daemon label.
+func parseLaunchctlPID(output string) int {
+	re := regexp.MustCompile(`"PID"\s*=\s*(\d+)`)
+	matches := re.FindStringSubmatch(output)
+	if len(matches) != 2 {
+		return 0
+	}
+	pid, _ := strconv.Atoi(matches[1])
+	return pid
 }
 
 // marshalConfig encodes a NotebookConfig to JSON for storage in config.json.

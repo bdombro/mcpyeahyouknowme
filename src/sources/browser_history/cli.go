@@ -94,6 +94,9 @@ func RunReset(dataDir string) {
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
 	}
+	if err := core.ClearSearchSource(dataDir, "browser_history"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not clear search index: %v\n", err)
+	}
 	fmt.Println("browser_history reset.")
 }
 

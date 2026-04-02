@@ -98,7 +98,7 @@ func writeSearchIndexSection(b *strings.Builder, dataDir string, daemonRunning b
 	fmt.Fprintln(b, "\U0001f50d Search Index")
 	stats := ReadOnlySearchIndexStats(dataDir)
 	if stats.Entries == 0 && stats.Embedded == 0 {
-		fmt.Fprintln(b, "   Status:     not indexed (start daemon or run 'mcpyeahyouknowme reindex')")
+		fmt.Fprintln(b, "   Status:     not indexed")
 		fmt.Fprintln(b)
 		return
 	}

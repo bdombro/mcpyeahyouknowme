@@ -49,6 +49,7 @@ func (s *testMCPSource) Close() error { return nil }
 
 type fakeIndexer struct {
 	indexed  [][]core.SearchEntry
+	pruned   []string
 	updated  []string
 	onUpdate func(string)
 	err      error
@@ -57,6 +58,12 @@ type fakeIndexer struct {
 // Records indexed batches so the test can verify which sources were actually passed to the indexer.
 func (f *fakeIndexer) IndexEntries(entries []core.SearchEntry) error {
 	f.indexed = append(f.indexed, entries)
+	return f.err
+}
+
+// Records prune calls so the test double still satisfies the sourceIndexer contract after incremental-prune support was added.
+func (f *fakeIndexer) PruneSource(source string, _ []core.SearchEntry) error {
+	f.pruned = append(f.pruned, source)
 	return f.err
 }
 

@@ -273,6 +273,9 @@ func RunReset(dataDir string) {
 	if err := core.SetSourceDisabled(dataDir, "gsuite"); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
 	}
+	if err := core.ClearSearchSource(dataDir, "gsuite"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not clear search index: %v\n", err)
+	}
 
 	fmt.Println("Google Suite data reset complete")
 	fmt.Println("Run 'mcpyeahyouknowme gsuite login' to re-authenticate")

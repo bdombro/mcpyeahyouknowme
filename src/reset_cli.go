@@ -23,7 +23,9 @@ var (
 			"search.db-shm",
 		})
 	}
-	resetAllSaveConfig = func(dataDir string, cfg core.Config) error {
+	resetAllDaemonPID     = coreDaemonPID
+	resetAllRestartDaemon = restartInstalledDaemon
+	resetAllSaveConfig    = func(dataDir string, cfg core.Config) error {
 		return core.SaveConfig(dataDir, cfg)
 	}
 )
@@ -63,6 +65,13 @@ func doResetAll(dataDir string) {
 		fmt.Fprintf(resetAllStderr, "Warning: could not reset config.json: %v\n", err)
 	} else {
 		fmt.Fprintln(resetAllStdout, "  Reset config.json")
+	}
+	if resetAllDaemonPID() > 0 {
+		if err := resetAllRestartDaemon(); err != nil {
+			fmt.Fprintf(resetAllStderr, "Warning: could not restart daemon after reset: %v\n", err)
+		} else {
+			fmt.Fprintln(resetAllStdout, "  Restarted daemon")
+		}
 	}
 
 	fmt.Fprintln(resetAllStdout, "All connections and data reset.")

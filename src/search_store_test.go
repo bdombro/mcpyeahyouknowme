@@ -237,6 +237,149 @@ func TestSearchStore_IndexEntries_upsert(t *testing.T) {
 	}
 }
 
+// Verifies DeleteBySource removes only one source's rows and leaves the rest searchable through FTS.
+func TestSearchStore_DeleteBySource(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	entries := []SearchEntry{
+		{Source: "gsuite", SourceID: "thread-1", ContentType: "email_thread_subject", Title: "John Thomas", Content: "John Thomas has 3 kids"},
+		{Source: "notebook", SourceID: "note-1", ContentType: "note_title", Title: "John Thomas", Content: "John Thomas"},
+		{Source: "notebook", SourceID: "note-1#chunk0", ContentType: "note_content", Title: "John Thomas", Content: "John Thomas has 2 kids"},
+	}
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
+	if err := store.DeleteBySource("gsuite"); err != nil {
+		t.Fatalf("DeleteBySource: %v", err)
+	}
+
+	var gsuiteCount int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM search_entries WHERE source = 'gsuite'`).Scan(&gsuiteCount); err != nil {
+		t.Fatalf("count gsuite rows: %v", err)
+	}
+	if gsuiteCount != 0 {
+		t.Fatalf("expected gsuite rows to be deleted, got %d", gsuiteCount)
+	}
+	var notebookCount int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM search_entries WHERE source = 'notebook'`).Scan(&notebookCount); err != nil {
+		t.Fatalf("count notebook rows: %v", err)
+	}
+	if notebookCount != 2 {
+		t.Fatalf("expected notebook rows to remain, got %d", notebookCount)
+	}
+
+	results, err := store.Search("John Thomas", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected notebook results to remain searchable")
+	}
+	for _, result := range results {
+		if result.Source == "gsuite" {
+			t.Fatalf("expected gsuite results to be deleted, got %#v", results)
+		}
+	}
+}
+
+// Verifies DeleteBySource returns an error when the underlying DB handle is already closed.
+func TestSearchStore_DeleteBySource_closedDB(t *testing.T) {
+	db, err := sql.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	store, err := NewSearchStoreFromDB(db, nil)
+	if err != nil {
+		t.Fatalf("NewSearchStoreFromDB: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	if err := store.DeleteBySource("gsuite"); err == nil {
+		t.Fatal("expected closed DB error")
+	}
+}
+
+// Verifies PruneSource removes stale rows that no longer appear in a source's latest SearchEntries output.
+func TestSearchStore_PruneSource_subset(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	entries := []SearchEntry{
+		{Source: "notebook", SourceID: "note-1", ContentType: "note_title", Title: "John Thomas", Content: "John Thomas"},
+		{Source: "notebook", SourceID: "note-1#chunk0", ContentType: "note_content", Title: "John Thomas", Content: "John Thomas has 2 kids"},
+		{Source: "notebook", SourceID: "note-2", ContentType: "note_title", Title: "Old note", Content: "Old note"},
+	}
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
+	current := []SearchEntry{
+		{Source: "notebook", SourceID: "note-1", ContentType: "note_title", Title: "John Thomas", Content: "John Thomas"},
+		{Source: "notebook", SourceID: "note-1#chunk0", ContentType: "note_content", Title: "John Thomas", Content: "John Thomas has 2 kids"},
+	}
+	if err := store.PruneSource("notebook", current); err != nil {
+		t.Fatalf("PruneSource: %v", err)
+	}
+
+	var count int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM search_entries WHERE source = 'notebook'`).Scan(&count); err != nil {
+		t.Fatalf("count notebook rows: %v", err)
+	}
+	if count != len(current) {
+		t.Fatalf("expected %d notebook rows after prune, got %d", len(current), count)
+	}
+	results, err := store.Search("Old note", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected stale note to be pruned, got %#v", results)
+	}
+}
+
+// Verifies PruneSource deletes every row for a source when that source returns no current SearchEntries.
+func TestSearchStore_PruneSource_empty(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	entries := []SearchEntry{
+		{Source: "notebook", SourceID: "note-1", ContentType: "note_title", Title: "John Thomas", Content: "John Thomas"},
+		{Source: "notebook", SourceID: "note-1#chunk0", ContentType: "note_content", Title: "John Thomas", Content: "John Thomas has 2 kids"},
+	}
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
+	if err := store.PruneSource("notebook", nil); err != nil {
+		t.Fatalf("PruneSource: %v", err)
+	}
+
+	var count int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM search_entries WHERE source = 'notebook'`).Scan(&count); err != nil {
+		t.Fatalf("count notebook rows: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected notebook rows to be deleted, got %d", count)
+	}
+}
+
+// Verifies PruneSource returns an error when the DB handle is closed before prune bookkeeping can begin.
+func TestSearchStore_PruneSource_closedDB(t *testing.T) {
+	db, err := sql.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	store, err := NewSearchStoreFromDB(db, nil)
+	if err != nil {
+		t.Fatalf("NewSearchStoreFromDB: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	if err := store.PruneSource("notebook", []SearchEntry{{Source: "notebook", SourceID: "note-1", ContentType: "note_title"}}); err == nil {
+		t.Fatal("expected closed DB error")
+	}
+}
+
 // Verifies indexing leaves embeddings pending until callers run the explicit embedding pass.
 func TestSearchStore_IndexEntries_withEmbeddings(t *testing.T) {
 	emb := &mockEmbedder{dim: 16}

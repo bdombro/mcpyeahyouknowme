@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"syscall"
 	"testing"
@@ -37,7 +38,7 @@ func (r *runtimeTestSource) Reset(string) error { r.resetCalled = true; return n
 // Closes nothing because the runtime test stub owns no resources.
 func (r *runtimeTestSource) Close() error { return nil }
 
-// Verifies handleReset keeps the source config entry but clears enabled/reset state instead of deleting it.
+// Verifies handleReset keeps the source config entry, clears indexed rows for that source, and disables it instead of deleting config state.
 func TestHandleReset_disablesSourceInsteadOfDeleting(t *testing.T) {
 	core.RegisterKnownSource("stub")
 	dir := t.TempDir()
@@ -58,11 +59,43 @@ func TestHandleReset_disablesSourceInsteadOfDeleting(t *testing.T) {
 	}}
 	t.Cleanup(func() { registry.All = original })
 
+	searchDB, err := sql.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("open search db: %v", err)
+	}
+	t.Cleanup(func() { searchDB.Close() })
+	searchStore, err := NewSearchStoreFromDB(searchDB, nil)
+	if err != nil {
+		t.Fatalf("NewSearchStoreFromDB: %v", err)
+	}
+	stubMeta := json.RawMessage(`{"path":"stub.md"}`)
+	otherMeta := json.RawMessage(`{"path":"other.md"}`)
+	if err := searchStore.IndexEntries([]SearchEntry{
+		{Source: "stub", SourceID: "stub#title", ContentType: "note_title", Title: "Stub", Content: "Stub", Metadata: stubMeta},
+		{Source: "other", SourceID: "other#title", ContentType: "note_title", Title: "Other", Content: "Other", Metadata: otherMeta},
+	}); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
 	cfg := core.LoadConfig(dir)
-	handleReset(dir, "stub", &cfg)
+	handleReset(dir, "stub", &cfg, searchStore)
 
 	if !src.resetCalled {
 		t.Fatal("expected reset to be called")
+	}
+	var stubCount int
+	if err := searchStore.db.QueryRow("SELECT COUNT(*) FROM search_entries WHERE source = 'stub'").Scan(&stubCount); err != nil {
+		t.Fatalf("count stub rows: %v", err)
+	}
+	if stubCount != 0 {
+		t.Fatalf("expected stub rows to be deleted, got %d", stubCount)
+	}
+	var otherCount int
+	if err := searchStore.db.QueryRow("SELECT COUNT(*) FROM search_entries WHERE source = 'other'").Scan(&otherCount); err != nil {
+		t.Fatalf("count other rows: %v", err)
+	}
+	if otherCount != 1 {
+		t.Fatalf("expected other rows to remain, got %d", otherCount)
 	}
 	loaded := core.LoadConfig(dir)
 	sc, ok := loaded.Sources["stub"]

@@ -236,15 +236,17 @@ mcpyeahyouknowme reset
 mcpyeahyouknowme whatsapp reset
 mcpyeahyouknowme gsuite reset
 mcpyeahyouknowme browser_history reset
+mcpyeahyouknowme notebook reset
 ```
 
 | Command | Description |
 |---------|-------------|
 | `info` | Shows build metadata; core daemon install/running status including network state and optional RSS; global data directory status; a Search Index section with entry/indexed counts and DB size; and per-source sections sorted alphabetically, including unavailable reasons when a source is not built/configured. The core daemon prints the same report on startup. |
-| `reset` | Prompts for confirmation, resets every registered source connection and its local data, clears the global search index, and rewrites `config.json` to a fully disabled normalized state. It preserves the installed daemon, embedding models, tokenizer cache, logs, and binary. |
-| `whatsapp reset` | Removes WhatsApp auth/session data, clears local synced data, and leaves the source disabled in config until the user logs in again. |
-| `gsuite reset` | Prompts for confirmation, removes the Google Suite token and local synced data, and leaves the source disabled in config until the user logs in again. |
-| `browser_history reset` | Prompts for confirmation, removes local browser history snapshot files, and leaves the source disabled in config until re-enabled. |
+| `reset` | Prompts for confirmation, resets every registered source connection and its local data, clears the global search index, rewrites `config.json` to a fully disabled normalized state, and restarts the daemon when it is running so daemon-owned SQLite handles reopen against the clean on-disk state. It preserves the installed daemon, embedding models, tokenizer cache, logs, and binary. |
+| `whatsapp reset` | Removes WhatsApp auth/session data, clears local synced data, removes WhatsApp rows from the global search index, and leaves the source disabled in config until the user logs in again. |
+| `gsuite reset` | Prompts for confirmation, removes the Google Suite token and local synced data, removes Google Suite rows from the global search index, and leaves the source disabled in config until the user logs in again. |
+| `browser_history reset` | Prompts for confirmation, removes local browser history snapshot files, removes browser-history rows from the global search index, and leaves the source disabled in config until re-enabled. |
+| `notebook reset` | Prompts for confirmation, removes notebook cache/config state, removes notebook rows from the global search index, and leaves the source disabled in config until notebook directories are added again. |
 
 **Uninstalling:** For complete removal of the application, use `./scripts/uninstall.sh` from the repository root. This kills all processes, removes the daemon, wipes all data, removes shell completions, and deletes the binary from `/usr/local/bin`. See the [README](../README.md) for details.
 
@@ -603,7 +605,7 @@ Metadata shapes per WhatsApp content type:
 
 ### Global Hybrid Search
 
-The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 5-minute tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available; when the daemon is running it signals that process to start reindexing immediately, and when no daemon is running it falls back to a standalone rebuild. Each `DataSource` provides its indexable content via `SearchEntries()`, and the indexer writes entries for every source before starting a separate embedding pass. Embedding batch size scales dynamically based on available system memory (4–32, baseline 16), and embeddings are computed afterward in chunks of 200 rows with per-chunk commits to limit resource usage without blocking later sources from entering the shared keyword index. To improve retrieval for multi-message conversations, WhatsApp is indexed as bounded per-chat transcript chunks instead of one row per message. To reduce index size and embedding cost, numeric-dominant body chunks from WhatsApp, Docs, Sheets, and Slides are skipped while titles, owners, subjects, and other short structured entries remain indexed. Content is normalized into a shared schema:
+The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 5-minute tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available; when the daemon is running it signals that process to start reindexing immediately, and when no daemon is running it falls back to a standalone rebuild. Each `DataSource` provides its indexable content via `SearchEntries()`, and the indexer writes entries for every source before starting a separate embedding pass. After each source upsert, the indexer prunes stale rows for that source so deleted notes, removed source records, or disabled content do not linger in hybrid search results. Per-source reset commands also delete that source's rows from `search.db`, and the global `reset` command restarts the daemon after clearing `search.db` so daemon-held SQLite handles cannot recreate stale on-disk indexes. Embedding batch size scales dynamically based on available system memory (4–32, baseline 16), and embeddings are computed afterward in chunks of 200 rows with per-chunk commits to limit resource usage without blocking later sources from entering the shared keyword index. To improve retrieval for multi-message conversations, WhatsApp is indexed as bounded per-chat transcript chunks instead of one row per message. To reduce index size and embedding cost, numeric-dominant body chunks from WhatsApp, Docs, Sheets, and Slides are skipped while titles, owners, subjects, and other short structured entries remain indexed. Content is normalized into a shared schema:
 
 | Content Type | Source | Indexed From |
 |-------------|--------|-------------|

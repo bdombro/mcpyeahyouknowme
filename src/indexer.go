@@ -17,6 +17,7 @@ type activeSource struct {
 
 type sourceIndexer interface {
 	IndexEntries(entries []core.SearchEntry) error
+	PruneSource(source string, current []core.SearchEntry) error
 	UpdateSourceTimestamp(source string, ts time.Time)
 }
 
@@ -42,6 +43,10 @@ func indexSources(ctx context.Context, store sourceIndexer, sources []activeSour
 		}
 		if err := store.IndexEntries(entries); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to index %s entries: %v\n", active.src.Name(), err)
+			continue
+		}
+		if err := store.PruneSource(active.src.Name(), entries); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to prune %s entries: %v\n", active.src.Name(), err)
 			continue
 		}
 		store.UpdateSourceTimestamp(active.src.Name(), time.Now())

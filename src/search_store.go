@@ -137,6 +137,14 @@ func (s *SearchStore) Clear() error {
 	return nil
 }
 
+// Deletes all indexed rows for one source so resets stop surfacing stale content in hybrid search.
+func (s *SearchStore) DeleteBySource(source string) error {
+	if _, err := s.db.Exec(`DELETE FROM search_entries WHERE source = ?`, source); err != nil {
+		return fmt.Errorf("delete search entries for source %s: %w", source, err)
+	}
+	return nil
+}
+
 // IndexEntries upserts entries into the search index so all sources become
 // searchable before any background embedding work begins.
 func (s *SearchStore) IndexEntries(entries []SearchEntry) error {
@@ -177,6 +185,63 @@ func (s *SearchStore) IndexEntries(entries []SearchEntry) error {
 
 	// Rebuild FTS if needed (for the initial bulk load case)
 	s.rebuildFTSIfNeeded()
+	return nil
+}
+
+// Prunes stale rows for one source so incremental indexing matches the source's latest SearchEntries output exactly.
+func (s *SearchStore) PruneSource(source string, current []SearchEntry) error {
+	tx, err := s.db.Begin()
+	if err != nil { // nocov
+		return fmt.Errorf("begin prune for %s: %w", source, err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		CREATE TEMP TABLE IF NOT EXISTS prune_keep_keys (
+			source_id TEXT NOT NULL,
+			content_type TEXT NOT NULL,
+			PRIMARY KEY (source_id, content_type)
+		)`); err != nil { // nocov
+		return fmt.Errorf("create prune keys for %s: %w", source, err)
+	}
+	if _, err := tx.Exec(`DELETE FROM prune_keep_keys`); err != nil { // nocov
+		return fmt.Errorf("clear prune keys for %s: %w", source, err)
+	}
+
+	if len(current) > 0 {
+		stmt, err := tx.Prepare(`
+			INSERT OR IGNORE INTO prune_keep_keys (source_id, content_type)
+			VALUES (?, ?)`)
+		if err != nil { // nocov
+			return fmt.Errorf("prepare prune keys for %s: %w", source, err)
+		}
+		defer stmt.Close()
+
+		for _, entry := range current {
+			if _, err := stmt.Exec(entry.SourceID, entry.ContentType); err != nil { // nocov
+				return fmt.Errorf("insert prune key for %s/%s/%s: %w", source, entry.SourceID, entry.ContentType, err)
+			}
+		}
+	}
+
+	if _, err := tx.Exec(`
+		DELETE FROM search_entries
+		WHERE source = ?
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM prune_keep_keys
+			WHERE prune_keep_keys.source_id = search_entries.source_id
+			  AND prune_keep_keys.content_type = search_entries.content_type
+		)`, source); err != nil { // nocov
+		return fmt.Errorf("prune stale entries for %s: %w", source, err)
+	}
+
+	if _, err := tx.Exec(`DELETE FROM prune_keep_keys`); err != nil { // nocov
+		return fmt.Errorf("reset prune keys for %s: %w", source, err)
+	}
+	if err := tx.Commit(); err != nil { // nocov
+		return fmt.Errorf("commit prune for %s: %w", source, err)
+	}
 	return nil
 }
 
