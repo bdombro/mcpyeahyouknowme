@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // NewSearchStore opens or creates search.db for daemon/MCP/CLI ownership, applying WAL and busy-timeout settings before use.
@@ -16,7 +16,7 @@ func NewSearchStore(dir string, embedder EmbedderInterface) (*SearchStore, error
 	}
 
 	dbPath := filepath.Join(dir, "search.db")
-	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", dbPath))
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(on)", dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open search db: %w", err)
 	}
@@ -66,7 +66,7 @@ func initSearchSchema(db *sql.DB) error {
 		content_rowid='id'
 	)`)
 	if err != nil {
-		return fmt.Errorf("create search_fts: %w (hint: build with -tags sqlite_fts5)", err)
+		return fmt.Errorf("create search_fts: %w", err)
 	}
 
 	_, err = db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_insert AFTER INSERT ON search_entries BEGIN

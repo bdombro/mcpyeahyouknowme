@@ -33,12 +33,12 @@
 | [`service.go`](#servicego) | 401 | 420 | 95.5% |
 | [`source.go`](#sourcego) | 139 | 151 | 92.1% |
 | [`source_init.go`](#source_initgo) | 0 | 2 | 0.0% |
-| [`stats.go`](#statsgo) | 61 | 81 | 75.3% |
+| [`stats.go`](#statsgo) | 25 | 81 | 30.9% |
 | [`store.go`](#storego) | 111 | 122 | 91.0% |
 | [`store_init.go`](#store_initgo) | 0 | 28 | 0.0% |
 | [`system.go`](#systemgo) | 41 | 50 | 82.0% |
 | [`utils.go`](#utilsgo) | 0 | 47 | 0.0% |
-| **Total** | **2997** | **4599** | **65.2%** |
+| **Total** | **2961** | **4599** | **64.4%** |
 
 ## Uncovered Blocks
 
@@ -400,12 +400,12 @@
 
 ### [`client.go`](../src/client.go)
 
-- Lines 149–151 (1 stmt)
 - Lines 147–149 (1 stmt)
 - Lines 152–154 (1 stmt)
 - Lines 186–188 (1 stmt)
 - Lines 212–214 (1 stmt)
 - Lines 218–220 (1 stmt)
+- Lines 149–151 (1 stmt)
 - Lines 34–35 (1 stmt)
 - Lines 35–37 (1 stmt)
 - Lines 39–44 (4 stmts)
@@ -839,13 +839,13 @@
 
 ### [`lazy_embedder.go`](../src/lazy_embedder.go)
 
-- Lines 20–21 (1 stmt)
-- Lines 21–23 (1 stmt)
-- Lines 35–38 (2 stmts)
-- Lines 40–42 (1 stmt)
-- Lines 52–54 (1 stmt)
-- Lines 66–67 (1 stmt)
-- Lines 67–69 (1 stmt)
+- Lines 21–22 (1 stmt)
+- Lines 22–24 (1 stmt)
+- Lines 38–41 (2 stmts)
+- Lines 43–45 (1 stmt)
+- Lines 56–58 (1 stmt)
+- Lines 72–73 (1 stmt)
+- Lines 73–75 (1 stmt)
 
 ### [`main.go`](../src/main.go)
 
@@ -1025,20 +1025,20 @@
 - Lines 174–177 (1 stmt)
 - Lines 182–184 (1 stmt)
 - Lines 232–234 (1 stmt)
-- Lines 266–268 (1 stmt)
-- Lines 324–326 (1 stmt)
-- Lines 394–396 (1 stmt)
-- Lines 413–414 (1 stmt)
-- Lines 459–462 (2 stmts)
-- Lines 529–530 (1 stmt)
-- Lines 588–590 (1 stmt)
-- Lines 597–598 (1 stmt)
-- Lines 703–705 (1 stmt)
-- Lines 713–714 (1 stmt)
-- Lines 741–743 (1 stmt)
-- Lines 751–752 (1 stmt)
-- Lines 774–775 (1 stmt)
-- Lines 903–904 (1 stmt)
+- Lines 267–269 (1 stmt)
+- Lines 325–327 (1 stmt)
+- Lines 395–397 (1 stmt)
+- Lines 414–415 (1 stmt)
+- Lines 460–463 (2 stmts)
+- Lines 531–532 (1 stmt)
+- Lines 590–592 (1 stmt)
+- Lines 599–600 (1 stmt)
+- Lines 705–707 (1 stmt)
+- Lines 715–716 (1 stmt)
+- Lines 743–745 (1 stmt)
+- Lines 753–754 (1 stmt)
+- Lines 776–777 (1 stmt)
+- Lines 905–906 (1 stmt)
 
 ### [`source.go`](../src/source.go)
 
@@ -1060,21 +1060,41 @@
 ### [`stats.go`](../src/stats.go)
 
 - Lines 25–26 (1 stmt)
-- Lines 40–43 (3 stmts)
-- Lines 43–46 (3 stmts)
+- Lines 37–39 (1 stmt)
 - Lines 46–48 (1 stmt)
-- Lines 49–49 (1 stmt)
-- Lines 49–51 (1 stmt)
-- Lines 53–53 (1 stmt)
+- Lines 57–59 (2 stmts)
 - Lines 59–61 (1 stmt)
+- Lines 63–64 (2 stmts)
+- Lines 64–65 (1 stmt)
+- Lines 65–66 (1 stmt)
+- Lines 68–69 (2 stmts)
 - Lines 69–71 (1 stmt)
+- Lines 72–72 (1 stmt)
+- Lines 74–74 (1 stmt)
+- Lines 78–80 (2 stmts)
 - Lines 80–82 (1 stmt)
+- Lines 83–86 (3 stmts)
+- Lines 86–88 (2 stmts)
 - Lines 88–90 (1 stmt)
+- Lines 91–91 (1 stmt)
+- Lines 93–93 (1 stmt)
+- Lines 97–99 (2 stmts)
 - Lines 99–101 (1 stmt)
+- Lines 102–102 (1 stmt)
 - Lines 102–104 (1 stmt)
+- Lines 106–107 (2 stmts)
+- Lines 107–109 (1 stmt)
+- Lines 110–114 (3 stmts)
 - Lines 114–116 (1 stmt)
+- Lines 117–117 (1 stmt)
+- Lines 121–123 (2 stmts)
 - Lines 123–125 (1 stmt)
+- Lines 126–129 (3 stmts)
+- Lines 129–136 (7 stmts)
 - Lines 136–138 (1 stmt)
+- Lines 139–139 (1 stmt)
+- Lines 141–141 (1 stmt)
+- Lines 145–147 (1 stmt)
 
 ### [`store.go`](../src/store.go)
 

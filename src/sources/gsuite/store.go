@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // openGSuiteDB opens gsuite.db with WAL/busy-timeout settings and initializes shared app schema.
@@ -15,7 +15,7 @@ func openGSuiteDB(dataDir string) (*sql.DB, error) {
 		return nil, err
 	}
 	dbPath := filepath.Join(dataDir, "gsuite.db")
-	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_busy_timeout=30000", dbPath))
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=busy_timeout(30000)", dbPath))
 	if err != nil { // nocov — sql.Open only fails on unknown drivers
 		return nil, fmt.Errorf("failed to open gsuite database: %w", err)
 	}

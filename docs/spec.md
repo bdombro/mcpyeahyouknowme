@@ -10,7 +10,7 @@ A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.
 
 The build script sources `.env` from the repository root (if present) and bakes `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and optional `GOOGLE_PLACE_API_KEY` into the binary via `-ldflags`. Copy `.env.example` to `.env` and fill in the values before building if you want those sources available. The shipped desktop OAuth flow uses PKCE, but Google currently still requires the desktop client secret during token exchange.
 
-CGO must be enabled (default on macOS/Linux) since `go-sqlite3` requires it. On Windows, install a C compiler via [MSYS2](https://www.msys2.org/) and run `go env -w CGO_ENABLED=1` first.
+No CGO is required — the project uses [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), a pure-Go SQLite port.
 
 ## Commands
 
@@ -532,7 +532,7 @@ All data is stored in `~/.local/share/mcpyeahyouknowme/`.
 | `group_participants` | `(group_jid, participant_jid)` (composite) | Maps each group chat to its individual member JIDs, extracted from history sync conversation metadata and WhatsApp's `GetGroupInfo` API |
 | `messages_fts` | (FTS5 virtual) | Full-text search index on `messages.content`, maintained via triggers |
 
-Tables are created on startup if they don't exist. The FTS5 index is automatically rebuilt from the messages table on first run. The Go binary must be built with `-tags "sqlite_fts5"` to enable FTS5 support.
+Tables are created on startup if they don't exist. The FTS5 index is automatically rebuilt from the messages table on first run. FTS5 is included in the bundled SQLite engine and requires no special build tag.
 
 ### gsuite.db Gmail Schema
 
@@ -624,7 +624,7 @@ Without this, Gatekeeper blocks execution — the first invocation is killed (SI
 ## Dependencies
 
 - [whatsmeow](https://github.com/tulir/whatsmeow) — WhatsApp web multidevice API
-- [go-sqlite3](https://github.com/mattn/go-sqlite3) — SQLite driver (requires CGO, built with `sqlite_fts5` tag)
+- [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) — pure-Go SQLite driver (no CGO, FTS5 built-in)
 - [mcp-go](https://github.com/mark3labs/mcp-go) — Model Context Protocol server framework
 - [qrterminal](https://github.com/mdp/qrterminal) — QR code rendering in terminal
 - [fastembed-go](https://github.com/bdombro/fastembed-go) — ONNX-based text embeddings (BGE-Small-EN-v1.5)

@@ -23,17 +23,17 @@ CLI_DIR="$ROOT/src"
 
 run_vet() {
 	cd "$CLI_DIR"
-	go vet -tags=sqlite_fts5 ./...
+	go vet ./...
 }
 
 run_staticcheck() {
 	cd "$CLI_DIR"
-	go tool staticcheck -tags=sqlite_fts5 ./...
+	go tool staticcheck ./...
 }
 
 run_revive() {
 	cd "$CLI_DIR"
-	GOFLAGS='-tags=sqlite_fts5' go tool revive -config "$CLI_DIR/revive.toml" -set_exit_status ./...
+	go tool revive -config "$CLI_DIR/revive.toml" -set_exit_status ./...
 }
 
 main() {

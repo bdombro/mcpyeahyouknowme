@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/server"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"mcpyeahyouknowme/sources/whatsapp"
 )
 
@@ -42,7 +42,7 @@ func buildTestMCPServerWithSearch(t *testing.T) *server.MCPServer {
 	seedSearchFixtures(t, store)
 	ws := whatsapp.NewSourceFromStore(store, apiSrv.URL)
 
-	searchDB, err := sql.Open("sqlite3", "file::memory:?cache=shared&_foreign_keys=on")
+	searchDB, err := sql.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(on)")
 	if err != nil {
 		t.Fatalf("open search db: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestMCP_GlobalSearch_noKeywordMatch(t *testing.T) {
 	seedSearchFixtures(t, store)
 	ws := whatsapp.NewSourceFromStore(store, apiSrv.URL)
 
-	searchDB, _ := sql.Open("sqlite3", "file::memory:?cache=shared&_foreign_keys=on")
+	searchDB, _ := sql.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(on)")
 	defer searchDB.Close()
 
 	searchStore, _ := NewSearchStoreFromDB(searchDB, nil)

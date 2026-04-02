@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // IsNetworkAvailable reports whether any non-loopback network interface is up
@@ -95,7 +95,7 @@ func RunPollLoop(ctx context.Context, interval time.Duration, fn func(context.Co
 // shared pragmas (WAL mode, 30-second busy timeout, foreign keys on).
 func OpenDB(dataDir, filename string) (*sql.DB, error) {
 	path := filepath.Join(dataDir, filename)
-	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on&_busy_timeout=30000", path))
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(on)&_pragma=busy_timeout(30000)", path))
 	if err != nil {
 		return nil, err
 	}

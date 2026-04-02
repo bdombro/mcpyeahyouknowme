@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Builds an in-memory message store with the minimal schema and triggers needed for store-level tests.
 func newTestMessageStore(t *testing.T) *MessageStore {
 	t.Helper()
-	db, err := sql.Open("sqlite3", "file::memory:?cache=shared&_foreign_keys=on")
+	db, err := sql.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(on)")
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
@@ -72,7 +72,7 @@ func newTestMessageStore(t *testing.T) *MessageStore {
 	END`)
 
 	// Create contacts.db for testing
-	contactsDB, err := sql.Open("sqlite3", "file::memory:?cache=shared&_foreign_keys=on")
+	contactsDB, err := sql.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(on)")
 	if err != nil {
 		t.Fatalf("open contacts db: %v", err)
 	}

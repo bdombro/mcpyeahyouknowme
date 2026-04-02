@@ -264,7 +264,7 @@ func TestSplitLongThreadEntry_splitsOnNewlineBoundary(t *testing.T) {
 
 // Verifies Gmail schema initialization backfills legacy body columns and rebuilds thread rows.
 func TestInitGmailSchema_backfillsLegacyRowsAndBuildsThreads(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:?_fk=on&cache=shared")
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)&cache=shared")
 	if err != nil {
 		t.Fatalf("open legacy db: %v", err)
 	}

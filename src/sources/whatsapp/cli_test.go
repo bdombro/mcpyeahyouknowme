@@ -9,7 +9,7 @@ import (
 
 	"mcpyeahyouknowme/core"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
@@ -40,7 +40,7 @@ func TestInfoLines_withSessionAndMessages(t *testing.T) {
 	waPath := filepath.Join(dir, "whatsapp.db")
 	msgPath := filepath.Join(dir, "messages.db")
 
-	waDB, err := sql.Open("sqlite3", waPath)
+	waDB, err := sql.Open("sqlite", waPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestInfoLines_withSessionAndMessages(t *testing.T) {
 	}
 	waDB.Close()
 
-	msgDB, err := sql.Open("sqlite3", msgPath)
+	msgDB, err := sql.Open("sqlite", msgPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestInfoLines_messagesDBUnreadable(t *testing.T) {
 		t.Fatalf("SetSourceEnabled: %v", err)
 	}
 	waPath := filepath.Join(dir, "whatsapp.db")
-	waDB, err := sql.Open("sqlite3", waPath)
+	waDB, err := sql.Open("sqlite", waPath)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // errorEmbedder always returns errors, for testing error-path coverage.
@@ -133,7 +133,7 @@ func (m *mockEmbedder) hashEmbed(text string) []float32 {
 // Returns an initialized in-memory search store so tests can exercise indexing and querying without touching disk.
 func newTestSearchStore(t *testing.T, embedder EmbedderInterface) *SearchStore {
 	t.Helper()
-	db, err := sql.Open("sqlite3", "file::memory:?cache=shared&_foreign_keys=on")
+	db, err := sql.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(on)")
 	if err != nil {
 		t.Fatalf("open test search db: %v", err)
 	}

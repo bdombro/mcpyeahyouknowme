@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -16,7 +16,7 @@ import (
 func newTestStore(t *testing.T) *MessageStore {
 	t.Helper()
 
-	db, err := sql.Open("sqlite3", "file::memory:?cache=shared&_foreign_keys=on")
+	db, err := sql.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(on)")
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
@@ -84,7 +84,7 @@ func newTestStoreWithContacts(t *testing.T) *MessageStore {
 	t.Helper()
 	store := newTestStore(t)
 
-	contactsDB, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	contactsDB, err := sql.Open("sqlite", "file::memory:?cache=shared")
 	if err != nil {
 		t.Fatalf("open contacts db: %v", err)
 	}

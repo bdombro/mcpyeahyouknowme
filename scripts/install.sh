@@ -22,7 +22,7 @@
 # Prerequisites:
 #   - macOS (required for LaunchAgent daemon)
 #   - Homebrew (https://brew.sh)
-#   - Go 1.26+ with CGo enabled
+#   - Go 1.26+
 #
 # Post-installation:
 #   - Binary installed to: ~/.local/bin/mcpyeahyouknowme

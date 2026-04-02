@@ -7,8 +7,7 @@ alwaysApply: true
 # Testing Standards
 
 - 100% line coverage required on new/modified code (filtered output from `just test-coverage` or `just test-full`).
-- Build tag `sqlite_fts5` required for all test/build commands.
-- Verify: `cd src && go test -tags "sqlite_fts5" -coverprofile=coverage.out -count=1 ./... && go tool cover -func=coverage.out | grep <fn>`
+- Verify: `cd src && go test -coverprofile=coverage.out -count=1 ./... && go tool cover -func=coverage.out | grep <fn>`
 
 - **File inclusion**: `sources/whatsapp/` (store, service, helpers), `sources/gsuite/` (source, mcp, client, store, app_*), `search_store`, `embedding`. `*_init.go` excluded.
 - **`// nocov` auto-detection**: uncovered blocks containing `// nocov` stripped from filtered profile. Covered blocks unaffected.

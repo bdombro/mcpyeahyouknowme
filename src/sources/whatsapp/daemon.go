@@ -40,7 +40,7 @@ func (w *Source) StartCore(ctx context.Context) error {
 		return fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	container, err := sqlstore.New(context.Background(), "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on&_busy_timeout=30000", filepath.Join(dir, "whatsapp.db")), dbLog)
+	container, err := sqlstore.New(context.Background(), "sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(on)&_pragma=busy_timeout(30000)", filepath.Join(dir, "whatsapp.db")), dbLog)
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
@@ -652,7 +652,7 @@ func InfoLines(dDir string) []string {
 		if sizeBytes := core.FileGroupSizeBytes(waDB); sizeBytes > 0 {
 			lines = append(lines, fmt.Sprintf("   Session DB: %s", core.FormatSizeMB(sizeBytes)))
 		}
-		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", waDB))
+		db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(30000)", waDB))
 		if err == nil {
 			defer db.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
@@ -678,7 +678,7 @@ func InfoLines(dDir string) []string {
 		if sizeBytes := core.FileGroupSizeBytes(msgDB); sizeBytes > 0 {
 			lines = append(lines, fmt.Sprintf("   Message DB: %s", core.FormatSizeMB(sizeBytes)))
 		}
-		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", msgDB))
+		db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(30000)", msgDB))
 		if err != nil {
 			lines = append(lines, "   Messages:   unable to read database")
 		} else {

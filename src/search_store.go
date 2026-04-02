@@ -523,7 +523,7 @@ func ReadOnlySearchIndexStats(dir string) SearchIndexStats {
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		return SearchIndexStats{}
 	}
-	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro", dbPath))
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=ro", dbPath))
 	if err != nil { // nocov
 		return SearchIndexStats{}
 	}

@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Builds an in-memory SQLite DB with the full gsuite schema for isolated source and MCP tests.
 func newTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:?_fk=on&cache=shared")
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)&cache=shared")
 	if err != nil {
 		t.Fatalf("open in-memory db: %v", err)
 	}

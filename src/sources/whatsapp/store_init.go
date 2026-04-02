@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // NewMessageStore opens (or creates) the message and contacts databases.
@@ -15,7 +15,7 @@ func NewMessageStore(dataDir string) (*MessageStore, error) {
 		return nil, fmt.Errorf("failed to create data directory: %v", err)
 	}
 
-	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", filepath.Join(dataDir, "messages.db")))
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(on)", filepath.Join(dataDir, "messages.db")))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open message database: %v", err)
 	}
@@ -88,7 +88,7 @@ func NewMessageStore(dataDir string) (*MessageStore, error) {
 	store := &MessageStore{db: db}
 
 	// Open whatsmeow contacts DB (read-only) for name resolution; non-fatal if missing.
-	contactsDB, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", filepath.Join(dataDir, "whatsapp.db")))
+	contactsDB, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(30000)", filepath.Join(dataDir, "whatsapp.db")))
 	if err == nil {
 		store.contactsDB = contactsDB
 	}

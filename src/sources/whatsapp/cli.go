@@ -23,7 +23,7 @@ func IsLoggedIn(dataDir string) bool {
 	if _, err := os.Stat(waDB); err != nil {
 		return false
 	}
-	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", waDB))
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(30000)", waDB))
 	if err != nil {
 		return false
 	}
@@ -61,7 +61,7 @@ func RunLogin(dataDir string, args []string) {
 	logger := waLog.Stdout("Login", "INFO", true)
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
-	container, err := sqlstore.New(context.Background(), "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on&_busy_timeout=30000", filepath.Join(dataDir, "whatsapp.db")), dbLog)
+	container, err := sqlstore.New(context.Background(), "sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(on)&_pragma=busy_timeout(30000)", filepath.Join(dataDir, "whatsapp.db")), dbLog)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)

@@ -15,7 +15,7 @@
 #   just uninstall   - Complete uninstall
 #
 # Prerequisites:
-#   - Go 1.26+ with CGo enabled
+#   - Go 1.26+
 #   - Homebrew (for ONNX Runtime, macOS only)
 #   - macOS (for daemon features)
 
@@ -23,7 +23,7 @@
 default:
     @just --list
 
-# Build mcpyeahyouknowme (FTS5) into mcpyeahyouknowme.bin at repo root
+# Build mcpyeahyouknowme into mcpyeahyouknowme.bin at repo root
 build:
     @scripts/build.sh
 

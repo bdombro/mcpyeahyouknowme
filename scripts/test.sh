@@ -17,8 +17,7 @@
 #   ./scripts/test.sh --nocache --coverage # Disable cache + coverage + reports
 #
 # Prerequisites:
-#   - Go 1.26+ with CGo enabled
-#   - SQLite FTS5 support
+#   - Go 1.26+
 #
 # Notes:
 #   - Without --coverage: no -coverprofile, no files under coverage/
@@ -48,7 +47,7 @@ run_tests() {
 		mkdir -p "$ROOT/coverage"
 	fi
 	cd "$CLI_DIR"
-	local -a args=(-tags "sqlite_fts5")
+	local -a args=()
 	if $NOCACHE; then
 		args+=(-count=1)
 	fi
