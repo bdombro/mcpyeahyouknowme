@@ -1,3 +1,4 @@
+// Package gsuite implements the Google Workspace data source and MCP tools.
 package gsuite
 
 import (

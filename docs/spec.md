@@ -140,7 +140,7 @@ type DataSource interface {
 }
 ```
 
-Each source also implements `CoreService` (in `daemon.go`) for the background sync daemon:
+Sources that sync in the background implement `core.CoreService` (started from `runtime.go`):
 
 ```go
 type CoreService interface {
@@ -160,7 +160,7 @@ src/
     whatsapp/       — store, service, mcp, daemon, client, cli, helpers
     gsuite/         — source, app_*, mcp, daemon, client, cli
   cmd.go            — command table, usage output, command dispatch
-  config.go         — delegates to core.LoadConfig / core.SaveConfig
+  config.go         — delegates to core.LoadConfig for the main CLI/daemon config
   daemon.go         — LaunchAgent management + shell completion rendering
   main.go           — thin entrypoint: sets env and delegates to cmd.go
   runtime.go        — core daemon loop + source lifecycle orchestration

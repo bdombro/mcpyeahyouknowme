@@ -228,6 +228,7 @@ func (g *Source) saveAppsConfig(apps AppsConfig) error {
 }
 
 // AppDefs returns the known app definitions (for use by CLI/info).
+//revive:disable-next-line:unexported-return
 func AppDefs() []*appDef {
 	return allApps
 }

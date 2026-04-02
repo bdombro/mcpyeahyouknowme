@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // register SQLite driver for database/sql
 )
 
 // NewSource constructs the notebook source, opening (or creating) the file cache DB.

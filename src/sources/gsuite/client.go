@@ -13,8 +13,10 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
-// GoogleClientID and GoogleClientSecret are injected at build time via ldflags.
+// GoogleClientID is the OAuth 2.0 desktop client ID baked in at build time (see docs/spec.md Building).
 var GoogleClientID string
+
+// GoogleClientSecret is the matching OAuth client secret; Google still requires it during the desktop token exchange.
 var GoogleClientSecret string
 
 // IsConfigured reports whether the binary was built with the required Google OAuth credentials.

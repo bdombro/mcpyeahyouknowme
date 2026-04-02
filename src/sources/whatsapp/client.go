@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"go.mau.fi/whatsmeow"
+	//lint:ignore SA1019 whatsmeow/binary/proto is deprecated; keep aliases until migrated to waE2E
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
@@ -53,6 +54,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 		}
 	}
 
+	//lint:ignore SA1019 waProto.Message is a deprecated alias to waE2E.Message
 	msg := &waProto.Message{}
 
 	if mediaPath != "" {
@@ -104,6 +106,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 
 		switch mediaType {
 		case whatsmeow.MediaImage:
+			//lint:ignore SA1019 waProto.ImageMessage is a deprecated alias
 			msg.ImageMessage = &waProto.ImageMessage{
 				Caption:       proto.String(message),
 				Mimetype:      proto.String(mimeType),
@@ -130,6 +133,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 				fmt.Printf("Not an Ogg Opus file: %s\n", mimeType)
 			}
 
+			//lint:ignore SA1019 waProto.AudioMessage is a deprecated alias
 			msg.AudioMessage = &waProto.AudioMessage{
 				Mimetype:      proto.String(mimeType),
 				URL:           &resp.URL,
@@ -143,6 +147,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 				Waveform:      waveform,
 			}
 		case whatsmeow.MediaVideo:
+			//lint:ignore SA1019 waProto.VideoMessage is a deprecated alias
 			msg.VideoMessage = &waProto.VideoMessage{
 				Caption:       proto.String(message),
 				Mimetype:      proto.String(mimeType),
@@ -154,6 +159,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 				FileLength:    &resp.FileLength,
 			}
 		case whatsmeow.MediaDocument:
+			//lint:ignore SA1019 waProto.DocumentMessage is a deprecated alias
 			msg.DocumentMessage = &waProto.DocumentMessage{
 				Title:         proto.String(mediaPath[strings.LastIndex(mediaPath, "/")+1:]),
 				Caption:       proto.String(message),
@@ -283,7 +289,7 @@ func analyzeOggOpus(data []byte) (duration uint32, waveform []byte, err error) {
 
 	var lastGranule uint64
 	var sampleRate uint32 = 48000
-	var preSkip uint16 = 0
+	var preSkip uint16
 	var foundOpusHead bool
 
 	for i := 0; i < len(data); {

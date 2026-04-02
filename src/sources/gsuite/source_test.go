@@ -623,8 +623,8 @@ func TestFormatDriveOwners_Empty(t *testing.T) {
 
 // Verifies owner formatting omits the authenticated user from the display list when appropriate.
 func TestFormatDriveOwners_ExcludesSelf(t *testing.T) {
-	import_note := "uses drive.User inline via pointer"
-	_ = import_note
+	importNote := "uses drive.User inline via pointer"
+	_ = importNote
 	// Can't use drive.User without importing the SDK in the test — test via formatDriveOwners
 	// with no owners
 	result := formatDriveOwners(nil, "self@example.com")

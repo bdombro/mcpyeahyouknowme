@@ -1,3 +1,4 @@
+// Package registry lists data source descriptors, constructors, and capability flags.
 package registry
 
 import (

@@ -1,3 +1,4 @@
+// Package main is the mcpyeahyouknowme CLI and MCP server entrypoint.
 package main
 
 import (

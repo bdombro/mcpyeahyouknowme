@@ -1,3 +1,4 @@
+// Package notebook implements the notebook data source and MCP tools for local files.
 package notebook
 
 import (

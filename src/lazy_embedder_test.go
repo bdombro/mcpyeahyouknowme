@@ -11,12 +11,12 @@ type stubEmbedder struct {
 }
 
 // Returns stub passage embeddings so lazy-init tests can verify delegation without loading the real model.
-func (s *stubEmbedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
+func (s *stubEmbedder) EmbedTexts(_ []string, _ int) ([][]float32, error) {
 	return s.texts, nil
 }
 
 // Returns a stub query embedding so lazy-init tests can assert first-use initialization behavior deterministically.
-func (s *stubEmbedder) EmbedQuery(query string) ([]float32, error) {
+func (s *stubEmbedder) EmbedQuery(_ string) ([]float32, error) {
 	return s.query, nil
 }
 
@@ -26,7 +26,7 @@ func (s *stubEmbedder) Close() {}
 // Verifies lazy initialization stays deferred until the first embedding call so MCP startup remains cheap.
 func TestLazyEmbedder_defersInit(t *testing.T) {
 	calls := 0
-	lazy := newLazyEmbedderWithFactory(t.TempDir(), func(cacheDir string) (EmbedderInterface, error) {
+	lazy := newLazyEmbedderWithFactory(t.TempDir(), func(_ string) (EmbedderInterface, error) {
 		calls++
 		return &stubEmbedder{
 			query: []float32{1, 2, 3},
@@ -64,7 +64,7 @@ func TestLazyEmbedder_defersInit(t *testing.T) {
 // Verifies initialization failures are memoized so repeated search calls return the same error without retry loops.
 func TestLazyEmbedder_initError(t *testing.T) {
 	calls := 0
-	lazy := newLazyEmbedderWithFactory(t.TempDir(), func(cacheDir string) (EmbedderInterface, error) {
+	lazy := newLazyEmbedderWithFactory(t.TempDir(), func(_ string) (EmbedderInterface, error) {
 		calls++
 		return nil, errors.New("boom")
 	})

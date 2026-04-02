@@ -1,3 +1,4 @@
+// Package google_places implements live Google Places API lookups for MCP tools (no local index).
 package google_places
 
 import (
@@ -23,28 +24,33 @@ var errPlacesAPIKeyMissing = errors.New("GOOGLE_PLACE_API_KEY is not configured 
 // GooglePlaceAPIKey is injected at build time via ldflags.
 var GooglePlaceAPIKey string
 
+// PlacesClient calls the Places API (New) v1 endpoints used by google_places_search_places and google_places_get_place.
 type PlacesClient struct {
 	httpClient *http.Client
 	baseURL    string
 	apiKey     string
 }
 
+// Coordinates is a WGS84 latitude/longitude pair from the Places API.
 type Coordinates struct {
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
 }
 
+// AddressComponent is one structured address part (street, locality, etc.).
 type AddressComponent struct {
 	LongText  string   `json:"long_text,omitempty"`
 	ShortText string   `json:"short_text,omitempty"`
 	Types     []string `json:"types,omitempty"`
 }
 
+// OpeningHours captures human-readable opening-hour text and whether the place is open now.
 type OpeningHours struct {
 	OpenNow             *bool    `json:"open_now,omitempty"`
 	WeekdayDescriptions []string `json:"weekday_descriptions,omitempty"`
 }
 
+// PlaceSummary is a compact record returned from text search.
 type PlaceSummary struct {
 	PlaceID          string       `json:"place_id"`
 	DisplayName      string       `json:"display_name,omitempty"`
@@ -54,6 +60,7 @@ type PlaceSummary struct {
 	BusinessStatus   string       `json:"business_status,omitempty"`
 }
 
+// PlaceDetails is the full place payload returned from the details endpoint.
 type PlaceDetails struct {
 	PlaceID                  string             `json:"place_id"`
 	DisplayName              string             `json:"display_name,omitempty"`
@@ -231,13 +238,13 @@ func (c *PlacesClient) do(req *http.Request, dest interface{}) error {
 func apiError(statusCode int, body []byte) error {
 	var envelope apiErrorEnvelope
 	if err := json.Unmarshal(body, &envelope); err == nil && envelope.Error.Message != "" {
-		return fmt.Errorf("Google Places API error (%d): %s", statusCode, envelope.Error.Message)
+		return fmt.Errorf("google Places API error (%d): %s", statusCode, envelope.Error.Message)
 	}
 	text := strings.TrimSpace(string(body))
 	if text == "" {
 		text = http.StatusText(statusCode)
 	}
-	return fmt.Errorf("Google Places API error (%d): %s", statusCode, text)
+	return fmt.Errorf("google Places API error (%d): %s", statusCode, text)
 }
 
 // toSummary projects a raw Places API record into the smaller search-result payload clients get from text search.
@@ -282,11 +289,7 @@ func (p placeRecord) toDetails() PlaceDetails {
 	if len(p.AddressComponents) > 0 {
 		details.AddressComponents = make([]AddressComponent, 0, len(p.AddressComponents))
 		for _, comp := range p.AddressComponents {
-			details.AddressComponents = append(details.AddressComponents, AddressComponent{
-				LongText:  comp.LongText,
-				ShortText: comp.ShortText,
-				Types:     comp.Types,
-			})
+			details.AddressComponents = append(details.AddressComponents, AddressComponent(comp))
 		}
 	}
 	return details

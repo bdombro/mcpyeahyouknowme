@@ -1,3 +1,4 @@
+// Package core provides shared interfaces and helpers for CLI, MCP, daemon, and data sources.
 package core
 
 import (
@@ -27,8 +28,8 @@ type DataSource interface {
 	Close() error
 }
 
-// CoreService is required for all data sources — every source must sync data
-// locally via subscription or polling (max 5-minute interval).
+//revive:disable:exported
+// CoreService is implemented by data sources that run background sync (subscription or polling, max 5-minute interval).
 type CoreService interface {
 	// StartCore runs the source's background sync service. It blocks until ctx
 	// is cancelled. Sources must use core.RunPollLoop or manage their own loop.
@@ -36,6 +37,8 @@ type CoreService interface {
 	// RequiresAuth returns true if this source needs credentials before running.
 	RequiresAuth() bool
 }
+
+//revive:enable:exported
 
 // SearchEntry is the unit of indexable content from any DataSource.
 type SearchEntry struct {

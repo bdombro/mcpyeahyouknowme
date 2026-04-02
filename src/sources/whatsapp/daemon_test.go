@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	//lint:ignore SA1019 whatsmeow/binary/proto is deprecated; keep until migrated to waE2E
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"google.golang.org/protobuf/proto"
 )
@@ -12,11 +13,13 @@ import (
 func TestExtractTextContent(t *testing.T) {
 	tests := []struct {
 		name     string
+		//lint:ignore SA1019 waProto.Message is a deprecated type alias
 		msg      *waProto.Message
 		expected string
 	}{
 		{
 			name: "conversation message",
+			//lint:ignore SA1019 waProto.Message is a deprecated type alias
 			msg: &waProto.Message{
 				Conversation: proto.String("Hello World"),
 			},
@@ -24,7 +27,9 @@ func TestExtractTextContent(t *testing.T) {
 		},
 		{
 			name: "extended text message",
+			//lint:ignore SA1019 waProto.Message is a deprecated type alias
 			msg: &waProto.Message{
+				//lint:ignore SA1019 waProto.ExtendedTextMessage is a deprecated type alias
 				ExtendedTextMessage: &waProto.ExtendedTextMessage{
 					Text: proto.String("Extended hello"),
 				},
@@ -33,7 +38,9 @@ func TestExtractTextContent(t *testing.T) {
 		},
 		{
 			name: "contact",
+			//lint:ignore SA1019 waProto.Message is a deprecated type alias
 			msg: &waProto.Message{
+				//lint:ignore SA1019 waProto.ContactMessage is a deprecated type alias
 				ContactMessage: &waProto.ContactMessage{
 					DisplayName: proto.String("John Doe"),
 				},
@@ -42,13 +49,16 @@ func TestExtractTextContent(t *testing.T) {
 		},
 		{
 			name: "sticker",
+			//lint:ignore SA1019 waProto.Message is a deprecated type alias
 			msg: &waProto.Message{
+				//lint:ignore SA1019 waProto.StickerMessage is a deprecated type alias
 				StickerMessage: &waProto.StickerMessage{},
 			},
 			expected: "sticker",
 		},
 		{
-			name:     "empty message",
+			name: "empty message",
+			//lint:ignore SA1019 waProto.Message is a deprecated type alias
 			msg:      &waProto.Message{},
 			expected: "",
 		},
@@ -73,13 +83,16 @@ func TestExtractTextContent(t *testing.T) {
 func TestExtractMediaInfo(t *testing.T) {
 	tests := []struct {
 		name         string
+		//lint:ignore SA1019 waProto.Message is a deprecated type alias
 		msg          *waProto.Message
 		expectedType string
 		hasURL       bool
 	}{
 		{
 			name: "image message",
+			//lint:ignore SA1019 waProto.Message is a deprecated type alias
 			msg: &waProto.Message{
+				//lint:ignore SA1019 waProto.ImageMessage is a deprecated type alias
 				ImageMessage: &waProto.ImageMessage{
 					Mimetype:      proto.String("image/jpeg"),
 					URL:           proto.String("https://example.com/image.jpg"),
@@ -95,9 +108,11 @@ func TestExtractMediaInfo(t *testing.T) {
 		},
 		{
 			name: "document message with filename",
+			//lint:ignore SA1019 waProto.Message is a deprecated type alias
 			msg: &waProto.Message{
+				//lint:ignore SA1019 waProto.DocumentMessage is a deprecated type alias
 				DocumentMessage: &waProto.DocumentMessage{
-					FileName:      proto.String("document.pdf"),
+					FileName: proto.String("document.pdf"),
 					URL:           proto.String("https://example.com/doc.pdf"),
 					MediaKey:      []byte("dockey"),
 					FileSHA256:    []byte("docsha"),
@@ -109,7 +124,8 @@ func TestExtractMediaInfo(t *testing.T) {
 			hasURL:       true,
 		},
 		{
-			name:         "no media message",
+			name: "no media message",
+			//lint:ignore SA1019 waProto.Message is a deprecated type alias
 			msg:          &waProto.Message{Conversation: proto.String("Just text")},
 			expectedType: "",
 			hasURL:       false,

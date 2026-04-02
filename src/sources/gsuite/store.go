@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // register SQLite driver for database/sql
 )
 
 // openGSuiteDB opens gsuite.db with WAL/busy-timeout settings and initializes shared app schema.

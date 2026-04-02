@@ -16,6 +16,7 @@ import (
 
 	"github.com/mdp/qrterminal"
 	"go.mau.fi/whatsmeow"
+	//lint:ignore SA1019 whatsmeow/binary/proto is deprecated; keep aliases until migrated to waE2E
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
@@ -334,14 +335,13 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 				continue
 			}
 
-			timestamp := time.Time{}
-			if ts := latestMsg.Message.GetMessageTimestamp(); ts != 0 {
-				timestamp = time.Unix(int64(ts), 0)
-			} else {
+			ts := latestMsg.Message.GetMessageTimestamp()
+			if ts == 0 {
 				continue
 			}
+			chatTimestamp := time.Unix(int64(ts), 0)
 
-			messageStore.StoreChat(chatJID, name, timestamp)
+			messageStore.StoreChat(chatJID, name, chatTimestamp)
 
 			for _, msg := range messages {
 				if msg == nil || msg.Message == nil {
@@ -394,19 +394,18 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 					msgID = *msg.Message.Key.ID
 				}
 
-				timestamp := time.Time{}
-				if ts := msg.Message.GetMessageTimestamp(); ts != 0 {
-					timestamp = time.Unix(int64(ts), 0)
-				} else {
+				msgTs := msg.Message.GetMessageTimestamp()
+				if msgTs == 0 {
 					continue
 				}
+				msgTime := time.Unix(int64(msgTs), 0)
 
 				err = messageStore.StoreMessage(
 					msgID,
 					chatJID,
 					sender,
 					content,
-					timestamp,
+					msgTime,
 					isFromMe,
 					mediaType,
 					filename,
@@ -502,6 +501,8 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 }
 
 // extractTextContent normalizes many WhatsApp protobuf message shapes into the text that live/history ingest stores and indexes.
+//
+//lint:ignore SA1019 waProto.Message is a deprecated alias to waE2E.Message
 func extractTextContent(msg *waProto.Message) string {
 	if msg == nil {
 		return ""
@@ -576,6 +577,8 @@ func extractTextContent(msg *waProto.Message) string {
 }
 
 // extractMediaInfo pulls download metadata from supported media message types so later REST-triggered downloads can be reconstructed.
+//
+//lint:ignore SA1019 waProto.Message is a deprecated alias to waE2E.Message
 func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, url string, mediaKey []byte, fileSHA256 []byte, fileEncSHA256 []byte, fileLength uint64) {
 	if msg == nil {
 		return "", "", "", nil, nil, nil, 0
@@ -602,37 +605,6 @@ func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, 
 	}
 
 	return "", "", "", nil, nil, nil, 0
-}
-
-// requestHistorySync asks the paired phone for more history, a manual side effect used to backfill older local data.
-func requestHistorySync(client *whatsmeow.Client) {
-	if client == nil {
-		fmt.Println("Client is not initialized. Cannot request history sync.")
-		return
-	}
-
-	if !client.IsConnected() {
-		fmt.Println("Client is not connected. Please ensure you are connected to WhatsApp first.")
-		return
-	}
-
-	if client.Store.ID == nil {
-		fmt.Println("Client is not logged in. Please scan the QR code first.")
-		return
-	}
-
-	historyMsg := client.BuildHistorySyncRequest(nil, 500)
-	if historyMsg == nil {
-		fmt.Println("Failed to build history sync request.")
-		return
-	}
-
-	_, err := client.SendPeerMessage(context.Background(), historyMsg)
-	if err != nil {
-		fmt.Printf("Failed to request history sync: %v\n", err)
-	} else {
-		fmt.Println("History sync requested. Waiting for server response...")
-	}
 }
 
 // InfoLines returns indented lines for the `info` command WhatsApp section.

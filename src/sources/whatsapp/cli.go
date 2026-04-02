@@ -1,3 +1,4 @@
+// Package whatsapp implements the WhatsApp data source, daemon, MCP tools, and CLI.
 package whatsapp
 
 import (

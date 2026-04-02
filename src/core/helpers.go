@@ -1,3 +1,4 @@
+// Package core provides shared interfaces and helpers for CLI, MCP, daemon, and data sources.
 package core
 
 import (
@@ -55,6 +56,7 @@ func BoolArg(args map[string]interface{}, key string, def bool) bool {
 }
 
 // JsonResult serializes v into the text payload shape MCP handlers return, converting marshal failures into tool errors.
+//revive:disable-next-line:var-naming
 func JsonResult(v interface{}) (*mcp.CallToolResult, error) {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {

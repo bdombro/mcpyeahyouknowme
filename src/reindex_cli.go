@@ -13,7 +13,7 @@ import (
 func runReindex(args []string) {
 	dir := core.DataDir()
 
-	clear := len(args) > 0 && args[0] == "--clear"
+	clearIndex := len(args) > 0 && args[0] == "--clear"
 
 	embedder, err := NewEmbedder(filepath.Join(dir, "models"))
 	if err != nil {
@@ -29,7 +29,7 @@ func runReindex(args []string) {
 	}
 	defer searchStore.Close()
 
-	if clear {
+	if clearIndex {
 		fmt.Fprintln(os.Stderr, "Clearing existing index...")
 		searchStore.db.Exec("DELETE FROM search_embeddings")
 		searchStore.db.Exec("DELETE FROM search_entries")

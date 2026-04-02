@@ -22,10 +22,14 @@ type Source struct {
 	dataDir string
 }
 
-// NotebookConfig holds the user-configured list of directories to scan.
+//revive:disable:exported
+// NotebookConfig lists directories the notebook source walks on each daemon SearchEntries tick; entries land in notebook.db
+// and notebook_* tools (docs/spec.md Notebook File Indexing).
 type NotebookConfig struct {
 	Dirs []string `json:"dirs"`
 }
+
+//revive:enable:exported
 
 // IsConfigured reports whether at least one notebook directory has been configured.
 func IsConfigured(dataDir string) bool {

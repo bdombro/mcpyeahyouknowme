@@ -265,7 +265,7 @@ func (s *SearchStore) embedChunk(batchSize, limit int) (int, error) {
 
 	for i, emb := range embeddings {
 		blob := []byte{}
-		if emb != nil && len(emb) > 0 {
+		if len(emb) > 0 {
 			blob = float32sToBytes(emb)
 		}
 		if _, err := stmt.Exec(chunk[i].id, blob); err != nil { // nocov
