@@ -223,7 +223,7 @@ mcpyeahyouknowme restart
 
 | Command | Description |
 |---------|-------------|
-| `install-daemon` | Installs and starts the core daemon as a macOS LaunchAgent (`com.mcpyeahyouknowme.core`). Runs on login and auto-restarts on crash. Logs to `~/.local/share/mcpyeahyouknowme/core.log`. |
+| `install-daemon` | Installs and starts the core daemon as a macOS LaunchAgent (`com.mcpyeahyouknowme.core`). Runs on login and auto-restarts on crash. Logs to `~/.local/share/mcpyeahyouknowme/core.log`; on daemon startup, oversized log files are trimmed in place to the newest newline-aligned tail so recent context is preserved without unbounded growth. |
 | `start` | Starts the core daemon. |
 | `stop` | Stops the core daemon. |
 | `restart` | Restarts the core daemon (stop + start). |
@@ -761,6 +761,7 @@ The core daemon runs long-lived services (WhatsApp connection, Google Docs sync)
 The macOS LaunchAgent (`com.mcpyeahyouknowme.core`) is configured with `KeepAlive: true`, meaning launchd restarts the daemon if it exits. This means:
 
 - The daemon must **not** exit on recoverable errors (network, database busy, auth expiry) — otherwise launchd will restart it in a tight loop.
+- The daemon trims `~/.local/share/mcpyeahyouknowme/core.log` on startup when it grows past 5 MiB, keeping the newest roughly 1 MiB aligned to a newline boundary so launchd can keep appending to the same file descriptor.
 - `scripts/kill.sh` must **unload** the LaunchAgent before killing processes to prevent immediate restart during cleanup. It does not reload the daemon afterward; use `mcpyeahyouknowme start` to bring it back.
 - `scripts/install.sh` must **unload** the LaunchAgent before replacing the binary, then reload it after installation.
 

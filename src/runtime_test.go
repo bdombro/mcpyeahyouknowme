@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -318,6 +321,190 @@ func TestIndexCoordinator_stop(t *testing.T) {
 	}
 	if coordinator.clearPending {
 		t.Fatal("expected Stop to clear pending full-clear state")
+	}
+}
+
+// Verifies trimLogFilePath keeps only the newest newline-aligned tail once the file grows past the threshold.
+func TestTrimLogFilePath_keepsNewestTail(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "core.log")
+	content := []byte("old-a\nold-b\nkeep-1\nkeep-2\n")
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := trimLogFilePath(path, 20, 15); err != nil {
+		t.Fatalf("trimLogFilePath: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if want := "keep-1\nkeep-2\n"; string(got) != want {
+		t.Fatalf("trimLogFilePath() = %q, want %q", string(got), want)
+	}
+}
+
+// Verifies trimLogFilePath leaves smaller files untouched so short-lived logs keep their full context.
+func TestTrimLogFilePath_belowThreshold(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "core.log")
+	content := []byte("keep-everything\n")
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := trimLogFilePath(path, int64(len(content)), 4); err != nil {
+		t.Fatalf("trimLogFilePath: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != string(content) {
+		t.Fatalf("trimLogFilePath() modified file below threshold: got %q want %q", string(got), string(content))
+	}
+}
+
+// Verifies trimLogFilePath treats a missing log file as a no-op so first daemon startup does not emit an avoidable warning.
+func TestTrimLogFilePath_missingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "core.log")
+	if err := trimLogFilePath(path, 1, 1); err != nil {
+		t.Fatalf("trimLogFilePath: %v", err)
+	}
+}
+
+// Verifies trimLogFile uses the daemon thresholds so oversized core.log files keep only the newest tail on startup.
+func TestTrimLogFile_keepsNewestTail(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "core.log")
+	oldChunk := bytes.Repeat([]byte("old-line\n"), (coreLogTrimThresholdBytes/9)+1)
+	keepChunk := bytes.Repeat([]byte("keep-line\n"), (coreLogKeepTailBytes/10)+1)
+	content := append(oldChunk, keepChunk...)
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	trimLogFile(dir)
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if bytes.Contains(got, []byte("old-line\n")) {
+		t.Fatal("expected old log lines to be trimmed")
+	}
+	if !bytes.Contains(got, []byte("keep-line\n")) {
+		t.Fatal("expected newest log lines to remain")
+	}
+	if len(got) > int(coreLogKeepTailBytes) {
+		t.Fatalf("expected trimmed file to be at most %d bytes, got %d", coreLogKeepTailBytes, len(got))
+	}
+}
+
+// Verifies trimLogFile reports trim failures to stderr so daemon startup surfaces filesystem issues instead of failing silently.
+func TestTrimLogFile_reportsWarning(t *testing.T) {
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() {
+		os.Stderr = oldStderr
+	}()
+
+	trimLogFile(string([]byte{0}))
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	out := make([]byte, 256)
+	n, _ := r.Read(out)
+	if got := string(out[:n]); got == "" {
+		t.Fatal("expected trim warning on stderr")
+	}
+}
+
+// Verifies trimLogFilePath keeps the whole file when the requested tail is larger than the file itself.
+func TestTrimLogFilePath_keepTailLargerThanFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "core.log")
+	content := []byte("only-line\n")
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := trimLogFilePath(path, 1, 1024); err != nil {
+		t.Fatalf("trimLogFilePath: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != string(content) {
+		t.Fatalf("trimLogFilePath() = %q, want %q", string(got), string(content))
+	}
+}
+
+// Verifies trimLogFilePath returns stat errors that are not simple missing-file cases.
+func TestTrimLogFilePath_invalidPath(t *testing.T) {
+	if err := trimLogFilePath(string([]byte{0}), 1, 1); err == nil {
+		t.Fatal("expected invalid path error")
+	}
+}
+
+// Verifies trimLogFilePath returns read errors when the path is not a regular file despite existing on disk.
+func TestTrimLogFilePath_readError(t *testing.T) {
+	if err := trimLogFilePath(t.TempDir(), 0, 1); err == nil {
+		t.Fatal("expected read error for directory path")
+	}
+}
+
+// Verifies trimLogFilePath returns open errors when the log file exists but cannot be read.
+func TestTrimLogFilePath_openError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "core.log")
+	content := []byte("line-one\nline-two\n")
+	if err := os.WriteFile(path, content, 0000); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := trimLogFilePath(path, 1, 4); err == nil {
+		t.Fatal("expected open error")
+	}
+}
+
+// Verifies trimLogFilePath returns rewrite errors when the log file cannot be reopened for truncation.
+func TestTrimLogFilePath_reopenForWriteError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "core.log")
+	content := []byte("line-one\nline-two\n")
+	if err := os.WriteFile(path, content, 0400); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := trimLogFilePath(path, 1, 4); err == nil {
+		t.Fatal("expected reopen-for-write error")
+	}
+}
+
+// Verifies trimLogFilePath returns write errors from the final in-place rewrite so callers can warn without corrupting the file.
+func TestTrimLogFilePath_writeError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "core.log")
+	content := []byte("old-a\nold-b\nkeep-1\nkeep-2\n")
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	originalWrite := trimLogWrite
+	trimLogWrite = func(*os.File, []byte) error {
+		return errors.New("write failed")
+	}
+	t.Cleanup(func() {
+		trimLogWrite = originalWrite
+	})
+
+	if err := trimLogFilePath(path, 20, 15); err == nil {
+		t.Fatal("expected write error")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -15,6 +16,16 @@ import (
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/registry"
 )
+
+const (
+	coreLogTrimThresholdBytes = 5 * 1024 * 1024
+	coreLogKeepTailBytes      = 1 * 1024 * 1024
+)
+
+var trimLogWrite = func(file *os.File, tail []byte) error {
+	_, err := file.Write(tail)
+	return err
+}
 
 // indexCoordinator serializes background index runs and can request a restart after the current run yields.
 type indexCoordinator struct {
@@ -92,9 +103,66 @@ func (c *indexCoordinator) Stop() {
 	}
 }
 
+// Trims the daemon log file when it grows past the threshold so a long-lived LaunchAgent keeps recent context without unbounded growth.
+func trimLogFile(dataDir string) {
+	path := filepath.Join(dataDir, "core.log")
+	if err := trimLogFilePath(path, coreLogTrimThresholdBytes, coreLogKeepTailBytes); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not trim %s: %v\n", path, err)
+	}
+}
+
+// Rewrites a large log file in place with only its newest tail so launchd-owned stdout/stderr file descriptors keep appending to the same inode.
+func trimLogFilePath(path string, trimThresholdBytes, keepTailBytes int64) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.Size() <= trimThresholdBytes || keepTailBytes <= 0 {
+		return nil
+	}
+
+	start := info.Size() - keepTailBytes
+	if start < 0 {
+		start = 0
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	tail := make([]byte, info.Size()-start)
+	n, err := file.ReadAt(tail, start)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	tail = tail[:n]
+	if start > 0 {
+		if newlineIndex := bytes.IndexByte(tail, '\n'); newlineIndex >= 0 {
+			tail = tail[newlineIndex+1:]
+		}
+	}
+
+	file, err = os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, info.Mode())
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := trimLogWrite(file, tail); err != nil {
+		return err
+	}
+	return nil
+}
+
 // runCore is the long-lived daemon loop: it polls config, starts/stops/reset sources, and kicks optional search indexing on each tick.
 func runCore() {
 	dir := core.DataDir()
+	trimLogFile(dir)
 	cfg := loadConfig(dir)
 
 	fmt.Println("Starting mcpyeahyouknowme core daemon...")
