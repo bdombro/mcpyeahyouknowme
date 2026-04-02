@@ -76,7 +76,7 @@ mcpyeahyouknowme reindex
 mcpyeahyouknowme reindex --clear
 ```
 
-Manually rebuilds the search index and embeddings for all available sources. Runs synchronously with progress output. The `--clear` flag wipes existing entries and embeddings before re-indexing.
+Requests an immediate search reindex. When the core daemon is running, this command signals the daemon to start reindexing in the background instead of doing the work in the CLI process. When no daemon is running, it falls back to a standalone synchronous rebuild with progress output. The `--clear` flag wipes existing entries and embeddings before re-indexing, and is only allowed when the daemon is stopped.
 
 ### Notebook Commands
 
@@ -423,7 +423,7 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 | `whatsapp_send_file` | Send a local file as media via core daemon. |
 | `whatsapp_send_message` | Send text via core daemon REST API. |
 
-**Availability:** most source tools are registered only when the source is both `enabled` in config and authenticated/configured. `google_places_*` tools are registered when the binary was built with a non-empty `GOOGLE_PLACE_API_KEY`. `brave_search_*` tools are registered when the binary was built with a non-empty `BRAVE_API_KEY`. `browser_history_*` tools read only from daemon-produced snapshots and do not trigger snapshot refreshes. `search` is registered when the search store opens successfully on MCP startup. The search index is populated by the core daemon (not by MCP); run `mcpyeahyouknowme reindex` for manual indexing.
+**Availability:** most source tools are registered only when the source is both `enabled` in config and authenticated/configured. `google_places_*` tools are registered when the binary was built with a non-empty `GOOGLE_PLACE_API_KEY`. `brave_search_*` tools are registered when the binary was built with a non-empty `BRAVE_API_KEY`. `browser_history_*` tools read only from daemon-produced snapshots and do not trigger snapshot refreshes. `search` is registered when the search store opens successfully on MCP startup. The search index is populated by the core daemon (not by MCP); run `mcpyeahyouknowme reindex` to request an immediate manual indexing pass.
 
 ### Global Search
 
@@ -602,7 +602,7 @@ Metadata shapes per WhatsApp content type:
 
 ### Global Hybrid Search
 
-The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 5-minute tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available. Embedding batch size scales dynamically based on available system memory (4–32, baseline 16), and embeddings are computed in chunks of 200 rows with per-chunk commits to limit resource usage. Each `DataSource` provides its indexable content via `SearchEntries()`. To improve retrieval for multi-message conversations, WhatsApp is indexed as bounded per-chat transcript chunks instead of one row per message. To reduce index size and embedding cost, numeric-dominant body chunks from WhatsApp, Docs, Sheets, and Slides are skipped while titles, owners, subjects, and other short structured entries remain indexed. Content is normalized into a shared schema:
+The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 5-minute tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available; when the daemon is running it signals that process to start reindexing immediately, and when no daemon is running it falls back to a standalone rebuild. Each `DataSource` provides its indexable content via `SearchEntries()`, and the indexer writes entries for every source before starting a separate embedding pass. Embedding batch size scales dynamically based on available system memory (4–32, baseline 16), and embeddings are computed afterward in chunks of 200 rows with per-chunk commits to limit resource usage without blocking later sources from entering the shared keyword index. To improve retrieval for multi-message conversations, WhatsApp is indexed as bounded per-chat transcript chunks instead of one row per message. To reduce index size and embedding cost, numeric-dominant body chunks from WhatsApp, Docs, Sheets, and Slides are skipped while titles, owners, subjects, and other short structured entries remain indexed. Content is normalized into a shared schema:
 
 | Content Type | Source | Indexed From |
 |-------------|--------|-------------|
@@ -634,7 +634,7 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 
 **Search algorithm:**
 
-1. **BM25** — FTS5 full-text search on the `search_fts` virtual table
+1. **BM25** — FTS5 full-text search on the `search_fts` virtual table, with natural-language queries sanitized into individually quoted word tokens so multi-word queries behave like implicit AND matching instead of one exact phrase
 2. **Vector** — when BM25 returns fewer than the requested result limit, embed the query with BGE-Small-EN-v1.5 and compute cosine similarity against stored embeddings
 3. **Reciprocal Rank Fusion (RRF)** — combine BM25 and vector ranked lists: `score(d) = sum(1/(k+rank_i))` with k=60
 4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `chat_content` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x), `email_thread_subject` (2.5x), `email_thread_participants` (2x), `email_thread_content` (1x), `calendar_event` (2x), `calendar_event_description` (1x), `task` (1.5x), `contact` (2x), `presentation_title` (2x), `presentation_owner` (2x), `presentation_content` (1x), `note_title` (2x), `note_content` (1x), `pdf_title` (2x), `pdf_content` (1x), `image` (1.5x), `browser_visit` (1.8x)

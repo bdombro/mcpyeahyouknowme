@@ -48,7 +48,7 @@ func RunAdd(dataDir string, args []string) {
 		fmt.Fprintf(os.Stderr, "Warning: could not save config: %v\n", err)
 	}
 	fmt.Printf("Added notebook directory: %s\n", abs)
-	fmt.Println("Run 'mcpyeahyouknowme core' or restart the daemon to index new files.")
+	fmt.Println("The background app will index new files soon if it is running or when started.")
 }
 
 // RunRemove removes a directory from the notebook source configuration, disabling the source when no dirs remain.

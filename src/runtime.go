@@ -64,6 +64,9 @@ func runCore() {
 				}
 			}()
 			indexSources(searchStore, sources)
+			if err := searchStore.ComputePendingEmbeddings(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: embedding pass failed: %v\n", err)
+			}
 		}()
 	}
 

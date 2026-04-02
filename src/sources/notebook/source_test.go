@@ -189,7 +189,7 @@ func TestCountFilesInDir_missing(t *testing.T) {
 	}
 }
 
-// Verifies countFilesInDir counts files by type at the top level.
+// Verifies countFilesInDir counts files by type across the configured directory tree.
 func TestCountFilesInDir_withFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeMDFile(t, dir, "a.md", "# A")
@@ -242,14 +242,17 @@ func TestLoadNotebookConfig_badJSON(t *testing.T) {
 	}
 }
 
-// Verifies countFilesInDir skips subdirectories and counts correctly.
+// Verifies countFilesInDir includes supported files from nested subdirectories.
 func TestCountFilesInDir_withSubdir(t *testing.T) {
 	dir := t.TempDir()
 	writeMDFile(t, dir, "note.md", "# Note")
-	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
+	if err := os.MkdirAll(filepath.Join(dir, "subdir"), 0755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	writeMDFile(t, filepath.Join(dir, "subdir"), "nested.md", "# Nested")
 	counts := countFilesInDir(dir)
-	if counts["md"] != 1 {
-		t.Fatalf("expected md count 1, got %d", counts["md"])
+	if counts["md"] != 2 {
+		t.Fatalf("expected md count 2, got %d", counts["md"])
 	}
 }
 
@@ -262,6 +265,21 @@ func TestCountFilesInDir_withPDF(t *testing.T) {
 	if counts["pdf"] != 1 {
 		t.Fatalf("expected pdf count 1, got %d", counts["pdf"])
 	}
+	if counts["md"] != 1 {
+		t.Fatalf("expected md count 1, got %d", counts["md"])
+	}
+}
+
+// Verifies countFilesInDir skips hidden subdirectories to match notebook scan behavior.
+func TestCountFilesInDir_skipsHiddenDirs(t *testing.T) {
+	dir := t.TempDir()
+	writeMDFile(t, dir, "visible.md", "# Visible")
+	if err := os.MkdirAll(filepath.Join(dir, ".hidden"), 0755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	writeMDFile(t, filepath.Join(dir, ".hidden"), "secret.md", "# Secret")
+
+	counts := countFilesInDir(dir)
 	if counts["md"] != 1 {
 		t.Fatalf("expected md count 1, got %d", counts["md"])
 	}

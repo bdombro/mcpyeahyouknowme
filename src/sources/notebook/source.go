@@ -3,8 +3,9 @@ package notebook
 import (
 	"database/sql"
 	"encoding/json"
-	"os"
+	"io/fs"
 	"path/filepath"
+	"strings"
 
 	"mcpyeahyouknowme/core"
 
@@ -126,19 +127,20 @@ func InfoLines(dataDir string) []string {
 	return lines
 }
 
-// countFilesInDir counts .md, .pdf, and image files in a directory without opening them.
+// countFilesInDir walks a configured directory tree for display counts while matching notebook scan rules.
 func countFilesInDir(dir string) map[string]int {
 	counts := map[string]int{"md": 0, "pdf": 0, "image": 0}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return counts
-	}
-	// Simple top-level count for info display; full walk happens in scanner.
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
 		}
-		switch fileTypeOf(e.Name()) {
+		if d.IsDir() {
+			if strings.HasPrefix(d.Name(), ".") && path != dir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		switch fileTypeOf(d.Name()) {
 		case "md":
 			counts["md"]++
 		case "pdf":
@@ -146,7 +148,8 @@ func countFilesInDir(dir string) map[string]int {
 		case "image":
 			counts["image"]++
 		}
-	}
+		return nil
+	})
 	return counts
 }
 

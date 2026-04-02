@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"mcpyeahyouknowme/core"
 
@@ -121,8 +122,8 @@ func (s *SearchStore) Close() error {
 	return s.db.Close()
 }
 
-// IndexEntries upserts entries into the search index and computes embeddings
-// for new/changed entries when an embedder is available.
+// IndexEntries upserts entries into the search index so all sources become
+// searchable before any background embedding work begins.
 func (s *SearchStore) IndexEntries(entries []SearchEntry) error {
 	tx, err := s.db.Begin()
 	if err != nil { // nocov
@@ -161,10 +162,6 @@ func (s *SearchStore) IndexEntries(entries []SearchEntry) error {
 
 	// Rebuild FTS if needed (for the initial bulk load case)
 	s.rebuildFTSIfNeeded()
-
-	if s.embedder != nil {
-		return s.computeEmbeddings()
-	}
 	return nil
 }
 
@@ -198,6 +195,15 @@ func (s *SearchStore) computeEmbeddings() error {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+// ComputePendingEmbeddings fills in missing embeddings after indexing so
+// source insertion can finish before expensive model work starts.
+func (s *SearchStore) ComputePendingEmbeddings() error {
+	if s.embedder == nil {
+		return nil
+	}
+	return s.computeEmbeddings()
 }
 
 type pendingEmbed struct {
@@ -335,8 +341,7 @@ type rankedEntry struct {
 
 // bm25SearchEntries runs FTS keyword search for query, applies optional filters, and returns ranked entry IDs.
 func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, typeFilter string) []rankedEntry {
-	safeQuery := strings.ReplaceAll(query, `"`, `""`)
-	ftsQuery := `"` + safeQuery + `"`
+	ftsQuery := sanitizeFTSQuery(query)
 
 	parts := []string{`
 		SELECT e.id, bm25(search_fts) as score
@@ -370,6 +375,25 @@ func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, t
 		}
 	}
 	return results
+}
+
+// sanitizeFTSQuery tokenizes natural-language queries into quoted FTS terms so
+// keyword search matches per-word intent instead of requiring one exact phrase.
+func sanitizeFTSQuery(query string) string {
+	tokens := strings.FieldsFunc(query, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+	if len(tokens) == 0 {
+		safeQuery := strings.ReplaceAll(strings.TrimSpace(query), `"`, `""`)
+		return `"` + safeQuery + `"`
+	}
+
+	quoted := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		safeToken := strings.ReplaceAll(token, `"`, `""`)
+		quoted = append(quoted, `"`+safeToken+`"`)
+	}
+	return strings.Join(quoted, " ")
 }
 
 // vectorSearch embeds query, scores stored embeddings with cosine similarity, and returns top ranked entry IDs.

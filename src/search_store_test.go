@@ -148,6 +148,14 @@ func newTestSearchStore(t *testing.T, embedder EmbedderInterface) *SearchStore {
 	return store
 }
 
+// Computes pending embeddings explicitly so tests mirror the daemon and reindex flows.
+func computePendingEmbeddingsForTest(t *testing.T, store *SearchStore) {
+	t.Helper()
+	if err := store.ComputePendingEmbeddings(); err != nil {
+		t.Fatalf("ComputePendingEmbeddings: %v", err)
+	}
+}
+
 // Returns representative cross-source search entries so ranking, metadata, and filtering tests share one fixture set.
 func seedSearchEntries() []SearchEntry {
 	now := time.Now()
@@ -202,7 +210,7 @@ func TestSearchStore_IndexEntries_upsert(t *testing.T) {
 	}
 }
 
-// Verifies indexing computes one embedding per indexed entry when an embedder is present.
+// Verifies indexing leaves embeddings pending until callers run the explicit embedding pass.
 func TestSearchStore_IndexEntries_withEmbeddings(t *testing.T) {
 	emb := &mockEmbedder{dim: 16}
 	store := newTestSearchStore(t, emb)
@@ -213,9 +221,50 @@ func TestSearchStore_IndexEntries_withEmbeddings(t *testing.T) {
 
 	var embCount int
 	store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&embCount)
+	if embCount != 0 {
+		t.Fatalf("expected 0 embeddings before explicit compute, got %d", embCount)
+	}
+
+	computePendingEmbeddingsForTest(t, store)
+	store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&embCount)
 	if embCount != len(entries) {
 		t.Errorf("expected %d embeddings, got %d", len(entries), embCount)
 	}
+}
+
+// Verifies the explicit embedding pass fills missing rows and becomes a no-op without an embedder.
+func TestSearchStore_ComputePendingEmbeddings(t *testing.T) {
+	t.Run("fills missing rows", func(t *testing.T) {
+		store := newTestSearchStore(t, &mockEmbedder{dim: 16})
+		entries := seedSearchEntries()
+		if err := store.IndexEntries(entries); err != nil {
+			t.Fatalf("IndexEntries: %v", err)
+		}
+
+		computePendingEmbeddingsForTest(t, store)
+
+		var embCount int
+		store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&embCount)
+		if embCount != len(entries) {
+			t.Fatalf("expected %d embeddings, got %d", len(entries), embCount)
+		}
+	})
+
+	t.Run("no embedder is no-op", func(t *testing.T) {
+		store := newTestSearchStore(t, nil)
+		if err := store.IndexEntries(seedSearchEntries()); err != nil {
+			t.Fatalf("IndexEntries: %v", err)
+		}
+		if err := store.ComputePendingEmbeddings(); err != nil {
+			t.Fatalf("ComputePendingEmbeddings without embedder: %v", err)
+		}
+
+		var embCount int
+		store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&embCount)
+		if embCount != 0 {
+			t.Fatalf("expected 0 embeddings without embedder, got %d", embCount)
+		}
+	})
 }
 
 // ---------- BM25-only Search ----------
@@ -243,6 +292,50 @@ func TestSearchStore_BM25Search(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected to find 'Family Chat' in results")
+	}
+}
+
+// Verifies tokenized BM25 search matches multi-word queries spanning title and content terms.
+func TestSearchStore_BM25Search_multiWord(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	if err := store.IndexEntries([]SearchEntry{
+		{Source: "notebook", SourceID: "john-thomas", ContentType: "note_content", Title: "John Thomas", Content: "Moved in 2022 for sake of 2 daughters"},
+	}); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
+	results, err := store.Search("John Thomas daughters", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected result for tokenized multi-word query")
+	}
+	if results[0].Title != "John Thomas" {
+		t.Fatalf("expected John Thomas result first, got %q", results[0].Title)
+	}
+}
+
+// Verifies FTS sanitization quotes per-word tokens and drops punctuation that would force exact phrases.
+func TestSanitizeFTSQuery(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{name: "multi word", query: "John Thomas", want: `"John" "Thomas"`},
+		{name: "special chars", query: "john@example.com", want: `"john" "example" "com"`},
+		{name: "quotes and punctuation", query: `"John", Thomas!?`, want: `"John" "Thomas"`},
+		{name: "empty", query: "", want: `""`},
+		{name: "single word", query: "Family", want: `"Family"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sanitizeFTSQuery(tt.query); got != tt.want {
+				t.Fatalf("sanitizeFTSQuery(%q) = %q, want %q", tt.query, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -299,6 +392,7 @@ func TestSearchStore_HybridSearch(t *testing.T) {
 	emb := &mockEmbedder{dim: 16}
 	store := newTestSearchStore(t, emb)
 	store.IndexEntries(seedSearchEntries())
+	computePendingEmbeddingsForTest(t, store)
 
 	results, err := store.Search("dinner", 10, "", "")
 	if err != nil {
@@ -314,6 +408,7 @@ func TestSearchStore_HybridSearch_chatContentOnly(t *testing.T) {
 	emb := &mockEmbedder{dim: 16}
 	store := newTestSearchStore(t, emb)
 	store.IndexEntries(seedSearchEntries())
+	computePendingEmbeddingsForTest(t, store)
 
 	results, err := store.Search("meeting", 10, "", "chat_content")
 	if err != nil {
@@ -338,6 +433,7 @@ func TestSearchStore_Search_skipsVectorWhenBM25Sufficient(t *testing.T) {
 	emb := &countingEmbedder{base: &mockEmbedder{dim: 16}}
 	store := newTestSearchStore(t, emb)
 	store.IndexEntries(seedSearchEntries())
+	computePendingEmbeddingsForTest(t, store)
 
 	results, err := store.Search("Family", 1, "", "")
 	if err != nil {
@@ -356,6 +452,7 @@ func TestSearchStore_Search_runsVectorWhenBM25Insufficient(t *testing.T) {
 	emb := &countingEmbedder{base: &mockEmbedder{dim: 16}}
 	store := newTestSearchStore(t, emb)
 	store.IndexEntries(seedSearchEntries())
+	computePendingEmbeddingsForTest(t, store)
 
 	if _, err := store.Search("tomorrow", 10, "", "chat_content"); err != nil {
 		t.Fatalf("Search: %v", err)
@@ -671,9 +768,7 @@ func TestSearchStore_computeEmbeddings_skipEmptyText(t *testing.T) {
 	store.IndexEntries(entries)
 
 	store.embedder = &mockEmbedder{dim: 16}
-	if err := store.IndexEntries(entries); err != nil {
-		t.Fatalf("IndexEntries: %v", err)
-	}
+	computePendingEmbeddingsForTest(t, store)
 
 	var count int
 	store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&count)
@@ -691,16 +786,21 @@ func TestSearchStore_computeEmbeddings_emptyBatch(t *testing.T) {
 	if err := store.IndexEntries(entries); err != nil {
 		t.Fatalf("first IndexEntries: %v", err)
 	}
-	// Second call: all entries already have embeddings → empty batch
-	if err := store.IndexEntries(entries); err != nil {
-		t.Fatalf("second IndexEntries: %v", err)
+	computePendingEmbeddingsForTest(t, store)
+
+	// Second call: all entries already have embeddings -> empty batch.
+	if err := store.ComputePendingEmbeddings(); err != nil {
+		t.Fatalf("second ComputePendingEmbeddings: %v", err)
 	}
 }
 
-// Verifies embedding failures propagate from indexing so the daemon can report broken model work.
+// Verifies embedding failures propagate from the explicit embedding pass so callers can report broken model work.
 func TestSearchStore_computeEmbeddings_embedError(t *testing.T) {
 	store := newTestSearchStore(t, &errorEmbedder{})
-	err := store.IndexEntries(seedSearchEntries())
+	if err := store.IndexEntries(seedSearchEntries()); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+	err := store.ComputePendingEmbeddings()
 	if err == nil {
 		t.Error("expected error from errorEmbedder")
 	}
@@ -715,6 +815,7 @@ func TestSearchStore_computeEmbeddings_nilEmbedding(t *testing.T) {
 	if err := store.IndexEntries(entries); err != nil {
 		t.Fatalf("IndexEntries: %v", err)
 	}
+	computePendingEmbeddingsForTest(t, store)
 
 	var count int
 	store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&count)
@@ -737,6 +838,7 @@ func TestSearchStore_Search_skipsEmptyEmbeddingSentinel(t *testing.T) {
 	if err := store.IndexEntries(seedSearchEntries()); err != nil {
 		t.Fatalf("IndexEntries: %v", err)
 	}
+	computePendingEmbeddingsForTest(t, store)
 
 	results, err := store.Search("Family", 10, "", "")
 	if err != nil {
@@ -814,6 +916,7 @@ func TestSearchStore_chunkedEmbeddings_commitsPerChunk(t *testing.T) {
 		}
 	}
 	store.IndexEntries(entries)
+	computePendingEmbeddingsForTest(t, store)
 
 	var count int
 	store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&count)
@@ -827,6 +930,7 @@ func TestSearchStore_embedChunk_returnsZeroWhenDone(t *testing.T) {
 	emb := &mockEmbedder{dim: 8}
 	store := newTestSearchStore(t, emb)
 	store.IndexEntries(seedSearchEntries())
+	computePendingEmbeddingsForTest(t, store)
 
 	n, err := store.embedChunk(16, embeddingChunkSize)
 	if err != nil {
@@ -845,6 +949,7 @@ func TestSearchStore_IndexStats(t *testing.T) {
 	store := newTestSearchStore(t, emb)
 	entries := seedSearchEntries()
 	store.IndexEntries(entries)
+	computePendingEmbeddingsForTest(t, store)
 
 	stats := store.IndexStats()
 	if stats.Entries != len(entries) {
@@ -872,6 +977,7 @@ func TestReadOnlySearchIndexStats_withDB(t *testing.T) {
 		t.Fatalf("NewSearchStore: %v", err)
 	}
 	store.IndexEntries(seedSearchEntries())
+	computePendingEmbeddingsForTest(t, store)
 	store.Close()
 
 	stats := ReadOnlySearchIndexStats(dir)
@@ -898,6 +1004,7 @@ func TestSearchStore_VectorSearch_LimitTruncates(t *testing.T) {
 		}
 	}
 	store.IndexEntries(entries)
+	computePendingEmbeddingsForTest(t, store)
 
 	// Call vectorSearch with limit=2 directly so the len(all)>limit branch is exercised.
 	results, err := store.vectorSearch("content", 2, "", "")

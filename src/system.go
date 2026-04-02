@@ -1,11 +1,17 @@
 package main
 
 import (
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 )
+
+var coreDaemonStatPath = os.Stat
+var coreDaemonLaunchctlList = func(label string) ([]byte, error) {
+	return exec.Command("launchctl", "list", label).Output()
+}
 
 // adaptiveBatchSize returns an embedding batch size scaled to available system
 // memory. Returns 4-32, with 16 as the baseline. Falls back to 16 on error.
@@ -68,7 +74,7 @@ func parseVMStatValue(line string) int64 {
 
 // daemonRSSBytes returns the daemon RSS in bytes by resolving the LaunchAgent PID and querying `ps`.
 func daemonRSSBytes(label string) int64 {
-	out, err := exec.Command("launchctl", "list", label).Output()
+	out, err := coreDaemonLaunchctlList(label)
 	if err != nil {
 		return 0
 	}
@@ -81,6 +87,19 @@ func daemonRSSBytes(label string) int64 {
 		return 0
 	}
 	return parseProcessRSSBytes(string(psOut))
+}
+
+// coreDaemonPID returns the LaunchAgent PID when the installed core daemon is
+// running, or zero when the plist is absent or launchctl reports no process.
+func coreDaemonPID() int {
+	if _, err := coreDaemonStatPath(plistPath()); err != nil {
+		return 0
+	}
+	out, err := coreDaemonLaunchctlList(plistName)
+	if err != nil || len(out) == 0 {
+		return 0
+	}
+	return parseLaunchctlPID(string(out))
 }
 
 // parseLaunchctlPID extracts the numeric PID from `launchctl list` output for a loaded service.
