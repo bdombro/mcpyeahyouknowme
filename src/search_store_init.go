@@ -20,9 +20,11 @@ func NewSearchStore(dir string, embedder EmbedderInterface) (*SearchStore, error
 	if err != nil {
 		return nil, fmt.Errorf("open search db: %w", err)
 	}
+	db.SetMaxOpenConns(1)
 
 	db.Exec("PRAGMA journal_mode=WAL")
 	db.Exec("PRAGMA busy_timeout=30000")
+	db.Exec("PRAGMA mmap_size=268435456")
 
 	if err := initSearchSchema(db); err != nil {
 		db.Close()

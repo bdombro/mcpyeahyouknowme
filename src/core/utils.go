@@ -99,6 +99,7 @@ func OpenDB(dataDir, filename string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(1)
 	db.Exec("PRAGMA journal_mode=WAL")
 	db.Exec("PRAGMA busy_timeout=30000")
 	return db, nil

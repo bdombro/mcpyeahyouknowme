@@ -18,17 +18,23 @@ import (
 // errorEmbedder always returns errors, for testing error-path coverage.
 type errorEmbedder struct{}
 
+// Returns an embedding error so search-store tests can cover failure paths without real model work.
 func (e *errorEmbedder) EmbedTexts(_ []string, _ int) ([][]float32, error) {
 	return nil, errors.New("embedTexts error")
 }
+
+// Returns an embedding error so vector-search tests can confirm graceful BM25 fallback.
 func (e *errorEmbedder) EmbedQuery(_ string) ([]float32, error) {
 	return nil, errors.New("embedQuery error")
 }
+
+// Releases nothing because the error embedder is only a test double.
 func (e *errorEmbedder) Close() {}
 
 // nilSlotEmbedder returns nil for the first entry, real embeddings for the rest.
 type nilSlotEmbedder struct{ mock *mockEmbedder }
 
+// Returns a nil first embedding so tests can verify empty-sentinel rows are stored and skipped correctly.
 func (n *nilSlotEmbedder) EmbedTexts(texts []string, _ int) ([][]float32, error) {
 	out := make([][]float32, len(texts))
 	for i, t := range texts {
@@ -41,6 +47,7 @@ func (n *nilSlotEmbedder) EmbedTexts(texts []string, _ int) ([][]float32, error)
 	return out, nil
 }
 
+// Verifies metadata-hint lookup returns guidance for known pairs and stays empty for unknown content.
 func TestSearchMetadataHint_knownAndUnknown(t *testing.T) {
 	if got := searchMetadataHint("whatsapp", "message"); !strings.Contains(got, "message_id") {
 		t.Fatalf("expected whatsapp message hint, got %q", got)
@@ -49,16 +56,44 @@ func TestSearchMetadataHint_knownAndUnknown(t *testing.T) {
 		t.Fatalf("expected empty hint for unknown content, got %q", got)
 	}
 }
+
+// Returns a deterministic query embedding so nil-slot tests can still exercise vector search.
 func (n *nilSlotEmbedder) EmbedQuery(query string) ([]float32, error) {
 	return n.mock.hashEmbed(query), nil
 }
+
+// Releases nothing because the nil-slot embedder wraps only in-memory test state.
 func (n *nilSlotEmbedder) Close() {}
+
+type countingEmbedder struct {
+	base       EmbedderInterface
+	queryCalls int
+	textsCalls int
+}
+
+// Increments passage-call counts so tests can assert whether embedding work was skipped.
+func (c *countingEmbedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
+	c.textsCalls++
+	return c.base.EmbedTexts(texts, batchSize)
+}
+
+// Increments query-call counts so tests can prove early-exit behavior in hybrid search.
+func (c *countingEmbedder) EmbedQuery(query string) ([]float32, error) {
+	c.queryCalls++
+	return c.base.EmbedQuery(query)
+}
+
+// Releases the wrapped embedder so test doubles preserve production cleanup semantics.
+func (c *countingEmbedder) Close() {
+	c.base.Close()
+}
 
 // mockEmbedder returns deterministic embeddings for testing.
 type mockEmbedder struct {
 	dim int
 }
 
+// Returns deterministic passage embeddings so hybrid search tests can run without ONNX.
 func (m *mockEmbedder) EmbedTexts(texts []string, _ int) ([][]float32, error) {
 	out := make([][]float32, len(texts))
 	for i, t := range texts {
@@ -67,14 +102,17 @@ func (m *mockEmbedder) EmbedTexts(texts []string, _ int) ([][]float32, error) {
 	return out, nil
 }
 
+// Returns a deterministic query embedding so ranking assertions stay stable across runs.
 func (m *mockEmbedder) EmbedQuery(query string) ([]float32, error) {
 	return m.hashEmbed(query), nil
 }
 
+// Releases nothing because the mock embedder owns no external resources.
 func (m *mockEmbedder) Close() {}
 
 // hashEmbed generates a deterministic embedding from text content. Similar
 // texts produce similar vectors via character frequency distribution.
+// Builds a normalized pseudo-embedding from text so search tests can compare semantic scoring deterministically.
 func (m *mockEmbedder) hashEmbed(text string) []float32 {
 	vec := make([]float32, m.dim)
 	for i, c := range text {
@@ -94,6 +132,7 @@ func (m *mockEmbedder) hashEmbed(text string) []float32 {
 	return vec
 }
 
+// Returns an initialized in-memory search store so tests can exercise indexing and querying without touching disk.
 func newTestSearchStore(t *testing.T, embedder EmbedderInterface) *SearchStore {
 	t.Helper()
 	db, err := sql.Open("sqlite3", "file::memory:?cache=shared&_foreign_keys=on")
@@ -111,6 +150,7 @@ func newTestSearchStore(t *testing.T, embedder EmbedderInterface) *SearchStore {
 	return store
 }
 
+// Returns representative cross-source search entries so ranking, metadata, and filtering tests share one fixture set.
 func seedSearchEntries() []SearchEntry {
 	now := time.Now()
 	t1 := now.Add(-1 * time.Hour)
@@ -127,6 +167,7 @@ func seedSearchEntries() []SearchEntry {
 
 // ---------- Schema & Indexing ----------
 
+// Verifies indexing inserts all entries into the shared search table.
 func TestSearchStore_IndexEntries(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	entries := seedSearchEntries()
@@ -141,6 +182,7 @@ func TestSearchStore_IndexEntries(t *testing.T) {
 	}
 }
 
+// Verifies upserts replace existing content without duplicating rows.
 func TestSearchStore_IndexEntries_upsert(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	entries := seedSearchEntries()
@@ -162,6 +204,7 @@ func TestSearchStore_IndexEntries_upsert(t *testing.T) {
 	}
 }
 
+// Verifies indexing computes one embedding per indexed entry when an embedder is present.
 func TestSearchStore_IndexEntries_withEmbeddings(t *testing.T) {
 	emb := &mockEmbedder{dim: 16}
 	store := newTestSearchStore(t, emb)
@@ -179,6 +222,7 @@ func TestSearchStore_IndexEntries_withEmbeddings(t *testing.T) {
 
 // ---------- BM25-only Search ----------
 
+// Verifies BM25 search returns expected matches and content types for a simple keyword query.
 func TestSearchStore_BM25Search(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	store.IndexEntries(seedSearchEntries())
@@ -204,6 +248,7 @@ func TestSearchStore_BM25Search(t *testing.T) {
 	}
 }
 
+// Verifies BM25 search returns no rows for a keyword absent from the index.
 func TestSearchStore_BM25Search_noResults(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	store.IndexEntries(seedSearchEntries())
@@ -217,6 +262,7 @@ func TestSearchStore_BM25Search_noResults(t *testing.T) {
 	}
 }
 
+// Verifies source filtering constrains BM25 results to the requested source.
 func TestSearchStore_BM25Search_sourceFilter(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	store.IndexEntries(seedSearchEntries())
@@ -232,6 +278,7 @@ func TestSearchStore_BM25Search_sourceFilter(t *testing.T) {
 	}
 }
 
+// Verifies content-type filtering constrains BM25 results to the requested type.
 func TestSearchStore_BM25Search_typeFilter(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	store.IndexEntries(seedSearchEntries())
@@ -249,6 +296,7 @@ func TestSearchStore_BM25Search_typeFilter(t *testing.T) {
 
 // ---------- Hybrid Search (BM25 + Vector) ----------
 
+// Verifies hybrid search returns results when both BM25 and vector scoring are available.
 func TestSearchStore_HybridSearch(t *testing.T) {
 	emb := &mockEmbedder{dim: 16}
 	store := newTestSearchStore(t, emb)
@@ -263,6 +311,7 @@ func TestSearchStore_HybridSearch(t *testing.T) {
 	}
 }
 
+// Verifies hybrid search respects message-only filtering while still finding semantic matches.
 func TestSearchStore_HybridSearch_messageOnly(t *testing.T) {
 	emb := &mockEmbedder{dim: 16}
 	store := newTestSearchStore(t, emb)
@@ -286,8 +335,41 @@ func TestSearchStore_HybridSearch_messageOnly(t *testing.T) {
 	}
 }
 
+// Verifies hybrid search skips query embedding when BM25 already satisfies the requested limit.
+func TestSearchStore_Search_skipsVectorWhenBM25Sufficient(t *testing.T) {
+	emb := &countingEmbedder{base: &mockEmbedder{dim: 16}}
+	store := newTestSearchStore(t, emb)
+	store.IndexEntries(seedSearchEntries())
+
+	results, err := store.Search("Family", 1, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected BM25 results for 'Family'")
+	}
+	if emb.queryCalls != 0 {
+		t.Fatalf("expected vector search to be skipped, got %d query embeddings", emb.queryCalls)
+	}
+}
+
+// Verifies hybrid search still runs vector scoring when BM25 alone cannot fill the requested result set.
+func TestSearchStore_Search_runsVectorWhenBM25Insufficient(t *testing.T) {
+	emb := &countingEmbedder{base: &mockEmbedder{dim: 16}}
+	store := newTestSearchStore(t, emb)
+	store.IndexEntries(seedSearchEntries())
+
+	if _, err := store.Search("tomorrow", 10, "", "message"); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if emb.queryCalls == 0 {
+		t.Fatal("expected vector search to run when BM25 results do not fill the limit")
+	}
+}
+
 // ---------- Hierarchy Weighting ----------
 
+// Verifies hierarchy weights lift chat names above weaker participant and message matches.
 func TestSearchStore_HierarchyWeighting(t *testing.T) {
 	emb := &mockEmbedder{dim: 16}
 	store := newTestSearchStore(t, emb)
@@ -315,6 +397,7 @@ func TestSearchStore_HierarchyWeighting(t *testing.T) {
 
 // ---------- RRF Fusion ----------
 
+// Verifies RRF fusion preserves a single ranked list without dropping entries.
 func TestRRFFuse_singleList(t *testing.T) {
 	list := []rankedEntry{
 		{entryID: 1, score: 10.0},
@@ -326,6 +409,7 @@ func TestRRFFuse_singleList(t *testing.T) {
 	}
 }
 
+// Verifies RRF rewards entries that appear in multiple retrieval lists.
 func TestRRFFuse_twoLists(t *testing.T) {
 	list1 := []rankedEntry{
 		{entryID: 1, score: 10.0},
@@ -349,6 +433,7 @@ func TestRRFFuse_twoLists(t *testing.T) {
 	}
 }
 
+// Verifies RRF returns no results when every input list is empty.
 func TestRRFFuse_empty(t *testing.T) {
 	fused := rrfFuse(nil, nil)
 	if len(fused) != 0 {
@@ -358,6 +443,7 @@ func TestRRFFuse_empty(t *testing.T) {
 
 // ---------- Vector Math ----------
 
+// Verifies cosine similarity returns one for identical vectors so ranking math is normalized.
 func TestCosineSimilarity_identical(t *testing.T) {
 	a := []float32{1, 0, 0}
 	sim := cosineSimilarity(a, a)
@@ -366,6 +452,7 @@ func TestCosineSimilarity_identical(t *testing.T) {
 	}
 }
 
+// Verifies cosine similarity returns zero for orthogonal vectors.
 func TestCosineSimilarity_orthogonal(t *testing.T) {
 	a := []float32{1, 0, 0}
 	b := []float32{0, 1, 0}
@@ -375,6 +462,7 @@ func TestCosineSimilarity_orthogonal(t *testing.T) {
 	}
 }
 
+// Verifies cosine similarity returns zero for empty inputs instead of panicking.
 func TestCosineSimilarity_empty(t *testing.T) {
 	sim := cosineSimilarity(nil, nil)
 	if sim != 0 {
@@ -382,6 +470,7 @@ func TestCosineSimilarity_empty(t *testing.T) {
 	}
 }
 
+// Verifies cosine similarity returns zero when vector lengths differ.
 func TestCosineSimilarity_mismatchedLengths(t *testing.T) {
 	sim := cosineSimilarity([]float32{1, 2}, []float32{1, 2, 3})
 	if sim != 0 {
@@ -389,6 +478,7 @@ func TestCosineSimilarity_mismatchedLengths(t *testing.T) {
 	}
 }
 
+// Verifies float32 embedding blobs round-trip through SQLite byte packing without drift beyond tolerance.
 func TestFloat32sRoundTrip(t *testing.T) {
 	original := []float32{1.5, -2.3, 0, 100.001}
 	bytes := float32sToBytes(original)
@@ -403,6 +493,7 @@ func TestFloat32sRoundTrip(t *testing.T) {
 	}
 }
 
+// Verifies malformed embedding blobs return nil instead of partial float slices.
 func TestBytesToFloat32s_badLength(t *testing.T) {
 	result := bytesToFloat32s([]byte{1, 2, 3}) // not divisible by 4
 	if result != nil {
@@ -412,6 +503,7 @@ func TestBytesToFloat32s_badLength(t *testing.T) {
 
 // ---------- Source Timestamp Tracking ----------
 
+// Verifies per-source last-indexed timestamps can be written and read back accurately.
 func TestSearchStore_SourceTimestamp(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	now := time.Now().Truncate(time.Second)
@@ -430,6 +522,7 @@ func TestSearchStore_SourceTimestamp(t *testing.T) {
 
 // ---------- Search with default limit ----------
 
+// Verifies non-positive limits fall back to the default result cap.
 func TestSearchStore_DefaultLimit(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	store.IndexEntries(seedSearchEntries())
@@ -446,6 +539,7 @@ func TestSearchStore_DefaultLimit(t *testing.T) {
 
 // ---------- Graceful Degradation ----------
 
+// Verifies BM25 search still works when no embedder is configured.
 func TestSearchStore_NilEmbedder_BM25Only(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	store.IndexEntries(seedSearchEntries())
@@ -461,6 +555,7 @@ func TestSearchStore_NilEmbedder_BM25Only(t *testing.T) {
 
 // ---------- Metadata in results ----------
 
+// Verifies search results expose parsed metadata needed for follow-up tool calls.
 func TestSearchStore_ResultMetadata(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	store.IndexEntries(seedSearchEntries())
@@ -489,6 +584,7 @@ func TestSearchStore_ResultMetadata(t *testing.T) {
 
 // ---------- NewSearchStore (file-backed) ----------
 
+// Verifies the file-backed constructor creates a usable on-disk search database.
 func TestNewSearchStore(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -517,6 +613,7 @@ func TestNewSearchStore(t *testing.T) {
 
 // ---------- Close ----------
 
+// Verifies Close shuts down the underlying database connection and future queries fail.
 func TestSearchStore_Close(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 
@@ -534,6 +631,7 @@ func TestSearchStore_Close(t *testing.T) {
 
 // ---------- Edge cases ----------
 
+// Verifies entries with empty title and content still persist without crashing indexing.
 func TestSearchStore_IndexEntries_emptyContent(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 
@@ -555,6 +653,7 @@ func TestSearchStore_IndexEntries_emptyContent(t *testing.T) {
 
 // ---------- rebuildFTSIfNeeded empty store ----------
 
+// Verifies indexing an empty slice is a no-op rather than an error.
 func TestSearchStore_IndexEntries_emptySlice(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	if err := store.IndexEntries([]SearchEntry{}); err != nil {
@@ -564,6 +663,7 @@ func TestSearchStore_IndexEntries_emptySlice(t *testing.T) {
 
 // ---------- computeEmbeddings edge cases ----------
 
+// Verifies whitespace-only entries are skipped when computing embeddings for missing rows.
 func TestSearchStore_computeEmbeddings_skipEmptyText(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	entries := []SearchEntry{
@@ -584,6 +684,7 @@ func TestSearchStore_computeEmbeddings_skipEmptyText(t *testing.T) {
 	}
 }
 
+// Verifies repeated indexing stops cleanly once every entry already has an embedding row.
 func TestSearchStore_computeEmbeddings_emptyBatch(t *testing.T) {
 	emb := &mockEmbedder{dim: 16}
 	store := newTestSearchStore(t, emb)
@@ -598,6 +699,7 @@ func TestSearchStore_computeEmbeddings_emptyBatch(t *testing.T) {
 	}
 }
 
+// Verifies embedding failures propagate from indexing so the daemon can report broken model work.
 func TestSearchStore_computeEmbeddings_embedError(t *testing.T) {
 	store := newTestSearchStore(t, &errorEmbedder{})
 	err := store.IndexEntries(seedSearchEntries())
@@ -606,6 +708,7 @@ func TestSearchStore_computeEmbeddings_embedError(t *testing.T) {
 	}
 }
 
+// Verifies nil embeddings are stored as empty sentinels so the row is not retried forever.
 func TestSearchStore_computeEmbeddings_nilEmbedding(t *testing.T) {
 	emb := &nilSlotEmbedder{mock: &mockEmbedder{dim: 16}}
 	store := newTestSearchStore(t, emb)
@@ -629,6 +732,7 @@ func TestSearchStore_computeEmbeddings_nilEmbedding(t *testing.T) {
 	}
 }
 
+// Verifies vector search ignores empty-sentinel embeddings and still returns valid BM25 results.
 func TestSearchStore_Search_skipsEmptyEmbeddingSentinel(t *testing.T) {
 	emb := &nilSlotEmbedder{mock: &mockEmbedder{dim: 16}}
 	store := newTestSearchStore(t, emb)
@@ -647,6 +751,7 @@ func TestSearchStore_Search_skipsEmptyEmbeddingSentinel(t *testing.T) {
 
 // ---------- Search with vector error ----------
 
+// Verifies vector-query errors degrade to BM25 results instead of failing the full search request.
 func TestSearchStore_Search_vectorSearchError(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	store.IndexEntries(seedSearchEntries())
@@ -663,6 +768,7 @@ func TestSearchStore_Search_vectorSearchError(t *testing.T) {
 
 // ---------- loadResults unknown content type ----------
 
+// Verifies unknown content types fall back to neutral weighting instead of zeroing scores.
 func TestSearchStore_loadResults_unknownContentType(t *testing.T) {
 	store := newTestSearchStore(t, nil)
 	entries := []SearchEntry{
@@ -684,6 +790,7 @@ func TestSearchStore_loadResults_unknownContentType(t *testing.T) {
 
 // ---------- cosineSimilarity zero vector ----------
 
+// Verifies zero vectors return zero similarity instead of NaN after the SIMD swap.
 func TestCosineSimilarity_zeroVector(t *testing.T) {
 	a := []float32{0, 0, 0}
 	b := []float32{1, 0, 0}
@@ -695,6 +802,7 @@ func TestCosineSimilarity_zeroVector(t *testing.T) {
 
 // ---------- Chunked embeddings ----------
 
+// Verifies large embedding jobs commit successfully across multiple chunks.
 func TestSearchStore_chunkedEmbeddings_commitsPerChunk(t *testing.T) {
 	emb := &mockEmbedder{dim: 8}
 	store := newTestSearchStore(t, emb)
@@ -716,6 +824,7 @@ func TestSearchStore_chunkedEmbeddings_commitsPerChunk(t *testing.T) {
 	}
 }
 
+// Verifies embedChunk reports completion once no missing embeddings remain.
 func TestSearchStore_embedChunk_returnsZeroWhenDone(t *testing.T) {
 	emb := &mockEmbedder{dim: 8}
 	store := newTestSearchStore(t, emb)
@@ -732,6 +841,7 @@ func TestSearchStore_embedChunk_returnsZeroWhenDone(t *testing.T) {
 
 // ---------- IndexStats ----------
 
+// Verifies index stats report entry and embedding totals from the live store.
 func TestSearchStore_IndexStats(t *testing.T) {
 	emb := &mockEmbedder{dim: 8}
 	store := newTestSearchStore(t, emb)
@@ -747,6 +857,7 @@ func TestSearchStore_IndexStats(t *testing.T) {
 	}
 }
 
+// Verifies read-only stats return zeros when no search database exists yet.
 func TestReadOnlySearchIndexStats_noDB(t *testing.T) {
 	stats := ReadOnlySearchIndexStats(t.TempDir())
 	if stats.Entries != 0 {
@@ -754,6 +865,7 @@ func TestReadOnlySearchIndexStats_noDB(t *testing.T) {
 	}
 }
 
+// Verifies read-only stats can inspect a populated on-disk search database without an embedder.
 func TestReadOnlySearchIndexStats_withDB(t *testing.T) {
 	dir := t.TempDir()
 	emb := &mockEmbedder{dim: 8}
@@ -773,6 +885,7 @@ func TestReadOnlySearchIndexStats_withDB(t *testing.T) {
 	}
 }
 
+// Verifies vectorSearch truncates its ranked result list to the requested limit.
 func TestSearchStore_VectorSearch_LimitTruncates(t *testing.T) {
 	emb := &mockEmbedder{dim: 4}
 	store := newTestSearchStore(t, emb)

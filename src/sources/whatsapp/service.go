@@ -170,17 +170,17 @@ func (s *MCPService) bm25MessageSearch(query string, limit int, chatJID, after, 
 		ranked = ranked[:limit]
 	}
 
+	loaded, err := s.loadRankedMessages(ranked)
+	if err != nil {
+		// nocov
+		return "", err
+	}
+
 	var msgs []MCPMessage
 	for _, r := range ranked {
-		row := s.store.db.QueryRow(`
-			SELECT messages.timestamp, messages.sender, chats.name, messages.content,
-				   messages.is_from_me, chats.jid, messages.id, messages.media_type
-			FROM messages
-			JOIN chats ON messages.chat_jid = chats.jid
-			WHERE messages.id = ? AND messages.chat_jid = ?`, r.msgID, r.chatJID)
-
-		msg, err := scanMessageRow(row)
-		if err != nil { // nocov
+		msg, ok := loaded[messageKey(r.msgID, r.chatJID)]
+		if !ok {
+			// nocov
 			continue
 		}
 		if sender != "" && msg.Sender != sender {
@@ -244,6 +244,38 @@ func (s *MCPService) bm25Search(query string, limit int, chatJID, after, before 
 	return results
 }
 
+// Loads ranked message rows in one query so BM25 hydration avoids per-result lookups while preserving caller-side ordering.
+func (s *MCPService) loadRankedMessages(ranked []searchResult) (map[string]MCPMessage, error) {
+	if len(ranked) == 0 {
+		return map[string]MCPMessage{}, nil
+	}
+
+	placeholders := make([]string, len(ranked))
+	params := make([]interface{}, 0, len(ranked)*2)
+	for i, r := range ranked {
+		placeholders[i] = "(?, ?)"
+		params = append(params, r.msgID, r.chatJID)
+	}
+
+	rows, err := s.store.db.Query(`
+		SELECT messages.timestamp, messages.sender, chats.name, messages.content,
+			   messages.is_from_me, chats.jid, messages.id, messages.media_type
+		FROM messages
+		JOIN chats ON messages.chat_jid = chats.jid
+		WHERE (messages.id, messages.chat_jid) IN (VALUES `+strings.Join(placeholders, ",")+`)`,
+		params...)
+	if err != nil { // nocov
+		return nil, fmt.Errorf("query failed: %w", err)
+	}
+	defer rows.Close()
+
+	loaded := make(map[string]MCPMessage, len(ranked))
+	for _, msg := range scanMessages(rows) {
+		loaded[messageKey(msg.ID, msg.ChatJID)] = msg
+	}
+	return loaded, nil
+}
+
 // ---------- Read: Message Context ----------
 
 // GetMessageContext loads `messageID` plus before/after neighbors from the same chat so callers can inspect local conversation context.
@@ -299,18 +331,147 @@ func (s *MCPService) messagesAround(chatJID, ts, op, order string, n int) []MCPM
 
 // expandContext replaces each hit with surrounding context messages so MCP callers see local conversation flow.
 func (s *MCPService) expandContext(msgs []MCPMessage, before, after int) []MCPMessage {
+	if len(msgs) == 0 || (before <= 0 && after <= 0) {
+		return msgs
+	}
+
+	chats := make(map[string]struct{})
+	for _, msg := range msgs {
+		if msg.ID == "" || msg.ChatJID == "" {
+			continue
+		}
+		chats[msg.ChatJID] = struct{}{}
+	}
+	if len(chats) == 0 {
+		return msgs
+	}
+
+	chatPlaceholders := make([]string, 0, len(chats))
+	params := make([]interface{}, 0, len(chats)+len(msgs)*2+2)
+	for chatJID := range chats {
+		chatPlaceholders = append(chatPlaceholders, "?")
+		params = append(params, chatJID)
+	}
+
+	targetPlaceholders := make([]string, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg.ID == "" || msg.ChatJID == "" {
+			continue
+		}
+		targetPlaceholders = append(targetPlaceholders, "(?, ?)")
+		params = append(params, msg.ID, msg.ChatJID)
+	}
+	params = append(params, before, after)
+
+	rows, err := s.store.db.Query(`
+		WITH ordered AS (
+			SELECT messages.timestamp AS timestamp,
+				   messages.sender AS sender,
+				   chats.name AS chat_name,
+				   messages.content AS content,
+				   messages.is_from_me AS is_from_me,
+				   chats.jid AS jid,
+				   messages.id AS id,
+				   messages.media_type AS media_type,
+				   messages.chat_jid AS chat_jid,
+				   ROW_NUMBER() OVER (PARTITION BY messages.chat_jid ORDER BY messages.timestamp) AS rn
+			FROM messages
+			JOIN chats ON messages.chat_jid = chats.jid
+			WHERE messages.chat_jid IN (`+strings.Join(chatPlaceholders, ",")+`)
+		),
+		targets AS (
+			SELECT id, chat_jid, rn
+			FROM ordered
+			WHERE (id, chat_jid) IN (VALUES `+strings.Join(targetPlaceholders, ",")+`)
+		)
+		SELECT ordered.timestamp, ordered.sender, ordered.chat_name, ordered.content,
+			   ordered.is_from_me, ordered.jid, ordered.id, ordered.media_type,
+			   ordered.chat_jid, ordered.rn, targets.id, targets.chat_jid, targets.rn
+		FROM ordered
+		JOIN targets ON ordered.chat_jid = targets.chat_jid
+			AND ordered.rn BETWEEN targets.rn - ? AND targets.rn + ?
+		ORDER BY targets.chat_jid, targets.rn, ordered.rn`,
+		params...)
+	if err != nil { // nocov
+		return msgs
+	}
+	defer rows.Close()
+
+	type contextRow struct {
+		msg      MCPMessage
+		rn       int
+		targetRN int
+	}
+	contexts := make(map[string][]contextRow, len(msgs))
+	for rows.Next() {
+		var ts, sender, chatName, content, chatJID, id string
+		var isFromMe bool
+		var mediaType sql.NullString
+		var rowChatJID string
+		var rn int
+		var targetID, targetChatJID string
+		var targetRN int
+		if rows.Scan(&ts, &sender, &chatName, &content, &isFromMe, &chatJID, &id, &mediaType, &rowChatJID, &rn, &targetID, &targetChatJID, &targetRN) != nil { // nocov
+			continue
+		}
+		contexts[messageKey(targetID, targetChatJID)] = append(contexts[messageKey(targetID, targetChatJID)], contextRow{
+			msg: MCPMessage{
+				Timestamp: parseTime(ts),
+				Sender:    sender,
+				ChatName:  chatName,
+				Content:   content,
+				IsFromMe:  isFromMe,
+				ChatJID:   chatJID,
+				ID:        id,
+				MediaType: nullStr(mediaType),
+			},
+			rn:       rn,
+			targetRN: targetRN,
+		})
+	}
+
 	var expanded []MCPMessage
 	for _, msg := range msgs {
-		ctx, err := s.GetMessageContext(msg.ID, before, after)
-		if err != nil {
+		rows := contexts[messageKey(msg.ID, msg.ChatJID)]
+		if len(rows) == 0 {
 			expanded = append(expanded, msg)
 			continue
 		}
-		expanded = append(expanded, ctx.Before...)
-		expanded = append(expanded, ctx.Message)
-		expanded = append(expanded, ctx.After...)
+
+		beforeMsgs := make([]MCPMessage, 0, before)
+		afterMsgs := make([]MCPMessage, 0, after)
+		target := msg
+		foundTarget := false
+		targetRN := rows[0].targetRN
+		for _, row := range rows {
+			switch {
+			case row.rn < targetRN:
+				beforeMsgs = append(beforeMsgs, row.msg)
+			case row.rn == targetRN:
+				target = row.msg
+				foundTarget = true
+			default:
+				afterMsgs = append(afterMsgs, row.msg)
+			}
+		}
+		for i, j := 0, len(beforeMsgs)-1; i < j; i, j = i+1, j-1 {
+			beforeMsgs[i], beforeMsgs[j] = beforeMsgs[j], beforeMsgs[i]
+		}
+		if !foundTarget {
+			// nocov
+			expanded = append(expanded, msg)
+			continue
+		}
+		expanded = append(expanded, beforeMsgs...)
+		expanded = append(expanded, target)
+		expanded = append(expanded, afterMsgs...)
 	}
 	return expanded
+}
+
+// Builds a stable composite key for message ID plus chat JID so batched query results can be matched back to ranked/requested items.
+func messageKey(messageID, chatJID string) string {
+	return messageID + "\x1f" + chatJID
 }
 
 // ---------- Read: Chats ----------

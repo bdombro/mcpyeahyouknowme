@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"mcpyeahyouknowme/core"
+
+	"github.com/viterin/vek/vek32"
 )
 
 // SearchEntry is an alias for core.SearchEntry for backward compatibility.
@@ -293,7 +295,7 @@ func (s *SearchStore) Search(query string, limit int, sourceFilter, typeFilter s
 	bm25Results := s.bm25SearchEntries(query, limit*5, sourceFilter, typeFilter)
 
 	var vectorResults []rankedEntry
-	if s.embedder != nil {
+	if s.embedder != nil && len(bm25Results) < limit {
 		var err error
 		vectorResults, err = s.vectorSearch(query, limit*5, sourceFilter, typeFilter)
 		if err != nil {
@@ -538,17 +540,10 @@ func cosineSimilarity(a, b []float32) float64 {
 	if len(a) != len(b) || len(a) == 0 {
 		return 0
 	}
-	var dot, normA, normB float64
-	for i := range a {
-		dot += float64(a[i]) * float64(b[i])
-		normA += float64(a[i]) * float64(a[i])
-		normB += float64(b[i]) * float64(b[i])
-	}
-	denom := math.Sqrt(normA) * math.Sqrt(normB)
-	if denom == 0 {
+	if vek32.Norm(a) == 0 || vek32.Norm(b) == 0 {
 		return 0
 	}
-	return dot / denom
+	return float64(vek32.CosineSimilarity(a, b))
 }
 
 // float32sToBytes packs an embedding vector into SQLite blob bytes for storage.

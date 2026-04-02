@@ -48,11 +48,7 @@ func runMcp() {
 		}
 	}()
 
-	embedder, err := NewEmbedder(filepath.Join(dir, "models"))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+	embedder := NewLazyEmbedder(filepath.Join(dir, "models"))
 	defer embedder.Close()
 
 	searchStore, err := NewSearchStore(dir, embedder)

@@ -464,11 +464,11 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 **Search algorithm:**
 
 1. **BM25** — FTS5 full-text search on the `search_fts` virtual table
-2. **Vector** — embed the query with BGE-Small-EN-v1.5, compute cosine similarity against stored embeddings
+2. **Vector** — when BM25 returns fewer than the requested result limit, embed the query with BGE-Small-EN-v1.5 and compute cosine similarity against stored embeddings
 3. **Reciprocal Rank Fusion (RRF)** — combine BM25 and vector ranked lists: `score(d) = sum(1/(k+rank_i))` with k=60
 4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `message` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x), `email_thread_subject` (2.5x), `email_thread_participants` (2x), `email_thread_content` (1x)
 
-ONNX Runtime is required. The server will not start without it (install with `brew install onnxruntime`).
+The MCP server lazily initializes the embedder on first semantic-search use, so non-search tools and BM25-only search remain available even if ONNX Runtime is missing or embedding initialization fails.
 
 ### BM25 Keyword Search (FTS5)
 
@@ -488,9 +488,9 @@ For queries shorter than 3 characters, only exact substring matching is used (fu
 
 ### Embedding Infrastructure
 
-Semantic vector search uses [fastembed-go](https://github.com/bdombro/fastembed-go) with the BGE-Small-EN-v1.5 ONNX model. The ONNX Runtime shared library is auto-downloaded during `./scripts/install.sh` to `~/.local/share/mcpyeahyouknowme/lib/` (app-local, not exposed to system paths). The embedding model is auto-cached in `~/.local/share/mcpyeahyouknowme/models/` on first use.
+Semantic vector search uses [fastembed-go](https://github.com/bdombro/fastembed-go) with the BGE-Small-EN-v1.5 ONNX model. The ONNX Runtime shared library is auto-downloaded during `./scripts/install.sh` to `~/.local/share/mcpyeahyouknowme/lib/` (app-local, not exposed to system paths). The embedding model is auto-cached in `~/.local/share/mcpyeahyouknowme/models/` on first use. Query-time cosine similarity is computed with SIMD-accelerated `vek32.CosineSimilarity` where supported, with pure-Go fallback on unsupported CPUs.
 
-Embeddings are pre-computed during MCP server startup for all indexed content and stored in the `search_embeddings` table. Only new/changed entries are embedded on subsequent starts.
+Embeddings are pre-computed by the core daemon during indexing and stored in the `search_embeddings` table. Only new/changed entries are embedded on subsequent indexing runs. The MCP server reuses the stored embeddings and does not compute passage embeddings during startup.
 
 ---
 
@@ -521,7 +521,7 @@ All data is stored in `~/.local/share/mcpyeahyouknowme/`.
 | `gsuite_email.txt` | Cached Google account email (fetched during login via Drive API) |
 | `search.db` | Global search index (FTS5 + vector embeddings across all sources) |
 | `lib/` | ONNX Runtime shared library (auto-downloaded by `./scripts/install.sh`) |
-| `models/` | Cached embedding model (auto-downloaded on first startup by daemon or MCP) |
+| `models/` | Cached embedding model (auto-downloaded on first semantic-search use by MCP or during daemon indexing) |
 | `downloads/` | Downloaded WhatsApp media files |
 ### messages.db Schema
 
@@ -553,7 +553,7 @@ Tables are created on startup if they don't exist. The FTS5 index is automatical
 | `search_embeddings` | `entry_id` (foreign key) | Pre-computed vector embeddings (BGE-Small-EN-v1.5, stored as raw float32 bytes) |
 | `search_meta` | `source` (primary) | Tracks `last_indexed` timestamp per source for incremental updates |
 
-Populated on MCP server startup from each `DataSource.SearchEntries()`. Incremental: only new/changed entries are added on subsequent starts.
+Populated by the core daemon from each `DataSource.SearchEntries()`. Incremental: only new/changed entries are added on subsequent indexing runs.
 
 ---
 

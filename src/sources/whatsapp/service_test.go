@@ -13,6 +13,7 @@ import (
 
 // ---------- ListChats ----------
 
+// Verifies chat listing returns seeded chats ordered by latest activity when no query is applied.
 func TestListChats_noQuery(t *testing.T) {
 	svc := newTestService(t, "")
 	chats, err := svc.ListChats("", 10, 0, true, "last_active")
@@ -27,6 +28,7 @@ func TestListChats_noQuery(t *testing.T) {
 	}
 }
 
+// Verifies name sorting orders chat summaries alphabetically instead of by recency.
 func TestListChats_sortByName(t *testing.T) {
 	svc := newTestService(t, "")
 	chats, err := svc.ListChats("", 10, 0, true, "name")
@@ -41,6 +43,7 @@ func TestListChats_sortByName(t *testing.T) {
 	}
 }
 
+// Verifies fuzzy chat-name search finds a matching group by its display name.
 func TestListChats_fuzzyName(t *testing.T) {
 	svc := newTestService(t, "")
 	chats, err := svc.ListChats("Family", 10, 0, true, "last_active")
@@ -61,6 +64,7 @@ func TestListChats_fuzzyName(t *testing.T) {
 	}
 }
 
+// Verifies typo-tolerant fuzzy matching still finds the intended chat.
 func TestListChats_fuzzyTypo(t *testing.T) {
 	svc := newTestService(t, "")
 	chats, err := svc.ListChats("Famly", 10, 0, true, "last_active")
@@ -78,6 +82,7 @@ func TestListChats_fuzzyTypo(t *testing.T) {
 	}
 }
 
+// Verifies participant-name matching surfaces chats through the contacts database.
 func TestListChats_participantName(t *testing.T) {
 	svc := newTestServiceWithContacts(t, "")
 	chats, err := svc.ListChats("Alice", 10, 0, true, "last_active")
@@ -96,6 +101,7 @@ func TestListChats_participantName(t *testing.T) {
 	}
 }
 
+// Verifies chat search returns no rows when neither chat names nor participants match.
 func TestListChats_noMatch(t *testing.T) {
 	svc := newTestService(t, "")
 	chats, err := svc.ListChats("zzzznonexistent", 10, 0, true, "last_active")
@@ -107,6 +113,7 @@ func TestListChats_noMatch(t *testing.T) {
 	}
 }
 
+// Verifies chat pagination splits the ordered result set across pages.
 func TestListChats_pagination(t *testing.T) {
 	svc := newTestService(t, "")
 	page0, _ := svc.ListChats("", 2, 0, true, "last_active")
@@ -122,6 +129,7 @@ func TestListChats_pagination(t *testing.T) {
 	}
 }
 
+// Verifies group detection marks JIDs ending in the group suffix as group chats.
 func TestListChats_isGroup(t *testing.T) {
 	svc := newTestService(t, "")
 	chats, _ := svc.ListChats("", 10, 0, false, "last_active")
@@ -135,6 +143,7 @@ func TestListChats_isGroup(t *testing.T) {
 
 // ---------- GetChat ----------
 
+// Verifies single-chat lookup returns the requested chat summary.
 func TestGetChat_found(t *testing.T) {
 	svc := newTestService(t, "")
 	chat, err := svc.GetChat("11111@s.whatsapp.net", true)
@@ -146,6 +155,7 @@ func TestGetChat_found(t *testing.T) {
 	}
 }
 
+// Verifies single-chat lookup returns an error when the JID does not exist.
 func TestGetChat_notFound(t *testing.T) {
 	svc := newTestService(t, "")
 	_, err := svc.GetChat("nonexistent@s.whatsapp.net", true)
@@ -156,6 +166,7 @@ func TestGetChat_notFound(t *testing.T) {
 
 // ---------- GetDirectChatByContact ----------
 
+// Verifies phone-number lookup resolves the expected direct chat.
 func TestGetDirectChatByContact_found(t *testing.T) {
 	svc := newTestService(t, "")
 	chat, err := svc.GetDirectChatByContact("11111")
@@ -170,6 +181,7 @@ func TestGetDirectChatByContact_found(t *testing.T) {
 	}
 }
 
+// Verifies phone-number lookup reports an error when no direct chat exists.
 func TestGetDirectChatByContact_notFound(t *testing.T) {
 	svc := newTestService(t, "")
 	_, err := svc.GetDirectChatByContact("99999")
@@ -180,6 +192,7 @@ func TestGetDirectChatByContact_notFound(t *testing.T) {
 
 // ---------- GetContactChats ----------
 
+// Verifies contact-chat lookup returns chats involving the requested sender/JID.
 func TestGetContactChats(t *testing.T) {
 	svc := newTestService(t, "")
 	chats, err := svc.GetContactChats("11111", 10, 0)
@@ -193,6 +206,7 @@ func TestGetContactChats(t *testing.T) {
 
 // ---------- SearchContacts ----------
 
+// Verifies contact search matches display names stored in chats.
 func TestSearchContacts_byName(t *testing.T) {
 	svc := newTestService(t, "")
 	contacts, err := svc.SearchContacts("Alice")
@@ -207,6 +221,7 @@ func TestSearchContacts_byName(t *testing.T) {
 	}
 }
 
+// Verifies contact search matches phone-number fragments from JIDs.
 func TestSearchContacts_byPhone(t *testing.T) {
 	svc := newTestService(t, "")
 	contacts, err := svc.SearchContacts("22222")
@@ -218,6 +233,7 @@ func TestSearchContacts_byPhone(t *testing.T) {
 	}
 }
 
+// Verifies contact search merges in whatsmeow contact names when available.
 func TestSearchContacts_withWhatsmeowContacts(t *testing.T) {
 	svc := newTestServiceWithContacts(t, "")
 	contacts, err := svc.SearchContacts("Charlie")
@@ -235,6 +251,7 @@ func TestSearchContacts_withWhatsmeowContacts(t *testing.T) {
 	}
 }
 
+// Verifies contact search excludes group chats from direct-contact results.
 func TestSearchContacts_excludesGroups(t *testing.T) {
 	svc := newTestService(t, "")
 	contacts, err := svc.SearchContacts("group")
@@ -250,6 +267,7 @@ func TestSearchContacts_excludesGroups(t *testing.T) {
 
 // ---------- ListMessages ----------
 
+// Verifies chronological message listing returns seeded messages across chats.
 func TestListMessages_chronological(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("", "", "", "", "", 10, 0, false, 0, 0)
@@ -260,6 +278,7 @@ func TestListMessages_chronological(t *testing.T) {
 	requireContains(t, result, "Family dinner tonight")
 }
 
+// Verifies chat filtering limits chronological results to one chat.
 func TestListMessages_filteredByChat(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("", "", "", "group1@g.us", "", 10, 0, false, 0, 0)
@@ -272,6 +291,7 @@ func TestListMessages_filteredByChat(t *testing.T) {
 	}
 }
 
+// Verifies sender filtering limits chronological results to one sender.
 func TestListMessages_filteredBySender(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("", "", "22222", "", "", 10, 0, false, 0, 0)
@@ -281,6 +301,7 @@ func TestListMessages_filteredBySender(t *testing.T) {
 	requireContains(t, result, "Sounds great!")
 }
 
+// Verifies FTS-backed message search returns keyword matches from the message index.
 func TestListMessages_fts5Search(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("", "", "", "", "dinner", 10, 0, false, 0, 0)
@@ -290,6 +311,7 @@ func TestListMessages_fts5Search(t *testing.T) {
 	requireContains(t, result, "Family dinner tonight")
 }
 
+// Verifies FTS-backed message search returns the empty-state text when nothing matches.
 func TestListMessages_fts5SearchNoResults(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("", "", "", "", "zzzznonexistent", 10, 0, false, 0, 0)
@@ -299,6 +321,7 @@ func TestListMessages_fts5SearchNoResults(t *testing.T) {
 	requireContains(t, result, "No messages to display")
 }
 
+// Verifies contextual listing expands a hit with surrounding messages from the same chat.
 func TestListMessages_withContext(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("", "", "", "11111@s.whatsapp.net", "", 1, 0, true, 1, 1)
@@ -310,6 +333,7 @@ func TestListMessages_withContext(t *testing.T) {
 	}
 }
 
+// Verifies filtered message listing returns the empty-state text for unknown chats.
 func TestListMessages_noMessages(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("", "", "", "nonexistent@s.whatsapp.net", "", 10, 0, false, 0, 0)
@@ -321,6 +345,7 @@ func TestListMessages_noMessages(t *testing.T) {
 
 // ---------- GetMessageContext ----------
 
+// Verifies message-context lookup returns the target message plus neighbors.
 func TestGetMessageContext_found(t *testing.T) {
 	svc := newTestService(t, "")
 	ctx, err := svc.GetMessageContext("m2", 1, 1)
@@ -332,6 +357,7 @@ func TestGetMessageContext_found(t *testing.T) {
 	}
 }
 
+// Verifies message-context lookup errors for unknown message IDs.
 func TestGetMessageContext_notFound(t *testing.T) {
 	svc := newTestService(t, "")
 	_, err := svc.GetMessageContext("nonexistent", 1, 1)
@@ -342,6 +368,7 @@ func TestGetMessageContext_notFound(t *testing.T) {
 
 // ---------- GetLastInteraction ----------
 
+// Verifies last-interaction lookup returns the newest interaction involving a JID.
 func TestGetLastInteraction_found(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.GetLastInteraction("11111@s.whatsapp.net")
@@ -353,6 +380,7 @@ func TestGetLastInteraction_found(t *testing.T) {
 	}
 }
 
+// Verifies last-interaction lookup errors when no messages involve the requested JID.
 func TestGetLastInteraction_notFound(t *testing.T) {
 	svc := newTestService(t, "")
 	_, err := svc.GetLastInteraction("nonexistent@s.whatsapp.net")
@@ -363,6 +391,7 @@ func TestGetLastInteraction_notFound(t *testing.T) {
 
 // ---------- Formatting ----------
 
+// Verifies sent messages are formatted with the local "Me" label.
 func TestFormatMessage_fromMe(t *testing.T) {
 	svc := newTestService(t, "")
 	msg := MCPMessage{Content: "test", IsFromMe: true, Sender: "me"}
@@ -370,6 +399,7 @@ func TestFormatMessage_fromMe(t *testing.T) {
 	requireContains(t, result, "From: Me:")
 }
 
+// Verifies media messages include the media prefix and identifiers in formatted output.
 func TestFormatMessage_withMedia(t *testing.T) {
 	svc := newTestService(t, "")
 	msg := MCPMessage{Content: "photo", MediaType: "image", ID: "m6", ChatJID: "test@s.whatsapp.net"}
@@ -377,6 +407,7 @@ func TestFormatMessage_withMedia(t *testing.T) {
 	requireContains(t, result, "[image")
 }
 
+// Verifies formatting returns a stable empty-state message when there are no rows to render.
 func TestFormatMessages_empty(t *testing.T) {
 	svc := newTestService(t, "")
 	result := svc.formatMessages(nil)
@@ -387,6 +418,7 @@ func TestFormatMessages_empty(t *testing.T) {
 
 // ---------- Write operations (via mock HTTP) ----------
 
+// Verifies send-message calls parse a successful daemon response.
 func TestSendMessage_success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/send" {
@@ -407,6 +439,7 @@ func TestSendMessage_success(t *testing.T) {
 	}
 }
 
+// Verifies send-message calls surface daemon-declared failures without transport errors.
 func TestSendMessage_failure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(500)
@@ -424,6 +457,7 @@ func TestSendMessage_failure(t *testing.T) {
 	}
 }
 
+// Verifies file-send requests reuse the send pipeline successfully.
 func TestSendFile_success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "file sent"})
@@ -440,6 +474,7 @@ func TestSendFile_success(t *testing.T) {
 	}
 }
 
+// Verifies audio-send requests reuse the send pipeline successfully.
 func TestSendAudioMessage_success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "audio sent"})
@@ -456,6 +491,7 @@ func TestSendAudioMessage_success(t *testing.T) {
 	}
 }
 
+// Verifies media downloads parse a successful daemon response and return the saved path.
 func TestDownloadMedia_success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "ok", "path": "/tmp/media.jpg"})
@@ -472,6 +508,7 @@ func TestDownloadMedia_success(t *testing.T) {
 	}
 }
 
+// Verifies media downloads surface daemon-side failures as errors.
 func TestDownloadMedia_failure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "not found"})
@@ -485,6 +522,7 @@ func TestDownloadMedia_failure(t *testing.T) {
 	}
 }
 
+// Verifies send-message propagates network-layer failures from the daemon endpoint.
 func TestSendMessage_networkError(t *testing.T) {
 	svc := newTestService(t, "http://127.0.0.1:1")
 	_, _, err := svc.SendMessage("11111", "hello")
@@ -493,6 +531,7 @@ func TestSendMessage_networkError(t *testing.T) {
 	}
 }
 
+// Verifies media-download requests propagate network-layer failures from the daemon endpoint.
 func TestDownloadMedia_networkError(t *testing.T) {
 	svc := newTestService(t, "http://127.0.0.1:1")
 	_, err := svc.DownloadMedia("m6", "22222@s.whatsapp.net")
@@ -503,6 +542,7 @@ func TestDownloadMedia_networkError(t *testing.T) {
 
 // ---------- Helpers ----------
 
+// Verifies timestamp parsing accepts the formats emitted by stored WhatsApp fixtures.
 func TestParseTime_formats(t *testing.T) {
 	tests := []struct {
 		input string
@@ -521,6 +561,7 @@ func TestParseTime_formats(t *testing.T) {
 	}
 }
 
+// Verifies nullable SQL strings collapse to a plain empty string when invalid.
 func TestNullStr(t *testing.T) {
 	valid := sql.NullString{String: "hello", Valid: true}
 	if got := nullStr(valid); got != "hello" {
@@ -532,6 +573,7 @@ func TestNullStr(t *testing.T) {
 	}
 }
 
+// Verifies JID-to-phone conversion strips WhatsApp suffixes used in UI-facing contact output.
 func TestJidPhone(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"11111@s.whatsapp.net", "11111"},
@@ -545,6 +587,7 @@ func TestJidPhone(t *testing.T) {
 	}
 }
 
+// Verifies integer argument parsing accepts numeric JSON values and falls back cleanly.
 func TestIntArg(t *testing.T) {
 	args := map[string]interface{}{"n": float64(42), "s": "not a number"}
 	if got := core.IntArg(args, "n", 0); got != 42 {
@@ -558,6 +601,7 @@ func TestIntArg(t *testing.T) {
 	}
 }
 
+// Verifies boolean argument parsing accepts booleans and falls back to defaults for missing values.
 func TestBoolArg(t *testing.T) {
 	args := map[string]interface{}{"b": true, "s": "not bool"}
 	if got := core.BoolArg(args, "b", false); !got {
@@ -573,6 +617,7 @@ func TestBoolArg(t *testing.T) {
 
 // ---------- bm25Search ----------
 
+// Verifies BM25 ranking still honors chat and time filters when searching message content.
 func TestBM25Search_withFilters(t *testing.T) {
 	svc := newTestService(t, "")
 	results := svc.bm25Search("dinner", 10, "group1@g.us", "2000-01-01", "2099-12-31")
@@ -581,6 +626,7 @@ func TestBM25Search_withFilters(t *testing.T) {
 	}
 }
 
+// Verifies BM25 search returns no ranked hits for absent terms.
 func TestBM25Search_noResults(t *testing.T) {
 	svc := newTestService(t, "")
 	results := svc.bm25Search("zzzznonexistent", 10, "", "", "")
@@ -591,6 +637,7 @@ func TestBM25Search_noResults(t *testing.T) {
 
 // ---------- ListMessages (hybrid search variants) ----------
 
+// Verifies hybrid message search applies sender filtering after hydrating ranked results.
 func TestHybridSearch_withSenderFilter(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("", "", "11111", "", "dinner", 10, 0, false, 0, 0)
@@ -600,6 +647,7 @@ func TestHybridSearch_withSenderFilter(t *testing.T) {
 	requireContains(t, result, "dinner")
 }
 
+// Verifies hybrid message search can filter every ranked hit away when the sender mismatches.
 func TestHybridSearch_senderMismatch(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("", "", "99999", "", "dinner", 10, 0, false, 0, 0)
@@ -609,6 +657,7 @@ func TestHybridSearch_senderMismatch(t *testing.T) {
 	requireContains(t, result, "No messages to display")
 }
 
+// Verifies chronological listing composes multiple filters without leaking extra rows.
 func TestListMessages_allFilters(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("2000-01-01", "2099-12-31", "11111", "11111@s.whatsapp.net", "", 10, 0, false, 0, 0)
@@ -618,6 +667,7 @@ func TestListMessages_allFilters(t *testing.T) {
 	requireContains(t, result, "Hello Alice")
 }
 
+// Verifies BM25-backed message search returns hydrated formatted messages for a keyword hit.
 func TestBM25MessageSearch(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("", "", "", "", "dinner", 10, 0, false, 0, 0)
@@ -627,6 +677,7 @@ func TestBM25MessageSearch(t *testing.T) {
 	requireContains(t, result, "dinner")
 }
 
+// Verifies BM25-backed message search truncates ranked results to the requested limit.
 func TestBm25MessageSearch_truncation(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.bm25MessageSearch("there", 1, "", "", "", "", false, 0, 0)
@@ -640,6 +691,7 @@ func TestBm25MessageSearch_truncation(t *testing.T) {
 
 // ---------- postSend / DownloadMedia HTTP error paths ----------
 
+// Verifies invalid daemon JSON falls back to returning the raw response body for send requests.
 func TestPostSend_invalidJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("not json"))
@@ -656,6 +708,7 @@ func TestPostSend_invalidJSON(t *testing.T) {
 	}
 }
 
+// Verifies invalid daemon JSON returns a parse error for media downloads.
 func TestDownloadMedia_invalidJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("not json"))
@@ -671,6 +724,7 @@ func TestDownloadMedia_invalidJSON(t *testing.T) {
 
 // ---------- findChatsByParticipantName ----------
 
+// Verifies participant-name lookup safely returns no matches when there is no contacts database.
 func TestFindChatsByParticipantName_noContactsDB(t *testing.T) {
 	svc := newTestService(t, "")
 	result := svc.findChatsByParticipantName("Alice")
@@ -679,6 +733,7 @@ func TestFindChatsByParticipantName_noContactsDB(t *testing.T) {
 	}
 }
 
+// Verifies participant-name lookup returns no chats when no contacts fuzzy-match the query.
 func TestFindChatsByParticipantName_noMatch(t *testing.T) {
 	svc := newTestServiceWithContacts(t, "")
 	result := svc.findChatsByParticipantName("zzzznonexistent")
@@ -689,6 +744,7 @@ func TestFindChatsByParticipantName_noMatch(t *testing.T) {
 
 // ---------- SearchContacts ----------
 
+// Verifies contact search falls back to push names when full names are empty.
 func TestSearchContacts_pushNameFallback(t *testing.T) {
 	store := newTestStoreWithContacts(t)
 	store.contactsDB.Exec(`INSERT INTO whatsmeow_contacts VALUES ('44444@s.whatsapp.net', NULL, 'DaveP')`)
@@ -709,6 +765,7 @@ func TestSearchContacts_pushNameFallback(t *testing.T) {
 	}
 }
 
+// Verifies contact search caps the result set at fifty rows to keep tool output bounded.
 func TestSearchContacts_truncatesOver50(t *testing.T) {
 	store := newTestStoreWithContacts(t)
 	for i := 0; i < 50; i++ {
@@ -728,6 +785,7 @@ func TestSearchContacts_truncatesOver50(t *testing.T) {
 
 // ---------- expandContext ----------
 
+// Verifies context expansion falls back to the original message when the target row no longer exists.
 func TestExpandContext_missingMessage(t *testing.T) {
 	svc := newTestService(t, "")
 	msgs := []MCPMessage{{ID: "nonexistent", ChatJID: "11111@s.whatsapp.net"}}
@@ -739,6 +797,7 @@ func TestExpandContext_missingMessage(t *testing.T) {
 
 // ---------- GetContactChats ----------
 
+// Verifies contact-chat pagination advances through separate pages without panicking.
 func TestGetContactChats_pagination(t *testing.T) {
 	svc := newTestService(t, "")
 	page0, _ := svc.GetContactChats("11111", 1, 0)
@@ -751,10 +810,82 @@ func TestGetContactChats_pagination(t *testing.T) {
 
 // ---------- messagesAround ----------
 
+// Verifies neighbor lookup returns rows on the requested side of the timestamp boundary.
 func TestMessagesAround(t *testing.T) {
 	svc := newTestService(t, "")
 	msgs := svc.messagesAround("11111@s.whatsapp.net", "2099-12-31T00:00:00Z", "< ?", "DESC", 2)
 	if len(msgs) == 0 {
 		t.Error("expected messages before 2099")
+	}
+}
+
+// Verifies ranked-message hydration returns an empty map for empty ranked input.
+func TestLoadRankedMessages_empty(t *testing.T) {
+	svc := newTestService(t, "")
+	msgs, err := svc.loadRankedMessages(nil)
+	if err != nil {
+		t.Fatalf("loadRankedMessages: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected empty result, got %d", len(msgs))
+	}
+}
+
+// Verifies zero before/after windows leave expanded-context results unchanged.
+func TestExpandContext_zeroWindowReturnsInput(t *testing.T) {
+	svc := newTestService(t, "")
+	msgs := []MCPMessage{{ID: "m3", ChatJID: "11111@s.whatsapp.net"}}
+	expanded := svc.expandContext(msgs, 0, 0)
+	if len(expanded) != 1 || expanded[0].ID != "m3" {
+		t.Fatalf("expected original message unchanged, got %#v", expanded)
+	}
+}
+
+// Verifies invalid messages are passed through while valid messages in the same batch still expand.
+func TestExpandContext_skipsInvalidMessageButExpandsValid(t *testing.T) {
+	svc := newTestService(t, "")
+	msgs := []MCPMessage{
+		{ID: "", ChatJID: ""},
+		{ID: "m3", ChatJID: "11111@s.whatsapp.net"},
+	}
+	expanded := svc.expandContext(msgs, 1, 0)
+	if len(expanded) < 2 {
+		t.Fatalf("expected invalid original plus expanded valid context, got %d entries", len(expanded))
+	}
+	if expanded[0].ID != "" {
+		t.Fatalf("expected invalid message to remain as-is, got %#v", expanded[0])
+	}
+	foundContext := false
+	for _, msg := range expanded[1:] {
+		if msg.ID == "m2" {
+			foundContext = true
+			break
+		}
+	}
+	if !foundContext {
+		t.Fatal("expected valid message to include previous context")
+	}
+}
+
+// Verifies a batch of only invalid messages is returned unchanged.
+func TestExpandContext_allInvalidMessages(t *testing.T) {
+	svc := newTestService(t, "")
+	msgs := []MCPMessage{{ID: "", ChatJID: ""}}
+	expanded := svc.expandContext(msgs, 1, 1)
+	if len(expanded) != 1 || expanded[0].ID != "" {
+		t.Fatalf("expected invalid message slice unchanged, got %#v", expanded)
+	}
+}
+
+// Verifies expanded before-context preserves the original newest-first ordering used by the single-message path.
+func TestExpandContext_preservesNewestFirstBeforeMessages(t *testing.T) {
+	svc := newTestService(t, "")
+	msgs := []MCPMessage{{ID: "m3", ChatJID: "11111@s.whatsapp.net"}}
+	expanded := svc.expandContext(msgs, 2, 0)
+	if len(expanded) != 3 {
+		t.Fatalf("expected two context messages plus target, got %d", len(expanded))
+	}
+	if expanded[0].ID != "m2" || expanded[1].ID != "m1" || expanded[2].ID != "m3" {
+		t.Fatalf("expected original newest-first order m2,m1,m3; got %#v", expanded)
 	}
 }
