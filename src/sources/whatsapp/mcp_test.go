@@ -14,8 +14,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// buildTestMCPServer creates a fully wired MCP server with an in-memory store
-// and a mock HTTP backend for write operations.
+// Builds a fully wired MCP server with seeded data and a mock HTTP backend for write-tool coverage.
 func buildTestMCPServer(t *testing.T) (*server.MCPServer, *httptest.Server) {
 	t.Helper()
 
@@ -40,7 +39,7 @@ func buildTestMCPServer(t *testing.T) (*server.MCPServer, *httptest.Server) {
 	return s, apiSrv
 }
 
-// callTool invokes a tool by name on the MCP server and returns the text result.
+// Invokes one WhatsApp MCP tool and returns its first text payload for success-path assertions.
 func callTool(t *testing.T, s *server.MCPServer, name string, args map[string]interface{}) string {
 	t.Helper()
 
@@ -62,6 +61,7 @@ func callTool(t *testing.T, s *server.MCPServer, name string, args map[string]in
 	return extractText(t, data)
 }
 
+// Marshals a JSON-RPC tool call so tests can send raw MCP requests without repeating boilerplate.
 func mustMarshalToolCall(name string, args map[string]interface{}) json.RawMessage {
 	msg := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -73,6 +73,7 @@ func mustMarshalToolCall(name string, args map[string]interface{}) json.RawMessa
 	return data
 }
 
+// Extracts the first text payload from a raw MCP response so tests can assert on tool output content.
 func extractText(t *testing.T, raw json.RawMessage) string {
 	t.Helper()
 	var resp struct {
@@ -92,74 +93,84 @@ func extractText(t *testing.T, raw json.RawMessage) string {
 	return resp.Result.Content[0].Text
 }
 
-// ---------- E2E Tool Tests ----------
-
+// Verifies the contact-search tool returns seeded contacts by human-readable name.
 func TestMCP_SearchContacts(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_search_contacts", map[string]interface{}{"query": "Alice"})
 	requireContains(t, text, "Alice")
 }
 
+// Verifies the list-chats tool returns seeded chats without requiring a query filter.
 func TestMCP_ListChats(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_list_chats", map[string]interface{}{})
 	requireContains(t, text, "group1@g.us")
 }
 
+// Verifies fuzzy chat queries still match seeded chats through the fuzzy-search path.
 func TestMCP_ListChats_fuzzyQuery(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_list_chats", map[string]interface{}{"query": "Famly"})
 	requireContains(t, text, "Family Chat")
 }
 
+// Verifies chat listing can match group chats through participant-name search when contacts are available.
 func TestMCP_ListChats_participantSearch(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_list_chats", map[string]interface{}{"query": "Charlie"})
 	requireContains(t, text, "group2@g.us")
 }
 
+// Verifies the get-chat tool returns the seeded chat record for a known chat JID.
 func TestMCP_GetChat(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_get_chat", map[string]interface{}{"chat_jid": "group1@g.us"})
 	requireContains(t, text, "Family Chat")
 }
 
+// Verifies the get-chat tool reports a readable not-found error for unknown chat JIDs.
 func TestMCP_GetChat_notFound(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_get_chat", map[string]interface{}{"chat_jid": "nonexistent@s.whatsapp.net"})
 	requireContains(t, text, "not found")
 }
 
+// Verifies the direct-chat lookup tool resolves a contact phone number to the corresponding direct chat.
 func TestMCP_GetDirectChatByContact(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_get_direct_chat_by_contact", map[string]interface{}{"sender_phone_number": "11111"})
 	requireContains(t, text, "Alice Smith")
 }
 
+// Verifies the contact-chats tool returns chats associated with the requested contact JID.
 func TestMCP_GetContactChats(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_get_contact_chats", map[string]interface{}{"jid": "11111"})
 	requireContains(t, text, "11111@s.whatsapp.net")
 }
 
+// Verifies the list-messages tool returns seeded messages for the requested chat.
 func TestMCP_ListMessages(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_list_messages", map[string]interface{}{"chat_jid": "group1@g.us"})
 	requireContains(t, text, "dinner")
 }
 
+// Verifies the list-messages tool can search across chats when given a message query instead of a chat JID.
 func TestMCP_ListMessages_search(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_list_messages", map[string]interface{}{"query": "meeting"})
 	requireContains(t, text, "Meeting at 3pm")
 }
 
+// Verifies the message-context tool returns surrounding context for a known message ID.
 func TestMCP_GetMessageContext(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_get_message_context", map[string]interface{}{"message_id": "m4"})
 	requireContains(t, text, "m4")
 }
 
+// Verifies the last-interaction tool returns a non-empty interaction summary for a known contact.
 func TestMCP_GetLastInteraction(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_get_last_interaction", map[string]interface{}{"jid": "11111@s.whatsapp.net"})
@@ -168,32 +179,35 @@ func TestMCP_GetLastInteraction(t *testing.T) {
 	}
 }
 
+// Verifies the send-message tool reaches the mock backend and returns a success payload.
 func TestMCP_SendMessage(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_send_message", map[string]interface{}{"recipient": "11111", "message": "hi"})
 	requireContains(t, text, "success")
 }
 
+// Verifies the send-file tool reaches the mock backend and returns a success payload.
 func TestMCP_SendFile(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_send_file", map[string]interface{}{"recipient": "11111", "media_path": "/tmp/test.jpg"})
 	requireContains(t, text, "success")
 }
 
+// Verifies the send-audio-message tool reaches the mock backend and returns a success payload.
 func TestMCP_SendAudioMessage(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_send_audio_message", map[string]interface{}{"recipient": "11111", "media_path": "/tmp/test.ogg"})
 	requireContains(t, text, "success")
 }
 
+// Verifies the download-media tool returns the downloaded file path for a seeded media message.
 func TestMCP_DownloadMedia(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callTool(t, s, "whatsapp_download_media", map[string]interface{}{"message_id": "m6", "chat_jid": "22222@s.whatsapp.net"})
 	requireContains(t, text, "file_path")
 }
 
-// ---------- Tool listing ----------
-
+// Verifies tools/list exposes the full expected WhatsApp MCP tool surface.
 func TestMCP_ToolsListContainsAllTools(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 
@@ -244,8 +258,7 @@ func TestMCP_ToolsListContainsAllTools(t *testing.T) {
 	}
 }
 
-// ---------- DataSource interface ----------
-
+// Verifies the WhatsApp source satisfies the core data-source contract and reports the expected identity strings.
 func TestWhatsAppSource_interface(t *testing.T) {
 	store := newTestStore(t)
 	ws := NewSourceFromStore(store, "http://localhost:1")
@@ -261,8 +274,7 @@ func TestWhatsAppSource_interface(t *testing.T) {
 	var _ core.DataSource = ws
 }
 
-// ---------- SearchEntries ----------
-
+// Verifies SearchEntries emits chat-name, participant, and message entries for globally indexed WhatsApp search.
 func TestWhatsAppSource_SearchEntries(t *testing.T) {
 	store := newTestStoreWithContacts(t)
 	ws := NewSourceFromStore(store, "http://localhost:1")
@@ -291,6 +303,7 @@ func TestWhatsAppSource_SearchEntries(t *testing.T) {
 	}
 }
 
+// Verifies SearchEntries omits participant entries when no contacts DB is attached.
 func TestWhatsAppSource_SearchEntries_noContacts(t *testing.T) {
 	store := newTestStore(t)
 	ws := NewSourceFromStore(store, "http://localhost:1")
@@ -307,6 +320,7 @@ func TestWhatsAppSource_SearchEntries_noContacts(t *testing.T) {
 	}
 }
 
+// Verifies SearchEntries prepends sender names for inbound messages but not for messages authored by the local user.
 func TestWhatsAppSource_SearchEntries_senderPrepend(t *testing.T) {
 	store := newTestStoreWithContacts(t)
 
@@ -343,20 +357,21 @@ func TestWhatsAppSource_SearchEntries_senderPrepend(t *testing.T) {
 	}
 }
 
-// ---------- MCP tool error paths ----------
-
+// Verifies the get-chat tool returns the expected required-argument error when `chat_jid` is omitted.
 func TestMCP_GetChat_missingArg(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callToolRaw(t, s, "whatsapp_get_chat", map[string]interface{}{})
 	requireContains(t, text, "chat_jid parameter is required")
 }
 
+// Verifies direct-chat lookup reports a readable error when no direct chat exists for the requested contact.
 func TestMCP_GetDirectChat_notFound(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callToolRaw(t, s, "whatsapp_get_direct_chat_by_contact", map[string]interface{}{"sender_phone_number": "99999999"})
 	requireContains(t, text, "no direct chat")
 }
 
+// Verifies the send-message tool returns the expected required-argument error when mandatory fields are omitted.
 func TestMCP_SendMessage_missingArgs(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callToolRaw(t, s, "whatsapp_send_message", map[string]interface{}{})

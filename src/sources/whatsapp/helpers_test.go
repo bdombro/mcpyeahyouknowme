@@ -2,6 +2,7 @@ package whatsapp
 
 import "testing"
 
+// Verifies the sequence-matcher ratio stays within expected bounds for exact, partial, and unrelated strings.
 func TestSequenceMatcherRatio(t *testing.T) {
 	tests := []struct {
 		a, b string
@@ -27,6 +28,7 @@ func TestSequenceMatcherRatio(t *testing.T) {
 	}
 }
 
+// Verifies fuzzy matching accepts substrings and common typos while rejecting unrelated names.
 func TestFuzzyMatch(t *testing.T) {
 	tests := []struct {
 		query, text string
@@ -64,6 +66,7 @@ func TestFuzzyMatch(t *testing.T) {
 	}
 }
 
+// Verifies ASCII-only lowercasing preserves expected normalized query matching behavior.
 func TestToLower(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"ABC", "abc"},
@@ -79,6 +82,7 @@ func TestToLower(t *testing.T) {
 	}
 }
 
+// Verifies word splitting trims repeated whitespace so fuzzy matching sees the intended token count.
 func TestSplitWords(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -97,6 +101,7 @@ func TestSplitWords(t *testing.T) {
 	}
 }
 
+// Verifies substring checks honor ordinary hits, misses, and the empty-needle case used by matching helpers.
 func TestContainsSubstring(t *testing.T) {
 	if !containsSubstring("hello world", "world") {
 		t.Error("expected 'hello world' to contain 'world'")

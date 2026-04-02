@@ -2,6 +2,7 @@ package google_places
 
 import "testing"
 
+// Verifies configuration detection follows whether the build-time Places API key is present.
 func TestIsConfigured(t *testing.T) {
 	old := GooglePlaceAPIKey
 	defer func() { GooglePlaceAPIKey = old }()
@@ -17,6 +18,7 @@ func TestIsConfigured(t *testing.T) {
 	}
 }
 
+// Verifies the source methods expose the expected live-only behavior and no local search entries.
 func TestSourceMethods(t *testing.T) {
 	src := &Source{}
 
@@ -42,6 +44,7 @@ func TestSourceMethods(t *testing.T) {
 	}
 }
 
+// Verifies info output reflects build-time Places availability without depending on on-disk source state.
 func TestInfoLines(t *testing.T) {
 	old := GooglePlaceAPIKey
 	defer func() { GooglePlaceAPIKey = old }()

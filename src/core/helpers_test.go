@@ -9,6 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// Verifies IntArg accepts native int values from MCP-style argument maps.
 func TestIntArg_int(t *testing.T) {
 	args := map[string]interface{}{"n": 42}
 	if got := IntArg(args, "n", 0); got != 42 {
@@ -16,6 +17,7 @@ func TestIntArg_int(t *testing.T) {
 	}
 }
 
+// Verifies IntArg coerces float64 JSON-style numbers into ints.
 func TestIntArg_float64(t *testing.T) {
 	args := map[string]interface{}{"n": float64(7)}
 	if got := IntArg(args, "n", 0); got != 7 {
@@ -23,6 +25,7 @@ func TestIntArg_float64(t *testing.T) {
 	}
 }
 
+// Verifies IntArg falls back to the provided default when the key is absent.
 func TestIntArg_missing(t *testing.T) {
 	args := map[string]interface{}{}
 	if got := IntArg(args, "n", 99); got != 99 {
@@ -30,6 +33,7 @@ func TestIntArg_missing(t *testing.T) {
 	}
 }
 
+// Verifies JsonResult wraps marshalable values in a non-error MCP text result.
 func TestJsonResult_valid(t *testing.T) {
 	result, err := JsonResult(map[string]string{"key": "value"})
 	if err != nil {
@@ -40,6 +44,7 @@ func TestJsonResult_valid(t *testing.T) {
 	}
 }
 
+// Verifies JsonResult turns marshal failures into MCP error results instead of returning a Go error.
 func TestJsonResult_unmarshalable(t *testing.T) {
 	// JsonResult converts marshal errors into a tool error result (never returns err).
 	ch := make(chan int)
@@ -52,6 +57,7 @@ func TestJsonResult_unmarshalable(t *testing.T) {
 	}
 }
 
+// Verifies ToolDescription appends the example payload when one is supplied.
 func TestToolDescription_withExample(t *testing.T) {
 	got := ToolDescription("Search contacts.", `{"query":"alice"}`)
 	want := `Search contacts. Example arguments: {"query":"alice"}`
@@ -60,6 +66,7 @@ func TestToolDescription_withExample(t *testing.T) {
 	}
 }
 
+// Verifies ToolDescription returns the bare summary unchanged when no example is supplied.
 func TestToolDescription_withoutExample(t *testing.T) {
 	got := ToolDescription("Search contacts.", "")
 	if got != "Search contacts." {
@@ -67,6 +74,7 @@ func TestToolDescription_withoutExample(t *testing.T) {
 	}
 }
 
+// Verifies NewReadOnlyTool stamps the MCP annotations clients rely on for safe read-only tools.
 func TestNewReadOnlyTool_setsAnnotations(t *testing.T) {
 	tool := NewReadOnlyTool("search", "Search data.")
 	if tool.Annotations.ReadOnlyHint == nil || !*tool.Annotations.ReadOnlyHint {
@@ -80,6 +88,7 @@ func TestNewReadOnlyTool_setsAnnotations(t *testing.T) {
 	}
 }
 
+// Verifies NewMutatingTool stamps the MCP annotations clients rely on for state-changing tools.
 func TestNewMutatingTool_setsAnnotations(t *testing.T) {
 	tool := NewMutatingTool("send_message", "Send message.")
 	if tool.Annotations.ReadOnlyHint == nil || *tool.Annotations.ReadOnlyHint {
@@ -93,6 +102,7 @@ func TestNewMutatingTool_setsAnnotations(t *testing.T) {
 	}
 }
 
+// Verifies missing required string args become retryable MCP error results with example guidance.
 func TestRequireStringArgument_missing(t *testing.T) {
 	value, result := RequireStringArgument(mcp.CallToolRequest{}, "query", `{"query":"family dinner"}`)
 	if value != "" {
@@ -114,6 +124,7 @@ func TestRequireStringArgument_missing(t *testing.T) {
 	}
 }
 
+// Verifies missing required string args still return a retryable MCP error when no example payload is available.
 func TestRequireStringArgument_missingWithoutExample(t *testing.T) {
 	_, result := RequireStringArgument(mcp.CallToolRequest{}, "query", "")
 	if result == nil || !result.IsError {
@@ -128,6 +139,7 @@ func TestRequireStringArgument_missingWithoutExample(t *testing.T) {
 	}
 }
 
+// Verifies RequireStringArgument returns the provided value without an error result on valid input.
 func TestRequireStringArgument_success(t *testing.T) {
 	req := mcp.CallToolRequest{}
 	req.Params.Arguments = map[string]any{"query": "family dinner"}
@@ -140,6 +152,7 @@ func TestRequireStringArgument_success(t *testing.T) {
 	}
 }
 
+// Verifies RequireNumberArgument accepts numeric args and returns no MCP error on valid input.
 func TestRequireNumberArgument_success(t *testing.T) {
 	req := mcp.CallToolRequest{}
 	req.Params.Arguments = map[string]any{"limit": float64(7)}
@@ -152,6 +165,7 @@ func TestRequireNumberArgument_success(t *testing.T) {
 	}
 }
 
+// Verifies missing required number args become retryable MCP error results with example guidance.
 func TestRequireNumberArgument_missing(t *testing.T) {
 	_, result := RequireNumberArgument(mcp.CallToolRequest{}, "limit", `{"limit":7}`)
 	if result == nil || !result.IsError {
@@ -170,6 +184,7 @@ func TestRequireNumberArgument_missing(t *testing.T) {
 	}
 }
 
+// Verifies RequireIntArgument coerces numeric input into an int for handler use.
 func TestRequireIntArgument_success(t *testing.T) {
 	req := mcp.CallToolRequest{}
 	req.Params.Arguments = map[string]any{"days": float64(14)}
@@ -182,6 +197,7 @@ func TestRequireIntArgument_success(t *testing.T) {
 	}
 }
 
+// Verifies RequireBoolArgument accepts boolean input and returns no MCP error on valid input.
 func TestRequireBoolArgument_success(t *testing.T) {
 	req := mcp.CallToolRequest{}
 	req.Params.Arguments = map[string]any{"include_raw": true}
@@ -194,6 +210,7 @@ func TestRequireBoolArgument_success(t *testing.T) {
 	}
 }
 
+// Verifies missing required bool args become retryable MCP error results with example guidance.
 func TestRequireBoolArgument_missing(t *testing.T) {
 	_, result := RequireBoolArgument(mcp.CallToolRequest{}, "include_raw", `{"include_raw":true}`)
 	if result == nil || !result.IsError {
@@ -212,6 +229,7 @@ func TestRequireBoolArgument_missing(t *testing.T) {
 	}
 }
 
+// Verifies the low-value-content heuristic skips numeric-heavy text but keeps prose-like content indexable.
 func TestIsLowValueContent(t *testing.T) {
 	tests := []struct {
 		name string
@@ -253,6 +271,7 @@ func TestIsLowValueContent(t *testing.T) {
 	}
 }
 
+// Verifies NormalizeConfig seeds config entries for known sources instead of omitting them.
 func TestNormalizeConfig_seedsKnownSources(t *testing.T) {
 	RegisterKnownSource("core_test_seeded")
 	cfg := NormalizeConfig(Config{})
@@ -261,6 +280,7 @@ func TestNormalizeConfig_seedsKnownSources(t *testing.T) {
 	}
 }
 
+// Verifies disabling a source preserves its config entry while clearing enabled and reset flags.
 func TestSetSourceDisabled_preservesEntry(t *testing.T) {
 	RegisterKnownSource("core_test_toggle")
 	dir := t.TempDir()

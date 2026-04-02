@@ -10,7 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// callTool invokes a named tool on the MCP server and returns raw JSON text.
+// Invokes one gsuite MCP tool and returns its first text payload for assertions.
 func callTool(t *testing.T, s *server.MCPServer, name string, args map[string]interface{}) string {
 	t.Helper()
 
@@ -48,6 +48,7 @@ func callTool(t *testing.T, s *server.MCPServer, name string, args map[string]in
 	return resp.Result.Content[0].Text
 }
 
+// Builds a test MCP server with a seeded gsuite source so tool handlers can be exercised end to end.
 func buildMCPServer(t *testing.T) *server.MCPServer {
 	t.Helper()
 	src := newTestSource(t)
@@ -59,6 +60,7 @@ func buildMCPServer(t *testing.T) *server.MCPServer {
 
 // --- Docs MCP tests ---
 
+// Verifies the Docs search tool returns seeded documents for matching queries.
 func TestDocsSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_docs_search", map[string]interface{}{"query": "project proposal"})
@@ -75,6 +77,7 @@ func TestDocsSearch_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Docs search tool handles a nil DB without panicking.
 func TestDocsSearch_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -85,6 +88,7 @@ func TestDocsSearch_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Docs get-document tool returns a seeded document by ID.
 func TestDocsGetDocument_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_docs_get_document", map[string]interface{}{"document_id": "doc1"})
@@ -103,6 +107,7 @@ func TestDocsGetDocument_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Docs get-document tool reports a readable not-found error for unknown IDs.
 func TestDocsGetDocument_NotFound(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_docs_get_document", map[string]interface{}{"document_id": "nope"})
@@ -111,6 +116,7 @@ func TestDocsGetDocument_NotFound(t *testing.T) {
 	}
 }
 
+// Verifies the Docs get-document tool handles a nil DB without panicking.
 func TestDocsGetDocument_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -121,6 +127,7 @@ func TestDocsGetDocument_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Docs list-recent tool returns recently seeded documents.
 func TestDocsListRecent(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_docs_list_recent", map[string]interface{}{})
@@ -136,6 +143,7 @@ func TestDocsListRecent(t *testing.T) {
 
 // --- Sheets MCP tests ---
 
+// Verifies the Sheets search tool returns seeded spreadsheets for matching queries.
 func TestSheetsSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_sheets_search", map[string]interface{}{"query": "Budget"})
@@ -147,6 +155,7 @@ func TestSheetsSearch_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Sheets get-spreadsheet tool returns a seeded spreadsheet by ID.
 func TestSheetsGetSpreadsheet_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_sheets_get_spreadsheet", map[string]interface{}{"spreadsheet_id": "sheet1"})
@@ -163,6 +172,7 @@ func TestSheetsGetSpreadsheet_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Sheets get-spreadsheet tool reports a readable not-found error for unknown IDs.
 func TestSheetsGetSpreadsheet_NotFound(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_sheets_get_spreadsheet", map[string]interface{}{"spreadsheet_id": "nope"})
@@ -171,6 +181,7 @@ func TestSheetsGetSpreadsheet_NotFound(t *testing.T) {
 	}
 }
 
+// Verifies the Sheets get-spreadsheet tool handles a nil DB without panicking.
 func TestSheetsGetSpreadsheet_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -181,6 +192,7 @@ func TestSheetsGetSpreadsheet_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Sheets list-recent tool returns recently seeded spreadsheets.
 func TestSheetsListRecent(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_sheets_list_recent", map[string]interface{}{})
@@ -193,6 +205,7 @@ func TestSheetsListRecent(t *testing.T) {
 
 // --- Gmail MCP tests ---
 
+// Verifies the Gmail search tool returns seeded messages for matching queries.
 func TestGmailSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_search", map[string]interface{}{"query": "meeting"})
@@ -204,6 +217,7 @@ func TestGmailSearch_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Gmail get-message tool returns the seeded message payload for a known ID.
 func TestGmailGetMessage_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_get_message", map[string]interface{}{"message_id": "msg1"})
@@ -226,6 +240,7 @@ func TestGmailGetMessage_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Gmail get-message tool reports a readable not-found error for unknown IDs.
 func TestGmailGetMessage_NotFound(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_get_message", map[string]interface{}{"message_id": "nope"})
@@ -234,6 +249,7 @@ func TestGmailGetMessage_NotFound(t *testing.T) {
 	}
 }
 
+// Verifies the Gmail get-message tool handles a nil DB without panicking.
 func TestGmailGetMessage_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -244,6 +260,7 @@ func TestGmailGetMessage_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Gmail get-thread tool returns the rebuilt seeded thread for a known thread ID.
 func TestGmailGetThread_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_get_thread", map[string]interface{}{"thread_id": "thread1"})
@@ -271,6 +288,7 @@ func TestGmailGetThread_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Gmail get-thread tool can include raw bodies when the caller requests them.
 func TestGmailGetThread_IncludeRaw(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_get_thread", map[string]interface{}{"thread_id": "thread1", "include_raw": true})
@@ -286,6 +304,7 @@ func TestGmailGetThread_IncludeRaw(t *testing.T) {
 	}
 }
 
+// Verifies the Gmail get-thread tool reports a readable not-found error for unknown thread IDs.
 func TestGmailGetThread_NotFound(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_get_thread", map[string]interface{}{"thread_id": "nope"})
@@ -294,6 +313,7 @@ func TestGmailGetThread_NotFound(t *testing.T) {
 	}
 }
 
+// Verifies the Gmail get-thread tool reports missing-thread metadata instead of silently succeeding.
 func TestGmailGetThread_NoThreadMetadata(t *testing.T) {
 	src := newTestSource(t)
 	src.db.Exec(`INSERT INTO gmail_messages
@@ -318,6 +338,7 @@ func TestGmailGetThread_NoThreadMetadata(t *testing.T) {
 	}
 }
 
+// Verifies the Gmail get-thread tool handles a nil DB without panicking.
 func TestGmailGetThread_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -328,6 +349,7 @@ func TestGmailGetThread_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Gmail list-recent tool returns recently seeded messages.
 func TestGmailListRecent(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_list_recent", map[string]interface{}{})
@@ -343,6 +365,7 @@ func TestGmailListRecent(t *testing.T) {
 	}
 }
 
+// Verifies the Gmail list-recent tool can filter seeded results by folder.
 func TestGmailListRecent_FilterByFolder(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_list_recent", map[string]interface{}{"folder": "INBOX"})
@@ -361,6 +384,7 @@ func TestGmailListRecent_FilterByFolder(t *testing.T) {
 
 // --- Calendar MCP tests ---
 
+// Verifies the Calendar search tool returns seeded events for matching queries.
 func TestCalendarSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_calendar_search", map[string]interface{}{"query": "standup"})
@@ -372,6 +396,7 @@ func TestCalendarSearch_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Calendar get-event tool returns a seeded event by ID.
 func TestCalendarGetEvent_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_calendar_get_event", map[string]interface{}{"event_id": "cal1|ev1"})
@@ -391,6 +416,7 @@ func TestCalendarGetEvent_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Calendar get-event tool reports a readable not-found error for unknown IDs.
 func TestCalendarGetEvent_NotFound(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_calendar_get_event", map[string]interface{}{"event_id": "nope"})
@@ -399,6 +425,7 @@ func TestCalendarGetEvent_NotFound(t *testing.T) {
 	}
 }
 
+// Verifies the Calendar get-event tool handles a nil DB without panicking.
 func TestCalendarGetEvent_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -409,6 +436,7 @@ func TestCalendarGetEvent_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Calendar list-upcoming tool returns seeded future events.
 func TestCalendarListUpcoming(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_calendar_list_upcoming", map[string]interface{}{"days": 7})
@@ -423,6 +451,7 @@ func TestCalendarListUpcoming(t *testing.T) {
 
 // --- Tasks MCP tests ---
 
+// Verifies the Tasks search tool returns seeded tasks for matching queries.
 func TestTasksSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_tasks_search", map[string]interface{}{"query": "unit tests"})
@@ -434,6 +463,7 @@ func TestTasksSearch_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Tasks list tool returns all seeded tasks when no status filter is applied.
 func TestTasksList_All(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_tasks_list", map[string]interface{}{})
@@ -445,6 +475,7 @@ func TestTasksList_All(t *testing.T) {
 	}
 }
 
+// Verifies the Tasks list tool filters seeded tasks by status when requested.
 func TestTasksList_FilterByStatus(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_tasks_list", map[string]interface{}{"status": "needsAction"})
@@ -457,6 +488,7 @@ func TestTasksList_FilterByStatus(t *testing.T) {
 
 // --- Contacts MCP tests ---
 
+// Verifies the Contacts search tool returns seeded contacts for matching queries.
 func TestContactsSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_contacts_search", map[string]interface{}{"query": "Alice"})
@@ -468,6 +500,7 @@ func TestContactsSearch_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Contacts list tool returns the seeded people directory entries.
 func TestContactsList(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_contacts_list", map[string]interface{}{})
@@ -478,6 +511,7 @@ func TestContactsList(t *testing.T) {
 	}
 }
 
+// Verifies the Contacts list tool handles a nil DB without panicking.
 func TestContactsList_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -490,6 +524,7 @@ func TestContactsList_NilDB(t *testing.T) {
 
 // --- Slides MCP tests ---
 
+// Verifies the Slides search tool returns seeded presentations for matching queries.
 func TestSlidesSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_slides_search", map[string]interface{}{"query": "revenue"})
@@ -501,6 +536,7 @@ func TestSlidesSearch_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Slides get-presentation tool returns a seeded presentation by ID.
 func TestSlidesGetPresentation_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_slides_get_presentation", map[string]interface{}{"presentation_id": "pres1"})
@@ -517,6 +553,7 @@ func TestSlidesGetPresentation_Found(t *testing.T) {
 	}
 }
 
+// Verifies the Slides get-presentation tool reports a readable not-found error for unknown IDs.
 func TestSlidesGetPresentation_NotFound(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_slides_get_presentation", map[string]interface{}{"presentation_id": "nope"})
@@ -525,6 +562,7 @@ func TestSlidesGetPresentation_NotFound(t *testing.T) {
 	}
 }
 
+// Verifies the Slides get-presentation tool handles a nil DB without panicking.
 func TestSlidesGetPresentation_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -535,6 +573,7 @@ func TestSlidesGetPresentation_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Slides list-recent tool returns recently seeded presentations.
 func TestSlidesListRecent(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_slides_list_recent", map[string]interface{}{})
@@ -545,6 +584,7 @@ func TestSlidesListRecent(t *testing.T) {
 	}
 }
 
+// Verifies MCP handlers return required-argument errors before performing DB work.
 func TestRequiredArgs_Missing(t *testing.T) {
 	s := buildMCPServer(t)
 	tests := []struct {
@@ -578,6 +618,7 @@ func TestRequiredArgs_Missing(t *testing.T) {
 
 // --- DisabledApp tests ---
 
+// Verifies tools are not registered for apps disabled in the persisted app config.
 func TestDisabledApp_ToolsNotRegistered(t *testing.T) {
 	src := newTestSource(t)
 	src.apps = allAppsEnabledConfig()
@@ -594,6 +635,7 @@ func TestDisabledApp_ToolsNotRegistered(t *testing.T) {
 
 // --- Gmail parsing helpers ---
 
+// Verifies primary-folder selection prefers the expected label ordering from Gmail labels.
 func TestPrimaryFolder(t *testing.T) {
 	tests := []struct {
 		labels []string
@@ -614,6 +656,7 @@ func TestPrimaryFolder(t *testing.T) {
 	}
 }
 
+// Verifies HTML stripping removes markup while preserving readable text content for Gmail indexing.
 func TestStripHTML(t *testing.T) {
 	input := "<p>Hello <b>world</b></p>"
 	got := stripHTML(input)
@@ -622,7 +665,7 @@ func TestStripHTML(t *testing.T) {
 	}
 }
 
-// TestStoreGmailMessage tests that a Gmail message is stored correctly.
+// Verifies storeGmailMessage persists body fields needed for Gmail search and thread reconstruction.
 func TestStoreGmailMessage(t *testing.T) {
 	src := newTestSource(t)
 	seedGmail(t, src.db)
@@ -655,8 +698,7 @@ func TestStoreGmailMessage(t *testing.T) {
 	}
 }
 
-// TestExtractDocumentText is covered indirectly through the seeded docs tests;
-// this just verifies the helper does not panic on empty content.
+// Verifies gmailSearchEntries emits message and thread entries with the expected searchable content.
 func TestGmailSearchEntries(t *testing.T) {
 	src := newTestSource(t)
 	seedGmail(t, src.db)
@@ -690,6 +732,7 @@ func TestGmailSearchEntries(t *testing.T) {
 	}
 }
 
+// Verifies calendarSearchEntries maps seeded calendar rows into global-search entries.
 func TestCalendarSearchEntries(t *testing.T) {
 	src := newTestSource(t)
 	seedCalendar(t, src.db)
@@ -708,6 +751,7 @@ func TestCalendarSearchEntries(t *testing.T) {
 	}
 }
 
+// Verifies tasksSearchEntries maps seeded task rows into global-search entries.
 func TestTasksSearchEntries(t *testing.T) {
 	src := newTestSource(t)
 	seedTasks(t, src.db)
@@ -720,6 +764,7 @@ func TestTasksSearchEntries(t *testing.T) {
 	}
 }
 
+// Verifies contactsSearchEntries maps seeded contact rows into global-search entries.
 func TestContactsSearchEntries(t *testing.T) {
 	src := newTestSource(t)
 	seedContacts(t, src.db)
@@ -732,6 +777,7 @@ func TestContactsSearchEntries(t *testing.T) {
 	}
 }
 
+// Verifies the Docs list-recent tool handles a nil DB without panicking.
 func TestDocsListRecent_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -742,6 +788,7 @@ func TestDocsListRecent_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Sheets search tool handles a nil DB without panicking.
 func TestSheetsSearch_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -752,6 +799,7 @@ func TestSheetsSearch_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Sheets list-recent tool handles a nil DB without panicking.
 func TestSheetsListRecent_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -762,6 +810,7 @@ func TestSheetsListRecent_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Gmail search tool handles a nil DB without panicking.
 func TestGmailSearch_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -772,6 +821,7 @@ func TestGmailSearch_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Gmail list-recent tool handles a nil DB without panicking.
 func TestGmailListRecent_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -782,6 +832,7 @@ func TestGmailListRecent_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Calendar search tool handles a nil DB without panicking.
 func TestCalendarSearch_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -792,6 +843,7 @@ func TestCalendarSearch_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Calendar list-upcoming tool handles a nil DB without panicking.
 func TestCalendarListUpcoming_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -802,6 +854,7 @@ func TestCalendarListUpcoming_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Tasks search tool handles a nil DB without panicking.
 func TestTasksSearch_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -812,6 +865,7 @@ func TestTasksSearch_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Tasks list tool handles a nil DB without panicking.
 func TestTasksList_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -822,6 +876,7 @@ func TestTasksList_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Slides search tool handles a nil DB without panicking.
 func TestSlidesSearch_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -832,6 +887,7 @@ func TestSlidesSearch_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Slides list-recent tool handles a nil DB without panicking.
 func TestSlidesListRecent_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -842,6 +898,7 @@ func TestSlidesListRecent_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies the Contacts search tool handles a nil DB without panicking.
 func TestContactsSearch_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -855,6 +912,7 @@ func TestContactsSearch_NilDB(t *testing.T) {
 // coverOsImport prevents unused import of "os".
 var _ = os.DevNull
 
+// Returns whether `sub` appears in `s` so repeated string assertions stay concise in MCP tests.
 func containsStr(s, sub string) bool {
 	if len(sub) == 0 {
 		return true

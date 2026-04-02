@@ -2,6 +2,7 @@ package main
 
 import "testing"
 
+// Verifies launchctl output with a PID extracts the expected daemon process ID.
 func TestParseLaunchctlPID(t *testing.T) {
 	output := `{
 	"Label" = "com.mcpyeahyouknowme.core";
@@ -12,18 +13,21 @@ func TestParseLaunchctlPID(t *testing.T) {
 	}
 }
 
+// Verifies launchctl output without a PID falls back to zero instead of misparsing.
 func TestParseLaunchctlPID_missing(t *testing.T) {
 	if got := parseLaunchctlPID(`{"Label" = "com.mcpyeahyouknowme.core";}`); got != 0 {
 		t.Fatalf("parseLaunchctlPID() = %d, want 0", got)
 	}
 }
 
+// Verifies ps RSS kilobytes convert into bytes for daemon memory reporting.
 func TestParseProcessRSSBytes(t *testing.T) {
 	if got := parseProcessRSSBytes("896384\n"); got != 917897216 {
 		t.Fatalf("parseProcessRSSBytes() = %d, want 917897216", got)
 	}
 }
 
+// Verifies invalid ps RSS output safely returns zero instead of propagating garbage values.
 func TestParseProcessRSSBytes_invalid(t *testing.T) {
 	if got := parseProcessRSSBytes("not-a-number"); got != 0 {
 		t.Fatalf("parseProcessRSSBytes() = %d, want 0", got)

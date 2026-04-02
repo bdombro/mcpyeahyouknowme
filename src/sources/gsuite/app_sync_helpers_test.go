@@ -13,8 +13,10 @@ import (
 	tasksapi "google.golang.org/api/tasks/v1"
 )
 
+// Returns a string pointer so Google API fixture structs can be built inline in tests.
 func strPtr(v string) *string { return &v }
 
+// Verifies contact-record building maps People API fields into the stored contact shape.
 func TestBuildContactRecord(t *testing.T) {
 	record := buildContactRecord(&peopleapi.Person{
 		ResourceName: "people/123",
@@ -47,6 +49,7 @@ func TestBuildContactRecord(t *testing.T) {
 	}
 }
 
+// Verifies docs-record building combines Drive metadata and extracted content into the stored docs shape.
 func TestBuildDocsRecord(t *testing.T) {
 	record := buildDocsRecord(&driveapi.File{
 		Id:           "doc-1",
@@ -82,6 +85,7 @@ func TestBuildDocsRecord(t *testing.T) {
 	}
 }
 
+// Verifies sheets-record building combines Drive metadata and extracted sheet text into the stored sheets shape.
 func TestBuildSheetsRecord(t *testing.T) {
 	record := buildSheetsRecord(&driveapi.File{
 		Id:           "sheet-1",
@@ -112,6 +116,7 @@ func TestBuildSheetsRecord(t *testing.T) {
 	}
 }
 
+// Verifies slides-record building combines Drive metadata and extracted presentation text into the stored slides shape.
 func TestBuildSlidesRecord(t *testing.T) {
 	record := buildSlidesRecord(&driveapi.File{
 		Id:           "slides-1",
@@ -141,6 +146,7 @@ func TestBuildSlidesRecord(t *testing.T) {
 	}
 }
 
+// Verifies task-record building maps Google Tasks fields into the stored task shape.
 func TestBuildTaskRecord(t *testing.T) {
 	record := buildTaskRecord(&tasksapi.TaskList{
 		Id:    "list-1",
@@ -165,6 +171,7 @@ func TestBuildTaskRecord(t *testing.T) {
 	}
 }
 
+// Verifies calendar-event record building maps timed events into the stored calendar shape.
 func TestBuildCalendarEventRecord(t *testing.T) {
 	record := buildCalendarEventRecord(&calendarapi.CalendarListEntry{
 		Id:      "cal-1",
@@ -205,6 +212,7 @@ func TestBuildCalendarEventRecord(t *testing.T) {
 	}
 }
 
+// Verifies calendar-event record building handles all-day events and nil helper fields safely.
 func TestBuildCalendarEventRecord_AllDayAndNilHelpers(t *testing.T) {
 	record := buildCalendarEventRecord(nil, &calendarapi.Event{
 		Id:    "evt-2",
@@ -223,6 +231,7 @@ func TestBuildCalendarEventRecord_AllDayAndNilHelpers(t *testing.T) {
 	}
 }
 
+// Verifies contact-record building returns nil for nil People API input.
 func TestBuildContactRecord_nil(t *testing.T) {
 	r := buildContactRecord(nil)
 	if r.ResourceName != "" {
@@ -230,6 +239,7 @@ func TestBuildContactRecord_nil(t *testing.T) {
 	}
 }
 
+// Verifies docs-record building returns nil for nil docs content input.
 func TestBuildDocsRecord_nil(t *testing.T) {
 	r := buildDocsRecord(nil, nil, "")
 	if r.ID != "" {
@@ -237,6 +247,7 @@ func TestBuildDocsRecord_nil(t *testing.T) {
 	}
 }
 
+// Verifies sheets-record building returns nil for nil spreadsheet input.
 func TestBuildSheetsRecord_nilSpreadsheet(t *testing.T) {
 	r := buildSheetsRecord(&driveapi.File{Id: "s1", Name: "T"}, nil, "")
 	if r.ID != "s1" || r.SheetCount != 0 || r.Content != "" {
@@ -244,6 +255,7 @@ func TestBuildSheetsRecord_nilSpreadsheet(t *testing.T) {
 	}
 }
 
+// Verifies slides-record building returns nil for nil presentation input.
 func TestBuildSlidesRecord_nilPresentation(t *testing.T) {
 	r := buildSlidesRecord(&driveapi.File{Id: "p1", Name: "P"}, nil, "")
 	if r.ID != "p1" || r.SlideCount != 0 || r.Content != "" {
@@ -251,6 +263,7 @@ func TestBuildSlidesRecord_nilPresentation(t *testing.T) {
 	}
 }
 
+// Verifies task-record building returns nil for nil task input.
 func TestBuildTaskRecord_nilTask(t *testing.T) {
 	r := buildTaskRecord(&tasksapi.TaskList{Id: "l1"}, nil)
 	if r.ID != "" {
@@ -258,6 +271,7 @@ func TestBuildTaskRecord_nilTask(t *testing.T) {
 	}
 }
 
+// Verifies task-record building returns nil when the tasklist context is missing.
 func TestBuildTaskRecord_nilTaskList(t *testing.T) {
 	r := buildTaskRecord(nil, &tasksapi.Task{Id: "t1", Title: "Buy milk"})
 	if r.ID != "t1" || r.TasklistID != "" {
@@ -265,6 +279,7 @@ func TestBuildTaskRecord_nilTaskList(t *testing.T) {
 	}
 }
 
+// Verifies spreadsheet text extraction returns an empty string for nil sheet data.
 func TestExtractSpreadsheetText_nilData(t *testing.T) {
 	text := extractSpreadsheetText(&sheetsapi.Spreadsheet{
 		Sheets: []*sheetsapi.Sheet{
@@ -281,6 +296,7 @@ func TestExtractSpreadsheetText_nilData(t *testing.T) {
 	}
 }
 
+// Verifies presentation text extraction walks multiple slides and concatenates visible text.
 func TestExtractPresentationText_multiSlide(t *testing.T) {
 	text := extractPresentationText(&slidesapi.Presentation{
 		Slides: []*slidesapi.Page{
@@ -305,6 +321,7 @@ func TestExtractPresentationText_multiSlide(t *testing.T) {
 	}
 }
 
+// Verifies organizer formatting falls back to the email address when no display name is present.
 func TestFormatCalendarOrganizer_emailOnly(t *testing.T) {
 	got := formatCalendarOrganizer(&calendarapi.EventOrganizer{Email: "org@co.com"})
 	if got != "org@co.com" {
@@ -312,6 +329,7 @@ func TestFormatCalendarOrganizer_emailOnly(t *testing.T) {
 	}
 }
 
+// Verifies organizer formatting prefers the display name when one is available.
 func TestFormatCalendarOrganizer_withDisplayName(t *testing.T) {
 	got := formatCalendarOrganizer(&calendarapi.EventOrganizer{DisplayName: "Alice", Email: "alice@co.com"})
 	if got != "Alice <alice@co.com>" {
@@ -319,6 +337,7 @@ func TestFormatCalendarOrganizer_withDisplayName(t *testing.T) {
 	}
 }
 
+// Verifies calendar-event record building returns nil when the calendar context is missing.
 func TestBuildCalendarEventRecord_nilCalendar(t *testing.T) {
 	ev := &calendarapi.Event{Id: "ev1", Summary: "Meeting"}
 	r := buildCalendarEventRecord(nil, ev)
@@ -327,6 +346,7 @@ func TestBuildCalendarEventRecord_nilCalendar(t *testing.T) {
 	}
 }
 
+// Verifies calendar-event record building returns nil when the event payload is missing.
 func TestBuildCalendarEventRecord_nilEvent(t *testing.T) {
 	r := buildCalendarEventRecord(&calendarapi.CalendarListEntry{Id: "cal1"}, nil)
 	if r.ID != "" {
@@ -334,6 +354,7 @@ func TestBuildCalendarEventRecord_nilEvent(t *testing.T) {
 	}
 }
 
+// Verifies docs-record building returns nil when Drive metadata is missing.
 func TestBuildDocsRecord_nilDriveFile(t *testing.T) {
 	r := buildDocsRecord(nil, &docsapi.Document{Title: "T"}, "me@co.com")
 	if r.ID != "" || r.Title != "" {
@@ -341,6 +362,7 @@ func TestBuildDocsRecord_nilDriveFile(t *testing.T) {
 	}
 }
 
+// Verifies sheets-record building returns nil when Drive metadata is missing.
 func TestBuildSheetsRecord_nilDriveFile(t *testing.T) {
 	r := buildSheetsRecord(nil, nil, "")
 	if r.ID != "" {
@@ -348,6 +370,7 @@ func TestBuildSheetsRecord_nilDriveFile(t *testing.T) {
 	}
 }
 
+// Verifies slides-record building returns nil when Drive metadata is missing.
 func TestBuildSlidesRecord_nilDriveFile(t *testing.T) {
 	r := buildSlidesRecord(nil, nil, "")
 	if r.ID != "" {
@@ -355,6 +378,7 @@ func TestBuildSlidesRecord_nilDriveFile(t *testing.T) {
 	}
 }
 
+// Verifies drive-owner formatting handles empty and mixed owner edge cases predictably.
 func TestFormatDriveOwners_edgeCases(t *testing.T) {
 	emailOnly := formatDriveOwners([]*driveapi.User{
 		{EmailAddress: "a@b.com"},

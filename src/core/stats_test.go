@@ -9,6 +9,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// Verifies size formatting clamps zero and renders megabytes with one decimal place for status output.
 func TestFormatSizeMB(t *testing.T) {
 	if got := FormatSizeMB(0); got != "0.0 MB" {
 		t.Fatalf("FormatSizeMB(0) = %q", got)
@@ -18,6 +19,7 @@ func TestFormatSizeMB(t *testing.T) {
 	}
 }
 
+// Verifies grouped SQLite file sizing includes the base DB plus existing WAL and SHM sidecars.
 func TestFileGroupSizeBytes(t *testing.T) {
 	dir := t.TempDir()
 	base := filepath.Join(dir, "data.db")
@@ -35,6 +37,7 @@ func TestFileGroupSizeBytes(t *testing.T) {
 	}
 }
 
+// Verifies SQLite object sizing counts matching tables/shadow tables and excludes unrelated objects.
 func TestSQLiteObjectSizeBytes(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "stats.db")
 	db, err := sql.Open("sqlite3", dbPath)
@@ -74,6 +77,7 @@ func TestSQLiteObjectSizeBytes(t *testing.T) {
 	}
 }
 
+// Verifies SQLite object matching includes shadow-table prefixes but excludes unrelated autoindex names.
 func TestMatchesSQLiteObject(t *testing.T) {
 	if !matchesSQLiteObject("docs_documents_fts_data", []string{"docs_documents_fts"}) {
 		t.Fatal("expected shadow table prefix match")

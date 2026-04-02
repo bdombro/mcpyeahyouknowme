@@ -9,6 +9,7 @@ import (
 	"testing"
 )
 
+// Verifies text search sends the expected request shape and maps a successful Places response into summaries.
 func TestSearchPlaces_success(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -62,6 +63,7 @@ func TestSearchPlaces_success(t *testing.T) {
 	}
 }
 
+// Verifies text search surfaces missing-key, upstream HTTP, and decode failures as actionable errors.
 func TestSearchPlaces_errorPaths(t *testing.T) {
 	t.Run("missing key", func(t *testing.T) {
 		client := &PlacesClient{}
@@ -93,6 +95,7 @@ func TestSearchPlaces_errorPaths(t *testing.T) {
 	})
 }
 
+// Verifies place details requests send the expected field mask and map the response into the richer details shape.
 func TestGetPlace_success(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -148,6 +151,7 @@ func TestGetPlace_success(t *testing.T) {
 	}
 }
 
+// Verifies place details requests reject missing keys, empty IDs, and upstream HTTP failures.
 func TestGetPlace_errorPaths(t *testing.T) {
 	t.Run("missing key", func(t *testing.T) {
 		client := &PlacesClient{}
@@ -177,6 +181,7 @@ func TestGetPlace_errorPaths(t *testing.T) {
 	})
 }
 
+// Verifies text search rejects empty queries before attempting any upstream HTTP request.
 func TestSearchPlaces_emptyQuery(t *testing.T) {
 	client := newTestClient(t, func(_ http.ResponseWriter, _ *http.Request) {})
 	_, err := client.SearchPlaces(context.Background(), "  ", 1)
@@ -185,6 +190,7 @@ func TestSearchPlaces_emptyQuery(t *testing.T) {
 	}
 }
 
+// Verifies text search clamps caller-provided max-results values to the supported request bounds.
 func TestSearchPlaces_maxResultsClamping(t *testing.T) {
 	var receivedPageSize int
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -204,6 +210,7 @@ func TestSearchPlaces_maxResultsClamping(t *testing.T) {
 	}
 }
 
+// Verifies API-error formatting falls back to status text or raw body text when structured error JSON is absent.
 func TestApiError_emptyBody(t *testing.T) {
 	err := apiError(http.StatusBadGateway, []byte(""))
 	if !strings.Contains(err.Error(), "Bad Gateway") {

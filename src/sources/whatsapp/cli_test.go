@@ -13,6 +13,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
+// Verifies WhatsApp info output reports an empty disabled state before any session or message DB exists.
 func TestInfoLines_emptyDir(t *testing.T) {
 	dir := t.TempDir()
 	lines := InfoLines(dir)
@@ -30,6 +31,7 @@ func TestInfoLines_emptyDir(t *testing.T) {
 	}
 }
 
+// Verifies WhatsApp info output reports session identity, DB sizes, and message/chat counts when local data exists.
 func TestInfoLines_withSessionAndMessages(t *testing.T) {
 	dir := t.TempDir()
 	if err := core.SetSourceEnabled(dir, "whatsapp", true); err != nil {
@@ -80,6 +82,7 @@ func TestInfoLines_withSessionAndMessages(t *testing.T) {
 	}
 }
 
+// Verifies WhatsApp info output reports unreadable message DBs without crashing the status command.
 func TestInfoLines_messagesDBUnreadable(t *testing.T) {
 	dir := t.TempDir()
 	if err := core.SetSourceEnabled(dir, "whatsapp", true); err != nil {
@@ -107,6 +110,7 @@ func TestInfoLines_messagesDBUnreadable(t *testing.T) {
 	}
 }
 
+// Verifies logout handling disables the source config and notifies the caller so auth can be re-established.
 func TestHandleLoggedOut_disablesSource(t *testing.T) {
 	dir := t.TempDir()
 	if err := core.SetSourceEnabled(dir, "whatsapp", true); err != nil {

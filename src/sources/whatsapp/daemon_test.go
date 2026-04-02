@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Test extractTextContent with various message types
+// Verifies text extraction handles the message shapes the daemon stores as searchable text.
 func TestExtractTextContent(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -69,6 +69,7 @@ func TestExtractTextContent(t *testing.T) {
 	}
 }
 
+// Verifies media extraction returns the stored metadata fields needed for later download requests.
 func TestExtractMediaInfo(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -146,6 +147,7 @@ func TestExtractMediaInfo(t *testing.T) {
 	}
 }
 
+// Verifies direct-path extraction derives a non-empty path from WhatsApp media URLs and stays empty for blanks.
 func TestExtractDirectPathFromURL(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -177,6 +179,7 @@ func TestExtractDirectPathFromURL(t *testing.T) {
 	}
 }
 
+// Verifies placeholder waveform generation always returns data so audio sends have a fallback waveform.
 func TestPlaceholderWaveform(t *testing.T) {
 	// Test that it returns non-nil waveform data
 	waveform := placeholderWaveform(5000)
@@ -191,6 +194,7 @@ func TestPlaceholderWaveform(t *testing.T) {
 	}
 }
 
+// Verifies the media downloader exposes the metadata accessors expected by the media download path.
 func TestMediaDownloader_interface(t *testing.T) {
 	// Test that mediaDownloader implements the required interface methods
 	d := &mediaDownloader{
@@ -222,6 +226,7 @@ func TestMediaDownloader_interface(t *testing.T) {
 	}
 }
 
+// Verifies invalid Ogg/Opus data does not panic the waveform analysis helper.
 func TestAnalyzeOggOpus_invalidData(_ *testing.T) {
 	// Test with empty data
 	duration, waveform, err := analyzeOggOpus([]byte{})
@@ -231,6 +236,7 @@ func TestAnalyzeOggOpus_invalidData(_ *testing.T) {
 	_ = err
 }
 
+// Verifies the WhatsApp source always reports that interactive authentication is required.
 func TestWhatsAppSource_RequiresAuth(t *testing.T) {
 	w := &Source{dataDir: t.TempDir()}
 	if !w.RequiresAuth() {

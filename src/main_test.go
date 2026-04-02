@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// Verifies command dispatch returns the expected user-facing errors for missing or unknown commands.
 func TestDispatchCommands(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -27,6 +28,7 @@ func TestDispatchCommands(t *testing.T) {
 	}
 }
 
+// Verifies the root command-name list matches the expected public CLI commands.
 func TestCommandNames(t *testing.T) {
 	expected := []string{
 		"mcp", "info", "completions", "core", "start", "stop",
@@ -37,6 +39,7 @@ func TestCommandNames(t *testing.T) {
 	}
 }
 
+// Verifies known subcommand groups still expose the expected subcommand names.
 func TestSubcommandNames(t *testing.T) {
 	tests := []struct {
 		command string
@@ -58,6 +61,7 @@ func TestSubcommandNames(t *testing.T) {
 	}
 }
 
+// Verifies shell completion output still lists the supported shell arguments.
 func TestShellCompletionWords(t *testing.T) {
 	if got := shellCompletionWords(); got != "bash zsh" {
 		t.Errorf("shellCompletionWords() = %q, want %q", got, "bash zsh")

@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// Verifies plistPath returns an absolute LaunchAgents plist path for the installed daemon.
 func TestPlistPath(t *testing.T) {
 	path := plistPath()
 
@@ -22,6 +23,7 @@ func TestPlistPath(t *testing.T) {
 	}
 }
 
+// Verifies the top-level command list still contains the expected public CLI surface.
 func TestCommandsListCompleteness(t *testing.T) {
 	expected := map[string]bool{
 		"mcp":         true,
@@ -51,6 +53,7 @@ func TestCommandsListCompleteness(t *testing.T) {
 	}
 }
 
+// Verifies the LaunchAgent label constant stays aligned with the installed plist name.
 func TestPlistName(t *testing.T) {
 	expectedName := "com.mcpyeahyouknowme.core"
 	if plistName != expectedName {
@@ -58,6 +61,7 @@ func TestPlistName(t *testing.T) {
 	}
 }
 
+// Returns whether path contains component so plist-path assertions can stay platform-safe.
 func pathContains(path, component string) bool {
 	dir := path
 	for dir != "." && dir != "/" {

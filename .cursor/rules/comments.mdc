@@ -1,0 +1,19 @@
+---
+description: Comments for golang code and tests
+globs: src/**/*.go
+alwaysApply: true
+---
+
+# Comments
+
+- Every function and method must have a comment immediately above it.
+- Start the comment with an action word, not the function name.
+- Good openings: `Builds`, `Loads`, `Runs`, `Maps`, `Returns`, `Persists`, `Combines`, `Filters`, `Converts`, `Registers`.
+- Bad openings: function names, `This function`, `Helper for`, `Used to`.
+- The comment must explain:
+  - what the function does
+  - why it exists in caller/system context
+  - important inputs or assumptions
+  - important side effects
+  - important return/output semantics when non-obvious
+- Keep comments compressed, but complete.

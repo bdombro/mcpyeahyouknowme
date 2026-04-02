@@ -12,6 +12,7 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
+// Verifies GSuite error classification maps representative OAuth and Google API failures into daemon retry buckets.
 func TestClassifyGSuiteError(t *testing.T) {
 	tests := []struct {
 		name string
@@ -106,6 +107,7 @@ func TestClassifyGSuiteError(t *testing.T) {
 	}
 }
 
+// Verifies OAuth config construction uses the build-time credentials and loopback redirect expected by desktop login.
 func TestGetOAuthConfig_usesClientIDAndLoopbackRedirect(t *testing.T) {
 	oldID := GoogleClientID
 	oldSecret := GoogleClientSecret
@@ -131,6 +133,7 @@ func TestGetOAuthConfig_usesClientIDAndLoopbackRedirect(t *testing.T) {
 	}
 }
 
+// Verifies build-time configuration detection only succeeds when both Google OAuth credentials are present.
 func TestIsConfigured(t *testing.T) {
 	oldID := GoogleClientID
 	oldSecret := GoogleClientSecret
@@ -158,6 +161,7 @@ func TestIsConfigured(t *testing.T) {
 	}
 }
 
+// Verifies OAuth exchange error rewriting adds the expected actionable hint only for the missing-client-secret failure shape.
 func TestDescribeOAuthExchangeError(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -226,6 +230,7 @@ func TestDescribeOAuthExchangeError(t *testing.T) {
 	}
 }
 
+// Verifies token loading surfaces invalid JSON instead of silently accepting a corrupt token file.
 func TestLoadToken_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "gsuite_token.json"), []byte("{bad json"), 0o600); err != nil {

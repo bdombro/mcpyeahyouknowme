@@ -9,6 +9,7 @@ import (
 	"mcpyeahyouknowme/sources/gsuite"
 )
 
+// Verifies runInfo writes a human-readable report that still ends with the expected trailing blank line.
 func TestRunInfo_EndsWithBlankLine(t *testing.T) {
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -48,6 +49,7 @@ func TestRunInfo_EndsWithBlankLine(t *testing.T) {
 	}
 }
 
+// Verifies the rendered info report always includes the Search Index section header.
 func TestRenderInfo_containsSearchIndex(t *testing.T) {
 	got := renderInfo()
 	if !strings.Contains(got, "Search Index") {
@@ -55,6 +57,7 @@ func TestRenderInfo_containsSearchIndex(t *testing.T) {
 	}
 }
 
+// Verifies the search-index section reports partial indexing progress and DB size when only some entries are embedded.
 func TestWriteSearchIndexSection_partialIndexing(t *testing.T) {
 	dir := t.TempDir()
 	store, err := NewSearchStore(dir, nil)
@@ -93,6 +96,7 @@ func TestWriteSearchIndexSection_partialIndexing(t *testing.T) {
 	}
 }
 
+// Verifies the search-index section reports a stopped daemon when indexing is incomplete and the daemon flag is false.
 func TestWriteSearchIndexSection_partialIndexingDaemonStopped(t *testing.T) {
 	dir := t.TempDir()
 	store, err := NewSearchStore(dir, nil)
@@ -113,6 +117,7 @@ func TestWriteSearchIndexSection_partialIndexingDaemonStopped(t *testing.T) {
 	}
 }
 
+// Verifies unavailable sources show an unavailable status and missing-credential reason in the rendered info report.
 func TestRenderInfo_marksUnavailableSources(t *testing.T) {
 	oldID := gsuite.GoogleClientID
 	oldSecret := gsuite.GoogleClientSecret

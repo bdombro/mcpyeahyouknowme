@@ -10,6 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+// Builds a test Places client backed by an httptest server so client tests can inspect outgoing requests.
 func newTestClient(t *testing.T, handler http.HandlerFunc) *PlacesClient {
 	t.Helper()
 	srv := httptest.NewServer(handler)
@@ -21,11 +22,13 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) *PlacesClient {
 	}
 }
 
+// Builds a test source backed by the httptest client so MCP tests exercise the same live-client path.
 func newTestSource(t *testing.T, handler http.HandlerFunc) *Source {
 	t.Helper()
 	return &Source{client: newTestClient(t, handler)}
 }
 
+// Builds a minimal MCP server with the source tools registered so test helpers can invoke them directly.
 func buildMCPServer(t *testing.T, src *Source) *server.MCPServer {
 	t.Helper()
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
@@ -33,6 +36,7 @@ func buildMCPServer(t *testing.T, src *Source) *server.MCPServer {
 	return s
 }
 
+// Invokes one MCP tool and returns its first text payload plus the tool-error flag for assertions.
 func callTool(t *testing.T, s *server.MCPServer, name string, args map[string]interface{}) (string, bool) {
 	t.Helper()
 

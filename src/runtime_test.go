@@ -15,13 +15,20 @@ type runtimeTestSource struct {
 	resetCalled bool
 }
 
+// Returns the stub source name so runtime tests can register a minimal data source.
 func (r *runtimeTestSource) Name() string                               { return "stub" }
+// Returns the stub description so runtime tests satisfy the data-source interface.
 func (r *runtimeTestSource) Description() string                        { return "Stub" }
+// Registers no tools because runtime tests only exercise daemon lifecycle helpers.
 func (r *runtimeTestSource) RegisterTools(*server.MCPServer)            {}
+// Returns no entries because runtime tests are focused on reset/start behavior, not indexing.
 func (r *runtimeTestSource) SearchEntries() ([]core.SearchEntry, error) { return nil, nil }
+// Marks resetCalled so runtime tests can verify the reset path invokes the source.
 func (r *runtimeTestSource) Reset(string) error                         { r.resetCalled = true; return nil }
+// Closes nothing because the runtime test stub owns no resources.
 func (r *runtimeTestSource) Close() error                               { return nil }
 
+// Verifies handleReset keeps the source config entry but clears enabled/reset state instead of deleting it.
 func TestHandleReset_disablesSourceInsteadOfDeleting(t *testing.T) {
 	core.RegisterKnownSource("stub")
 	dir := t.TempDir()
@@ -61,6 +68,7 @@ func TestHandleReset_disablesSourceInsteadOfDeleting(t *testing.T) {
 	}
 }
 
+// Verifies startSource ignores enabled sources that declare no background core service.
 func TestStartSource_skipsEnabledNonCoreSources(t *testing.T) {
 	src := &runtimeTestSource{}
 	original := registry.All
@@ -79,6 +87,7 @@ func TestStartSource_skipsEnabledNonCoreSources(t *testing.T) {
 	}
 }
 
+// Verifies startSource skips unavailable sources and reports the reason instead of starting them.
 func TestStartSource_skipsUnavailableSources(t *testing.T) {
 	src := &runtimeTestSource{}
 	original := registry.All
@@ -118,6 +127,7 @@ func TestStartSource_skipsUnavailableSources(t *testing.T) {
 	}
 }
 
+// Verifies auth changes trigger restarts while enable/disable transitions are handled elsewhere in the poll loop.
 func TestShouldRestartSource(t *testing.T) {
 	tests := []struct {
 		name string

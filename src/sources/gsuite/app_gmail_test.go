@@ -10,10 +10,12 @@ import (
 	"google.golang.org/api/gmail/v1"
 )
 
+// Encodes fixture strings as base64url payloads so Gmail part bodies can be built inline in tests.
 func b64(s string) string {
 	return base64.URLEncoding.EncodeToString([]byte(s))
 }
 
+// Verifies body-field merging preserves the visible/raw/body-text fields used by Gmail storage migrations.
 func TestMergeGmailMessageBodyFields(t *testing.T) {
 	nextText, nextRaw, nextVis, changed := mergeGmailMessageBodyFields("hello", "", "")
 	if !changed || nextRaw != "hello" || nextVis != "hello" || nextText != "hello" {
@@ -25,6 +27,7 @@ func TestMergeGmailMessageBodyFields(t *testing.T) {
 	}
 }
 
+// Verifies Gmail message storage records map headers and body fields into the persisted message shape.
 func TestBuildGmailStoredRecord(t *testing.T) {
 	rec := buildGmailStoredRecord(&gmail.Message{
 		Id:           "m1",
@@ -59,6 +62,7 @@ func TestBuildGmailStoredRecord(t *testing.T) {
 	}
 }
 
+// Verifies Gmail body extraction prefers plain text parts and falls back to HTML when needed.
 func TestExtractGmailBody_plainInPartAndHTMLFallback(t *testing.T) {
 	got := extractGmailBody(&gmail.MessagePart{
 		MimeType: "multipart/mixed",
@@ -81,6 +85,7 @@ func TestExtractGmailBody_plainInPartAndHTMLFallback(t *testing.T) {
 	}
 }
 
+// Verifies attachment detection walks nested MIME parts instead of only checking the top level.
 func TestHasGmailAttachments_nested(t *testing.T) {
 	if hasGmailAttachments(nil) {
 		t.Fatal("nil payload should have no attachments")
@@ -102,6 +107,7 @@ func TestHasGmailAttachments_nested(t *testing.T) {
 	}
 }
 
+// Verifies Gmail header parsing extracts the expected standard header values from message payloads.
 func TestParseGmailHeaders(t *testing.T) {
 	h := parseGmailHeaders(&gmail.Message{
 		Payload: &gmail.MessagePart{
@@ -120,6 +126,7 @@ func TestParseGmailHeaders(t *testing.T) {
 	}
 }
 
+// Verifies transcript-entry formatting emits placeholders when visible body content is missing.
 func TestFormatThreadTranscriptEntry_placeholders(t *testing.T) {
 	s := formatThreadTranscriptEntry(gmailMessageRecord{BodyVisible: "x"})
 	if !strings.Contains(s, "unknown date") || !strings.Contains(s, "unknown sender") {
@@ -127,6 +134,7 @@ func TestFormatThreadTranscriptEntry_placeholders(t *testing.T) {
 	}
 }
 
+// Verifies thread search-entry building emits searchable chunks for a stored Gmail thread.
 func TestGmailSearchEntriesForThread(t *testing.T) {
 	msgs := []gmailMessageRecord{
 		{ID: "a", ThreadID: "t1", Subject: "Subj", From: "a@b.com", BodyVisible: "one"},
@@ -169,6 +177,7 @@ func TestGmailSearchEntriesForThread(t *testing.T) {
 	}
 }
 
+// Verifies visible-body derivation strips quoted reply blocks from authored Gmail content.
 func TestDeriveVisibleBody_stripsQuotedReply(t *testing.T) {
 	raw := "Yes, that works for me.\n\nOn Fri, Mar 1, 2024 at 10:00 AM Alice <alice@example.com> wrote:\n> Can you make the meeting tomorrow?"
 	got := deriveVisibleBody(raw)
@@ -180,6 +189,7 @@ func TestDeriveVisibleBody_stripsQuotedReply(t *testing.T) {
 	}
 }
 
+// Verifies visible-body derivation falls back to raw content when aggressive stripping would remove everything useful.
 func TestDeriveVisibleBody_fallsBackToRawWhenOnlyQuotedTextRemains(t *testing.T) {
 	raw := "> Prior quoted line\n> Another quoted line"
 	got := deriveVisibleBody(raw)
@@ -188,6 +198,7 @@ func TestDeriveVisibleBody_fallsBackToRawWhenOnlyQuotedTextRemains(t *testing.T)
 	}
 }
 
+// Verifies thread-chunk building splits long transcripts into multiple search entries.
 func TestBuildGmailThreadChunks_splitsLongThreadContent(t *testing.T) {
 	longBody := strings.Repeat("chunked content ", 260)
 	messages := []gmailMessageRecord{
@@ -222,6 +233,7 @@ func TestBuildGmailThreadChunks_splitsLongThreadContent(t *testing.T) {
 	}
 }
 
+// Verifies visible-body derivation strips quoted header blocks and trailing mobile signatures.
 func TestDeriveVisibleBody_stripsHeaderBlockAndMobileSignature(t *testing.T) {
 	raw := "Looks good to me.\n\nSent from my iPhone\n\nFrom: Alice <alice@example.com>\nSent: Friday, March 1, 2024 10:00 AM\nTo: Bob <bob@example.com>\nSubject: Meeting Tomorrow"
 	got := deriveVisibleBody(raw)
@@ -236,6 +248,7 @@ func TestDeriveVisibleBody_stripsHeaderBlockAndMobileSignature(t *testing.T) {
 	}
 }
 
+// Verifies long transcript entries split on newline boundaries when possible.
 func TestSplitLongThreadEntry_splitsOnNewlineBoundary(t *testing.T) {
 	entry := "[2024-03-01T10:00:00Z] alice@example.com\nfirst paragraph\nsecond paragraph\nthird paragraph"
 	parts := splitLongThreadEntry(entry, 50)
@@ -249,6 +262,7 @@ func TestSplitLongThreadEntry_splitsOnNewlineBoundary(t *testing.T) {
 	}
 }
 
+// Verifies Gmail schema initialization backfills legacy body columns and rebuilds thread rows.
 func TestInitGmailSchema_backfillsLegacyRowsAndBuildsThreads(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:?_fk=on&cache=shared")
 	if err != nil {
@@ -329,6 +343,7 @@ func TestInitGmailSchema_backfillsLegacyRowsAndBuildsThreads(t *testing.T) {
 	}
 }
 
+// Verifies direct message storage persists Gmail rows without needing the higher-level sync path.
 func TestStoreGmailMessage_direct(t *testing.T) {
 	db := newTestDB(t)
 	storeGmailMessage(db, &gmail.Message{
@@ -356,6 +371,7 @@ func TestStoreGmailMessage_direct(t *testing.T) {
 	}
 }
 
+// Verifies Gmail record building returns nil for nil Gmail API messages.
 func TestBuildGmailStoredRecord_nil(t *testing.T) {
 	r := buildGmailStoredRecord(nil)
 	if r.ID != "" {
@@ -363,6 +379,7 @@ func TestBuildGmailStoredRecord_nil(t *testing.T) {
 	}
 }
 
+// Verifies Gmail record building marks messages with detected attachments.
 func TestBuildGmailStoredRecord_withAttachments(t *testing.T) {
 	rec := buildGmailStoredRecord(&gmail.Message{
 		Id: "att1",
@@ -379,6 +396,7 @@ func TestBuildGmailStoredRecord_withAttachments(t *testing.T) {
 	}
 }
 
+// Verifies body-field merging handles empty body_text without clobbering other stored fields.
 func TestMergeGmailMessageBodyFields_emptyBodyText(t *testing.T) {
 	nextText, nextRaw, nextVis, changed := mergeGmailMessageBodyFields("", "raw content", "")
 	if !changed || nextText != "raw content" || nextRaw != "raw content" || nextVis != "raw content" {
@@ -387,6 +405,7 @@ func TestMergeGmailMessageBodyFields_emptyBodyText(t *testing.T) {
 	}
 }
 
+// Verifies Gmail body extraction can find HTML bodies inside nested MIME structures.
 func TestExtractGmailBody_nestedHTMLPart(t *testing.T) {
 	got := extractGmailBody(&gmail.MessagePart{
 		MimeType: "multipart/mixed",
@@ -399,6 +418,7 @@ func TestExtractGmailBody_nestedHTMLPart(t *testing.T) {
 	}
 }
 
+// Verifies Gmail body extraction survives deeply nested MIME trees.
 func TestExtractGmailBody_deepRecursion(t *testing.T) {
 	got := extractGmailBody(&gmail.MessagePart{
 		MimeType: "multipart/mixed",
@@ -416,6 +436,7 @@ func TestExtractGmailBody_deepRecursion(t *testing.T) {
 	}
 }
 
+// Verifies Gmail body extraction returns empty output for empty payloads.
 func TestExtractGmailBody_empty(t *testing.T) {
 	got := extractGmailBody(&gmail.MessagePart{MimeType: "application/octet-stream"})
 	if got != "" {
@@ -426,6 +447,7 @@ func TestExtractGmailBody_empty(t *testing.T) {
 	}
 }
 
+// Verifies visible-body derivation returns empty output for empty inputs.
 func TestDeriveVisibleBody_empty(t *testing.T) {
 	if deriveVisibleBody("") != "" {
 		t.Fatal("expected empty output for empty input")
@@ -435,6 +457,7 @@ func TestDeriveVisibleBody_empty(t *testing.T) {
 	}
 }
 
+// Verifies visible-body derivation preserves meaningful forwarded content instead of stripping it all.
 func TestDeriveVisibleBody_forwardedMessage(t *testing.T) {
 	raw := "FYI see below.\n\n---------- Forwarded message ----------\nFrom: alice@example.com\nDate: 2024-03-01\nSubject: Info"
 	got := deriveVisibleBody(raw)
@@ -446,6 +469,7 @@ func TestDeriveVisibleBody_forwardedMessage(t *testing.T) {
 	}
 }
 
+// Verifies raw-body fallback triggers when stripping heuristics would discard too much authored content.
 func TestShouldFallbackToRaw_aggressiveStripping(t *testing.T) {
 	longRaw := strings.Repeat("a", 500)
 	shortVisible := "hi"
@@ -468,6 +492,7 @@ func TestShouldFallbackToRaw_aggressiveStripping(t *testing.T) {
 	}
 }
 
+// Verifies quoted-header detection handles representative Gmail reply-header edge cases.
 func TestIsQuotedHeaderBlock_edgeCases(t *testing.T) {
 	blankThenHeaders := []string{"", "From: alice", "To: bob", "Subject: hi"}
 	if !isQuotedHeaderBlock(blankThenHeaders, 0) {
@@ -487,6 +512,7 @@ func TestIsQuotedHeaderBlock_edgeCases(t *testing.T) {
 	}
 }
 
+// Verifies trailing quoted-block trimming keeps authored content that appears before quoted text.
 func TestTrimTrailingQuotedBlock_authoredThenQuoted(t *testing.T) {
 	lines := []string{"Hello there", "", "> quoted reply", "> more quoted"}
 	result := trimTrailingQuotedBlock(lines)
@@ -495,6 +521,7 @@ func TestTrimTrailingQuotedBlock_authoredThenQuoted(t *testing.T) {
 	}
 }
 
+// Verifies authored-content detection returns false when a body consists only of quoted lines.
 func TestHasAuthoredContent_allQuoted(t *testing.T) {
 	lines := []string{"> quoted", "> also quoted", ""}
 	if hasAuthoredContent(lines) {
@@ -502,6 +529,7 @@ func TestHasAuthoredContent_allQuoted(t *testing.T) {
 	}
 }
 
+// Verifies mobile-signature trimming handles signatures without a preceding blank line.
 func TestTrimTrailingMobileSignature_noBlankBefore(t *testing.T) {
 	lines := []string{"text", "Sent from my iPhone"}
 	result := trimTrailingMobileSignature(lines)
@@ -510,6 +538,7 @@ func TestTrimTrailingMobileSignature_noBlankBefore(t *testing.T) {
 	}
 }
 
+// Verifies trailing quoted-block trimming leaves bodies unchanged when no quoted block exists.
 func TestTrimTrailingQuotedBlock_noQuotes(t *testing.T) {
 	lines := []string{"Hello", "World", ""}
 	result := trimTrailingQuotedBlock(lines)
@@ -518,6 +547,7 @@ func TestTrimTrailingQuotedBlock_noQuotes(t *testing.T) {
 	}
 }
 
+// Verifies trailing quoted-block trimming handles all-empty inputs safely.
 func TestTrimTrailingQuotedBlock_allEmpty(t *testing.T) {
 	result := trimTrailingQuotedBlock([]string{"", "  ", ""})
 	if len(result) != 0 {
@@ -525,6 +555,7 @@ func TestTrimTrailingQuotedBlock_allEmpty(t *testing.T) {
 	}
 }
 
+// Verifies trailing quoted-block trimming can remove bodies made entirely of quoted content.
 func TestTrimTrailingQuotedBlock_allQuoted(t *testing.T) {
 	lines := []string{"> a", "> b", "> c"}
 	result := trimTrailingQuotedBlock(lines)
@@ -533,6 +564,7 @@ func TestTrimTrailingQuotedBlock_allQuoted(t *testing.T) {
 	}
 }
 
+// Verifies thread-chunk building splits oversized single entries instead of dropping them.
 func TestBuildGmailThreadChunks_overflowEntry(t *testing.T) {
 	hugeBody := strings.Repeat("word ", 1200)
 	messages := []gmailMessageRecord{
@@ -544,6 +576,7 @@ func TestBuildGmailThreadChunks_overflowEntry(t *testing.T) {
 	}
 }
 
+// Verifies thread-chunk building skips messages whose bodies are empty after cleanup.
 func TestBuildGmailThreadChunks_emptyBodySkipped(t *testing.T) {
 	messages := []gmailMessageRecord{
 		{ID: "empty", ThreadID: "t1", BodyVisible: "", BodyRaw: ""},
@@ -554,6 +587,7 @@ func TestBuildGmailThreadChunks_emptyBodySkipped(t *testing.T) {
 	}
 }
 
+// Verifies thread-chunk header formatting handles empty metadata gracefully.
 func TestFormatThreadChunkHeader_empty(t *testing.T) {
 	h := formatThreadChunkHeader("", "")
 	if h != "" {
@@ -561,6 +595,7 @@ func TestFormatThreadChunkHeader_empty(t *testing.T) {
 	}
 }
 
+// Verifies transcript-entry formatting handles messages whose visible body is empty.
 func TestFormatThreadTranscriptEntry_emptyBody(t *testing.T) {
 	s := formatThreadTranscriptEntry(gmailMessageRecord{BodyVisible: "", BodyRaw: ""})
 	if s != "" {
@@ -568,6 +603,7 @@ func TestFormatThreadTranscriptEntry_emptyBody(t *testing.T) {
 	}
 }
 
+// Verifies transcript-entry formatting falls back to raw body content when visible text is unavailable.
 func TestFormatThreadTranscriptEntry_fallbackToRaw(t *testing.T) {
 	s := formatThreadTranscriptEntry(gmailMessageRecord{BodyVisible: "", BodyRaw: "raw content", From: "x@y.com", Date: "2024-01-01"})
 	if !strings.Contains(s, "raw content") {
@@ -575,6 +611,7 @@ func TestFormatThreadTranscriptEntry_fallbackToRaw(t *testing.T) {
 	}
 }
 
+// Verifies thread-record building skips messages without a usable thread ID.
 func TestBuildGmailThreadRecords_skipsEmptyThreadID(t *testing.T) {
 	records := buildGmailThreadRecords([]gmailMessageRecord{
 		{ID: "orphan", ThreadID: "", Subject: "S"},
@@ -584,6 +621,7 @@ func TestBuildGmailThreadRecords_skipsEmptyThreadID(t *testing.T) {
 	}
 }
 
+// Verifies thread-record building returns an empty result when there are no messages to summarize.
 func TestBuildThreadRecord_emptyMessages(t *testing.T) {
 	r := buildThreadRecord(nil)
 	if r.threadID != "" {
@@ -591,6 +629,7 @@ func TestBuildThreadRecord_emptyMessages(t *testing.T) {
 	}
 }
 
+// Verifies participant joining deduplicates repeated names while preserving readable output.
 func TestJoinParticipants_dedups(t *testing.T) {
 	msgs := []gmailMessageRecord{
 		{From: "a@b.com, c@d.com", To: "a@b.com"},
@@ -601,6 +640,7 @@ func TestJoinParticipants_dedups(t *testing.T) {
 	}
 }
 
+// Verifies long-entry splitting leaves entries unchanged when they already fit within the limit.
 func TestSplitLongThreadEntry_fitsInLimit(t *testing.T) {
 	parts := splitLongThreadEntry("short", 100)
 	if len(parts) != 1 || parts[0] != "short" {
@@ -608,6 +648,7 @@ func TestSplitLongThreadEntry_fitsInLimit(t *testing.T) {
 	}
 }
 
+// Verifies long-entry splitting still breaks oversized content when no newline boundary exists.
 func TestSplitLongThreadEntry_noNewlineBreak(t *testing.T) {
 	entry := strings.Repeat("x", 200)
 	parts := splitLongThreadEntry(entry, 50)
@@ -616,6 +657,7 @@ func TestSplitLongThreadEntry_noNewlineBreak(t *testing.T) {
 	}
 }
 
+// Verifies orphan deletion removes rows absent from the keep set when keyed by resource name.
 func TestDeleteOrphanedRowsByResourceName(t *testing.T) {
 	db := newTestDB(t)
 	seedContacts(t, db)
@@ -630,6 +672,7 @@ func TestDeleteOrphanedRowsByResourceName(t *testing.T) {
 	}
 }
 
+// Verifies Gmail FTS indexing targets the visible-body column used by search.
 func TestGmailFTSIndexesBodyVisible(t *testing.T) {
 	db := newTestDB(t)
 	if !gmailFTSIndexesBodyVisible(db) {
@@ -637,6 +680,7 @@ func TestGmailFTSIndexesBodyVisible(t *testing.T) {
 	}
 }
 
+// Verifies thread-population detection reports whether Gmail thread rows have been built.
 func TestGmailThreadsPopulated(t *testing.T) {
 	db := newTestDB(t)
 	if gmailThreadsPopulated(db) {
@@ -648,6 +692,7 @@ func TestGmailThreadsPopulated(t *testing.T) {
 	}
 }
 
+// Verifies table-column detection reports schema presence for migration guards.
 func TestTableHasColumn(t *testing.T) {
 	db := newTestDB(t)
 	has, err := tableHasColumn(db, "gmail_messages", "subject")
@@ -660,6 +705,7 @@ func TestTableHasColumn(t *testing.T) {
 	}
 }
 
+// Verifies Gmail message ordering handles cases where only one message has a parseable date.
 func TestGmailMessageLess_oneHasDate(t *testing.T) {
 	withDate := gmailMessageRecord{ID: "b", Date: "2024-01-01T00:00:00Z"}
 	withoutDate := gmailMessageRecord{ID: "a", Date: ""}
@@ -671,6 +717,7 @@ func TestGmailMessageLess_oneHasDate(t *testing.T) {
 	}
 }
 
+// Verifies Gmail message ordering compares different parseable date strings correctly.
 func TestGmailMessageLess_differentDateStrings(t *testing.T) {
 	a := gmailMessageRecord{ID: "x", Date: "aaa"}
 	b := gmailMessageRecord{ID: "y", Date: "bbb"}
@@ -679,6 +726,7 @@ func TestGmailMessageLess_differentDateStrings(t *testing.T) {
 	}
 }
 
+// Verifies Gmail date parsing and message ordering stay aligned for representative header values.
 func TestParseGmailMessageDateAndOrdering(t *testing.T) {
 	rfc := parseGmailMessageDate("2024-03-01T10:00:00Z")
 	if rfc.IsZero() {

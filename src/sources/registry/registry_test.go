@@ -9,6 +9,7 @@ import (
 	"mcpyeahyouknowme/sources/gsuite"
 )
 
+// Verifies descriptor lookup returns the expected known sources and rejects unknown names.
 func TestFind(t *testing.T) {
 	tests := []struct {
 		name string
@@ -30,6 +31,7 @@ func TestFind(t *testing.T) {
 	}
 }
 
+// Verifies source construction returns working source instances for registered names and nil for unknown ones.
 func TestNewSource(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"whatsapp", "gsuite", "google_places"} {
@@ -50,6 +52,7 @@ func TestNewSource(t *testing.T) {
 	}
 }
 
+// Verifies registry-level auth checks delegate to each source's local auth/config state.
 func TestIsAuthenticated(t *testing.T) {
 	dir := t.TempDir()
 	if IsAuthenticated("whatsapp", dir) {
@@ -77,6 +80,7 @@ func TestIsAuthenticated(t *testing.T) {
 	}
 }
 
+// Verifies loading all sources returns one instance per registered descriptor.
 func TestLoadAll(t *testing.T) {
 	sources := LoadAll(t.TempDir())
 	if len(sources) != len(All) {
@@ -87,6 +91,7 @@ func TestLoadAll(t *testing.T) {
 	}
 }
 
+// Verifies descriptors expose the expected lifecycle and availability capability flags for each built-in source.
 func TestDescriptorCapabilities(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -121,6 +126,7 @@ func TestDescriptorCapabilities(t *testing.T) {
 	}
 }
 
+// Verifies availability checks surface missing build-time credentials for gated sources while leaving WhatsApp always available.
 func TestIsAvailable(t *testing.T) {
 	oldGooglePlacesKey := google_places.GooglePlaceAPIKey
 	oldGoogleClientID := gsuite.GoogleClientID
@@ -153,6 +159,7 @@ func TestIsAvailable(t *testing.T) {
 	}
 }
 
+// Verifies Names preserves the registered source order used by CLI and runtime iteration.
 func TestNames(t *testing.T) {
 	names := Names()
 	if len(names) != len(All) {

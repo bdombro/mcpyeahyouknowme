@@ -8,6 +8,7 @@ import (
 	"testing"
 )
 
+// Verifies the MCP search tool returns mapped Places summaries on a successful upstream response.
 func TestMCP_SearchPlaces_success(t *testing.T) {
 	src := newTestSource(t, func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `{
@@ -40,6 +41,7 @@ func TestMCP_SearchPlaces_success(t *testing.T) {
 	}
 }
 
+// Verifies the MCP details tool returns mapped place details on a successful upstream response.
 func TestMCP_GetPlace_success(t *testing.T) {
 	src := newTestSource(t, func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `{
@@ -66,6 +68,7 @@ func TestMCP_GetPlace_success(t *testing.T) {
 	}
 }
 
+// Verifies the MCP tools surface missing API-key configuration as tool errors instead of empty success payloads.
 func TestMCP_missingKey(t *testing.T) {
 	src := &Source{client: &PlacesClient{}}
 	s := buildMCPServer(t, src)
@@ -81,6 +84,7 @@ func TestMCP_missingKey(t *testing.T) {
 	}
 }
 
+// Verifies upstream Places API failures propagate through the MCP tool as readable tool errors.
 func TestMCP_upstreamError(t *testing.T) {
 	src := newTestSource(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -99,6 +103,7 @@ func TestMCP_upstreamError(t *testing.T) {
 	}
 }
 
+// Verifies required MCP arguments are validated before any upstream Places API request is attempted.
 func TestMCP_missingRequiredArgs(t *testing.T) {
 	src := newTestSource(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatal("unexpected upstream call")

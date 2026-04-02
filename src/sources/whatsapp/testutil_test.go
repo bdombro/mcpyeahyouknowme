@@ -12,8 +12,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// newTestStore creates an in-memory MessageStore with FTS5 and seeds it with
-// fixture data. The caller does not need to close it — cleanup is automatic.
+// Builds an in-memory message store with FTS5 and seeded fixtures so service and MCP tests share realistic chat data.
 func newTestStore(t *testing.T) *MessageStore {
 	t.Helper()
 
@@ -80,8 +79,7 @@ func newTestStore(t *testing.T) *MessageStore {
 	return &MessageStore{db: db}
 }
 
-// newTestStoreWithContacts creates a test store plus a contacts DB for
-// participant-name search tests.
+// Builds a seeded message store plus contacts DB so participant-name search tests can resolve human names.
 func newTestStoreWithContacts(t *testing.T) *MessageStore {
 	t.Helper()
 	store := newTestStore(t)
@@ -106,6 +104,7 @@ func newTestStoreWithContacts(t *testing.T) *MessageStore {
 	return store
 }
 
+// Seeds chats, messages, and group participants so tests can exercise search, context, and participant lookups.
 func seedFixtures(t *testing.T, db *sql.DB) {
 	t.Helper()
 	now := time.Now()
@@ -155,23 +154,21 @@ func seedFixtures(t *testing.T, db *sql.DB) {
 	}
 }
 
-// newTestService creates an MCPService backed by an in-memory test store
-// and the given API URL (typically a httptest server URL).
+// Builds an MCP service backed by the seeded in-memory store and the supplied test API URL.
 func newTestService(t *testing.T, apiURL string) *MCPService {
 	t.Helper()
 	store := newTestStore(t)
 	return NewMCPService(store, apiURL)
 }
 
+// Builds an MCP service with seeded contact data so participant-name search paths can be exercised.
 func newTestServiceWithContacts(t *testing.T, apiURL string) *MCPService {
 	t.Helper()
 	store := newTestStoreWithContacts(t)
 	return NewMCPService(store, apiURL)
 }
 
-// callToolRaw invokes a tool on the MCP server and returns the raw JSON-RPC response.
-// Use this when asserting on the full response structure (e.g. for error cases).
-// For success-path content text, use callTool instead.
+// Invokes an MCP tool and returns the raw JSON-RPC payload so tests can assert on full response structure.
 func callToolRaw(t *testing.T, s *server.MCPServer, name string, args map[string]interface{}) string {
 	t.Helper()
 	initMsg, _ := json.Marshal(map[string]interface{}{
@@ -193,7 +190,7 @@ func callToolRaw(t *testing.T, s *server.MCPServer, name string, args map[string
 	return string(data)
 }
 
-// requireContains fails the test if s does not contain substr.
+// Fails the test when the larger string omits the expected substring, truncating long payloads for readable diffs.
 func requireContains(t *testing.T, s, substr string) {
 	t.Helper()
 	if !containsSubstring(s, substr) {
@@ -201,6 +198,7 @@ func requireContains(t *testing.T, s, substr string) {
 	}
 }
 
+// Truncates long assertion payloads so helper-failure messages stay readable in test output.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

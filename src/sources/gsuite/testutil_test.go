@@ -8,7 +8,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// newTestDB creates an in-memory SQLite DB with the full gsuite schema.
+// Builds an in-memory SQLite DB with the full gsuite schema for isolated source and MCP tests.
 func newTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:?_fk=on&cache=shared")
@@ -23,13 +23,14 @@ func newTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-// newTestSource creates a Source backed by an in-memory DB (no files).
+// Builds a source backed by an in-memory DB so tests can exercise handlers without on-disk fixtures.
 func newTestSource(t *testing.T) *Source {
 	t.Helper()
 	db := newTestDB(t)
 	return &Source{db: db, dataDir: t.TempDir(), apps: allAppsEnabledConfig()}
 }
 
+// Returns an app config with every gsuite app enabled so shared fixtures cover the whole source surface.
 func allAppsEnabledConfig() AppsConfig {
 	cfg := DefaultAppsConfig()
 	for _, app := range allApps {
@@ -38,7 +39,7 @@ func allAppsEnabledConfig() AppsConfig {
 	return cfg
 }
 
-// seedDocs inserts sample documents into the test DB.
+// Seeds sample Docs rows so search and fetch tests have realistic document fixtures.
 func seedDocs(t *testing.T, db *sql.DB) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO docs_documents
@@ -51,7 +52,7 @@ func seedDocs(t *testing.T, db *sql.DB) {
 	}
 }
 
-// seedSheets inserts sample spreadsheets into the test DB.
+// Seeds sample Sheets rows so search and fetch tests have realistic spreadsheet fixtures.
 func seedSheets(t *testing.T, db *sql.DB) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO sheets_spreadsheets
@@ -64,7 +65,7 @@ func seedSheets(t *testing.T, db *sql.DB) {
 	}
 }
 
-// seedGmail inserts sample Gmail messages into the test DB.
+// Seeds sample Gmail messages and rebuilds thread tables so message and thread tools share consistent fixtures.
 func seedGmail(t *testing.T, db *sql.DB) {
 	t.Helper()
 	msg1Raw := "Hi Bob,\n\nCan you make the meeting tomorrow?\n\nThanks,\nAlice"
@@ -90,7 +91,7 @@ func seedGmail(t *testing.T, db *sql.DB) {
 	}
 }
 
-// seedCalendar inserts sample calendar events into the test DB.
+// Seeds sample Calendar events so list and search tests have upcoming event fixtures.
 func seedCalendar(t *testing.T, db *sql.DB) {
 	t.Helper()
 	future := time.Now().Add(48 * time.Hour).Format(time.RFC3339)
@@ -108,7 +109,7 @@ func seedCalendar(t *testing.T, db *sql.DB) {
 	}
 }
 
-// seedTasks inserts sample tasks into the test DB.
+// Seeds sample Tasks rows so list and search tests have task fixtures.
 func seedTasks(t *testing.T, db *sql.DB) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO tasks_items
@@ -121,7 +122,7 @@ func seedTasks(t *testing.T, db *sql.DB) {
 	}
 }
 
-// seedContacts inserts sample contacts into the test DB.
+// Seeds sample Contacts rows so people-search tests have realistic directory fixtures.
 func seedContacts(t *testing.T, db *sql.DB) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO contacts_people
@@ -134,7 +135,7 @@ func seedContacts(t *testing.T, db *sql.DB) {
 	}
 }
 
-// seedSlides inserts sample presentations into the test DB.
+// Seeds sample Slides rows so search and fetch tests have presentation fixtures.
 func seedSlides(t *testing.T, db *sql.DB) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO slides_presentations
@@ -148,7 +149,7 @@ func seedSlides(t *testing.T, db *sql.DB) {
 	}
 }
 
-// seedAll inserts all sample data into the test DB.
+// Seeds every gsuite fixture set so integration-style tests can exercise cross-app behavior from one DB.
 func seedAll(t *testing.T, db *sql.DB) {
 	t.Helper()
 	seedDocs(t, db)

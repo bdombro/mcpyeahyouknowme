@@ -110,8 +110,6 @@ func (m *mockEmbedder) EmbedQuery(query string) ([]float32, error) {
 // Releases nothing because the mock embedder owns no external resources.
 func (m *mockEmbedder) Close() {}
 
-// hashEmbed generates a deterministic embedding from text content. Similar
-// texts produce similar vectors via character frequency distribution.
 // Builds a normalized pseudo-embedding from text so search tests can compare semantic scoring deterministically.
 func (m *mockEmbedder) hashEmbed(text string) []float32 {
 	vec := make([]float32, m.dim)

@@ -10,6 +10,7 @@ import (
 	"mcpyeahyouknowme/core"
 )
 
+// Verifies login detection follows token-file presence without needing a live Google auth flow.
 func TestIsLoggedIn(t *testing.T) {
 	dir := t.TempDir()
 	if IsLoggedIn(dir) {
@@ -23,6 +24,7 @@ func TestIsLoggedIn(t *testing.T) {
 	}
 }
 
+// Verifies info output defaults to a disabled status when the gsuite source has not been enabled.
 func TestInfoLines_NotLoggedIn_CLI(t *testing.T) {
 	dir := t.TempDir()
 	lines := InfoLines(dir)
@@ -34,6 +36,7 @@ func TestInfoLines_NotLoggedIn_CLI(t *testing.T) {
 	}
 }
 
+// Verifies info output includes the cached account email when the source is enabled and authenticated.
 func TestInfoLines_WithEmail(t *testing.T) {
 	dir := t.TempDir()
 	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
@@ -54,6 +57,7 @@ func TestInfoLines_WithEmail(t *testing.T) {
 	}
 }
 
+// Verifies info output marks every app disabled when the source is enabled but no apps are selected.
 func TestInfoLines_AllAppsDisabled(t *testing.T) {
 	dir := t.TempDir()
 	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
@@ -82,6 +86,7 @@ func TestInfoLines_AllAppsDisabled(t *testing.T) {
 	}
 }
 
+// Verifies info output includes DB size and per-app size/count details when synced data exists.
 func TestInfoLines_WithDB(t *testing.T) {
 	dir := t.TempDir()
 	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
@@ -134,6 +139,7 @@ func TestInfoLines_WithDB(t *testing.T) {
 	}
 }
 
+// Verifies reset aborts cleanly when the interactive confirmation is declined.
 func TestRunReset_Abort(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(dir+"/gsuite_token.json", []byte(`{"access_token":"x"}`), 0600)
@@ -154,6 +160,7 @@ func TestRunReset_Abort(t *testing.T) {
 	}
 }
 
+// Verifies interactive app selection only enables all apps when the caller explicitly chooses the `all` path.
 func TestPromptAppSelection_AllOption(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -204,6 +211,7 @@ func TestPromptAppSelection_AllOption(t *testing.T) {
 	}
 }
 
+// Verifies the interactive apps command persists an `all` selection back into the source config.
 func TestRunApps_AllEnablesEverything(t *testing.T) {
 	dir := t.TempDir()
 
@@ -245,6 +253,7 @@ func TestRunApps_AllEnablesEverything(t *testing.T) {
 	}
 }
 
+// Verifies disabled-source info output shows disabled status for the source and each app without legacy wording.
 func TestInfoLines_DisabledSourceDisablesApps(t *testing.T) {
 	dir := t.TempDir()
 	lines := InfoLines(dir)
@@ -262,6 +271,7 @@ func TestInfoLines_DisabledSourceDisablesApps(t *testing.T) {
 	}
 }
 
+// Verifies sync-status formatting preserves the expected syncing wording across supported transient status shapes.
 func TestFormatSyncStatus_Variants(t *testing.T) {
 	tests := []struct {
 		status     string

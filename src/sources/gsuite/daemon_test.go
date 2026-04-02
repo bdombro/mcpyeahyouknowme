@@ -15,6 +15,7 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
+// Verifies invalid_grant during core sync resets local auth state and disables the source for re-login.
 func TestStartCore_invalidGrantResetsAndDisables(t *testing.T) {
 	dir := t.TempDir()
 	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
@@ -63,6 +64,7 @@ func TestStartCore_invalidGrantResetsAndDisables(t *testing.T) {
 	}
 }
 
+// Verifies ordinary HTTP 401 sync failures do not disable the source the way invalid_grant does.
 func TestSyncAllApps_http401DoesNotDisableSource(t *testing.T) {
 	dir := t.TempDir()
 	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
@@ -95,6 +97,7 @@ func TestSyncAllApps_http401DoesNotDisableSource(t *testing.T) {
 	}
 }
 
+// Verifies syncAllApps reloads the persisted app-selection config before deciding which app syncs to run.
 func TestSyncAllApps_reloadsAppsConfigFromDisk(t *testing.T) {
 	dir := t.TempDir()
 

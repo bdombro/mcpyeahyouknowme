@@ -14,6 +14,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// Verifies initGSuiteDB creates the tables the source expects before any app sync runs.
 func TestInitGSuiteDB(t *testing.T) {
 	db := newTestDB(t)
 	tables := []string{
@@ -36,6 +37,7 @@ func TestInitGSuiteDB(t *testing.T) {
 	}
 }
 
+// Verifies sources without a token are treated as unauthenticated.
 func TestIsAuthenticated_NoToken(t *testing.T) {
 	src := &Source{dataDir: t.TempDir()}
 	if src.isAuthenticated() {
@@ -43,6 +45,7 @@ func TestIsAuthenticated_NoToken(t *testing.T) {
 	}
 }
 
+// Verifies sources with a valid token are treated as authenticated.
 func TestIsAuthenticated_WithToken(t *testing.T) {
 	src := &Source{dataDir: t.TempDir()}
 	src.token = &oauth2.Token{RefreshToken: "r", Expiry: time.Now().Add(time.Hour)}
@@ -51,6 +54,7 @@ func TestIsAuthenticated_WithToken(t *testing.T) {
 	}
 }
 
+// Verifies expired tokens without a refresh token are treated as unauthenticated.
 func TestIsAuthenticated_ExpiredNoRefresh(t *testing.T) {
 	src := &Source{dataDir: t.TempDir()}
 	src.token = &oauth2.Token{RefreshToken: "", Expiry: time.Now().Add(-time.Hour)}
@@ -59,6 +63,7 @@ func TestIsAuthenticated_ExpiredNoRefresh(t *testing.T) {
 	}
 }
 
+// Verifies refresh-token presence keeps the source authenticated even when the access token is expired.
 func TestIsAuthenticated_WithRefreshToken(t *testing.T) {
 	src := &Source{dataDir: t.TempDir()}
 	// Expired but has refresh token — still considered valid
@@ -68,6 +73,7 @@ func TestIsAuthenticated_WithRefreshToken(t *testing.T) {
 	}
 }
 
+// Verifies saved OAuth tokens can be loaded back without losing fields needed for later auth refresh.
 func TestSaveLoadToken(t *testing.T) {
 	dir := t.TempDir()
 	src := &Source{dataDir: dir}
@@ -87,6 +93,7 @@ func TestSaveLoadToken(t *testing.T) {
 	}
 }
 
+// Verifies loading a missing token file returns the expected no-token error path.
 func TestLoadToken_Missing(t *testing.T) {
 	src := &Source{dataDir: t.TempDir()}
 	if err := src.loadToken(); err == nil {
@@ -94,6 +101,7 @@ func TestLoadToken_Missing(t *testing.T) {
 	}
 }
 
+// Verifies the default apps config starts with every gsuite app disabled until the user opts in.
 func TestAppsConfig_DefaultAllDisabled(t *testing.T) {
 	cfg := DefaultAppsConfig()
 	for _, app := range allApps {
@@ -103,6 +111,7 @@ func TestAppsConfig_DefaultAllDisabled(t *testing.T) {
 	}
 }
 
+// Verifies per-app enable toggles persist in memory for known app names.
 func TestAppsConfig_SetEnabled(t *testing.T) {
 	cfg := DefaultAppsConfig()
 	cfg.SetEnabled("gmail", false)
@@ -115,6 +124,7 @@ func TestAppsConfig_SetEnabled(t *testing.T) {
 	}
 }
 
+// Verifies unknown app names are ignored instead of mutating config unexpectedly.
 func TestAppsConfig_UnknownApp(t *testing.T) {
 	cfg := DefaultAppsConfig()
 	if cfg.IsEnabled("nonexistent") {
@@ -123,6 +133,7 @@ func TestAppsConfig_UnknownApp(t *testing.T) {
 	cfg.SetEnabled("nonexistent", true) // must not panic
 }
 
+// Verifies app selections persist to disk and can be loaded back into a source config.
 func TestSaveLoadAppsConfig(t *testing.T) {
 	dir := t.TempDir()
 	src := &Source{dataDir: dir, apps: allAppsEnabledConfig()}
@@ -148,6 +159,7 @@ func TestSaveLoadAppsConfig(t *testing.T) {
 	}
 }
 
+// Verifies invalid apps-config JSON falls back to the safe default config instead of failing hard.
 func TestLoadAppsConfig_InvalidJSONFallsBackToDefault(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{
@@ -170,6 +182,7 @@ func TestLoadAppsConfig_InvalidJSONFallsBackToDefault(t *testing.T) {
 	}
 }
 
+// Verifies missing auth/config state falls back to default app selections instead of inventing enabled apps.
 func TestLoadAppsConfig_NoAuthFallsBackToDefault(t *testing.T) {
 	dir := t.TempDir()
 	src := &Source{dataDir: dir}
@@ -181,6 +194,7 @@ func TestLoadAppsConfig_NoAuthFallsBackToDefault(t *testing.T) {
 	}
 }
 
+// Verifies sync-state persistence records and reloads per-app timestamps.
 func TestGetSetSyncState(t *testing.T) {
 	src := newTestSource(t)
 	if !src.getLastSyncTime("docs").IsZero() {
@@ -194,6 +208,7 @@ func TestGetSetSyncState(t *testing.T) {
 	}
 }
 
+// Verifies sync-status persistence records and reloads per-app status strings.
 func TestGetSetSyncStatus(t *testing.T) {
 	src := newTestSource(t)
 	if src.getSyncStatus("gmail") != "" {
@@ -205,6 +220,7 @@ func TestGetSetSyncStatus(t *testing.T) {
 	}
 }
 
+// Verifies sync-state helpers fail safely when the source has no open DB.
 func TestGetSetSyncState_NilDB(t *testing.T) {
 	src := &Source{}
 	src.setLastSyncTime("docs", time.Now())
@@ -217,6 +233,7 @@ func TestGetSetSyncState_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies SearchEntries returns no entries when the source has no synced app data.
 func TestSearchEntries_Empty(t *testing.T) {
 	src := newTestSource(t)
 	entries, err := src.SearchEntries()
@@ -228,6 +245,7 @@ func TestSearchEntries_Empty(t *testing.T) {
 	}
 }
 
+// Verifies SearchEntries emits indexed entries from enabled apps with seeded data.
 func TestSearchEntries_WithData(t *testing.T) {
 	src := newTestSource(t)
 	seedAll(t, src.db)
@@ -250,6 +268,7 @@ func TestSearchEntries_WithData(t *testing.T) {
 	}
 }
 
+// Verifies SearchEntries returns a safe nil/empty result when the source DB is unavailable.
 func TestSearchEntries_NilDB(t *testing.T) {
 	src := &Source{apps: allAppsEnabledConfig()}
 	entries, err := src.SearchEntries()
@@ -261,6 +280,7 @@ func TestSearchEntries_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies SearchEntries skips apps that are disabled in the persisted app config.
 func TestSearchEntries_DisabledApp(t *testing.T) {
 	src := newTestSource(t)
 	seedDocs(t, src.db)
@@ -276,6 +296,7 @@ func TestSearchEntries_DisabledApp(t *testing.T) {
 	}
 }
 
+// Verifies SearchEntries keeps collecting entries from healthy apps even when one app returns an error.
 func TestSearchEntries_ContinuesOnAppError(t *testing.T) {
 	originalApps := allApps
 	t.Cleanup(func() { allApps = originalApps })
@@ -314,6 +335,7 @@ func TestSearchEntries_ContinuesOnAppError(t *testing.T) {
 	}
 }
 
+// Verifies Reset removes source-owned auth and data artifacts so the source can be reinitialized cleanly.
 func TestReset(t *testing.T) {
 	dir := t.TempDir()
 	files := []string{"gsuite.db", "gsuite.db-wal", "gsuite.db-shm", "gsuite_token.json", "gsuite_email.txt"}
@@ -333,6 +355,7 @@ func TestReset(t *testing.T) {
 	}
 }
 
+// Verifies app-specific reset clears only the targeted app tables rather than all gsuite data.
 func TestResetApp(t *testing.T) {
 	src := newTestSource(t)
 	seedDocs(t, src.db)
@@ -353,6 +376,7 @@ func TestResetApp(t *testing.T) {
 	}
 }
 
+// Verifies app-specific reset reports an error when no DB is available.
 func TestResetApp_NilDB(t *testing.T) {
 	src := &Source{}
 	if err := src.ResetApp("docs"); err != nil {
@@ -360,6 +384,7 @@ func TestResetApp_NilDB(t *testing.T) {
 	}
 }
 
+// Verifies app-specific reset rejects unknown app names instead of deleting arbitrary tables.
 func TestResetApp_UnknownApp(t *testing.T) {
 	src := newTestSource(t)
 	if err := src.ResetApp("nonexistent"); err != nil {
@@ -367,6 +392,7 @@ func TestResetApp_UnknownApp(t *testing.T) {
 	}
 }
 
+// Verifies NewSource still loads default app state when opening the DB fails.
 func TestNewSource_OpenDBFailureStillLoadsDefaults(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "not-a-directory")
@@ -386,6 +412,7 @@ func TestNewSource_OpenDBFailureStillLoadsDefaults(t *testing.T) {
 	}
 }
 
+// Verifies AppDefs returns the registered set of gsuite app definitions.
 func TestAppDefs_ReturnsAllApps(t *testing.T) {
 	apps := AppDefs()
 	if len(apps) != len(allApps) {
@@ -393,6 +420,7 @@ func TestAppDefs_ReturnsAllApps(t *testing.T) {
 	}
 }
 
+// Verifies sync-status formatting includes the expected wording for the main status variants.
 func TestFormatSyncStatus(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -416,6 +444,7 @@ func TestFormatSyncStatus(t *testing.T) {
 	}
 }
 
+// Verifies allAppDefs stays aligned with the configured gsuite app registry.
 func TestAllAppDefs(t *testing.T) {
 	if len(allApps) != 7 {
 		t.Errorf("expected 7 app defs, got %d", len(allApps))
@@ -435,6 +464,7 @@ func TestAllAppDefs(t *testing.T) {
 	}
 }
 
+// Verifies shared content-entry building preserves metadata needed for global search results.
 func TestBuildContentEntries(t *testing.T) {
 	entries := buildContentEntries("src", "id1", "My Title", "Some content here", "2024-01-01T00:00:00Z", "Owner A",
 		"title_type", "owner_type", "content_type", "doc_id")
@@ -463,6 +493,7 @@ func TestBuildContentEntries(t *testing.T) {
 	}
 }
 
+// Verifies content-entry building tolerates missing owner data without dropping the entry.
 func TestBuildContentEntries_NoOwner(t *testing.T) {
 	entries := buildContentEntries("src", "id1", "Title", "Content", "2024-01-01T00:00:00Z", "",
 		"tt", "ot", "ct", "id")
@@ -473,6 +504,7 @@ func TestBuildContentEntries_NoOwner(t *testing.T) {
 	}
 }
 
+// Verifies long content is chunked into multiple global-search entries instead of one oversized entry.
 func TestBuildContentEntries_LongContent(t *testing.T) {
 	content := string(make([]byte, 12000))
 	for i := range []byte(content) {
@@ -499,6 +531,7 @@ func TestBuildContentEntries_LongContent(t *testing.T) {
 	}
 }
 
+// Verifies numeric-dominant chunks are skipped so low-value content does not flood global search.
 func TestBuildContentEntries_SkipsNumericDominantChunks(t *testing.T) {
 	numericContent := strings.Repeat("$1,234.56\t2024-01-15\tINV-00123\t", 200)
 	textContent := strings.Repeat("Revenue Q1 improved because the pipeline expanded with new contracts. ", 120)
@@ -532,6 +565,7 @@ func TestBuildContentEntries_SkipsNumericDominantChunks(t *testing.T) {
 	}
 }
 
+// Verifies numeric-heavy sheet content produces fewer global-search entries after low-value filtering.
 func TestSearchEntries_NumericHeavySheetProducesFewerEntries(t *testing.T) {
 	src := newTestSource(t)
 	src.apps = DefaultAppsConfig()
@@ -579,6 +613,7 @@ func TestSearchEntries_NumericHeavySheetProducesFewerEntries(t *testing.T) {
 	}
 }
 
+// Verifies owner formatting returns an empty string when there are no owners to show.
 func TestFormatDriveOwners_Empty(t *testing.T) {
 	result := formatDriveOwners(nil, "")
 	if result != "" {
@@ -586,6 +621,7 @@ func TestFormatDriveOwners_Empty(t *testing.T) {
 	}
 }
 
+// Verifies owner formatting omits the authenticated user from the display list when appropriate.
 func TestFormatDriveOwners_ExcludesSelf(t *testing.T) {
 	import_note := "uses drive.User inline via pointer"
 	_ = import_note
@@ -597,6 +633,7 @@ func TestFormatDriveOwners_ExcludesSelf(t *testing.T) {
 	}
 }
 
+// Verifies orphan-row deletion removes rows not present in the keep set while preserving listed IDs.
 func TestDeleteOrphanedRows(t *testing.T) {
 	src := newTestSource(t)
 	seedDocs(t, src.db)
@@ -621,6 +658,7 @@ func TestDeleteOrphanedRows(t *testing.T) {
 	}
 }
 
+// Verifies table counting returns the number of stored rows for seeded tables.
 func TestCountTable(t *testing.T) {
 	src := newTestSource(t)
 	n, err := countTable(src.db, "docs_documents")
@@ -640,6 +678,7 @@ func TestCountTable(t *testing.T) {
 	}
 }
 
+// Verifies the source reports the expected registry name string.
 func TestSourceName(t *testing.T) {
 	src := &Source{}
 	if src.Name() != "gsuite" {
@@ -650,6 +689,7 @@ func TestSourceName(t *testing.T) {
 	}
 }
 
+// Verifies Close is a no-op when the source was created without an open DB.
 func TestClose_NilDB(t *testing.T) {
 	src := &Source{}
 	if err := src.Close(); err != nil {

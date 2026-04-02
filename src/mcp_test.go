@@ -16,11 +16,17 @@ type testMCPSource struct {
 	calls   int
 }
 
+// Returns the source name so the indexing test double satisfies core.DataSource.
 func (s *testMCPSource) Name() string                               { return s.name }
+// Returns the display label so the indexing test double satisfies core.DataSource.
 func (s *testMCPSource) Description() string                        { return s.name }
+// Exposes no tools because this indexing test double only exercises SearchEntries behavior.
 func (s *testMCPSource) RegisterTools(*server.MCPServer)            {}
+// Returns seeded search entries and increments a call counter so the test can verify indexing eligibility.
 func (s *testMCPSource) SearchEntries() ([]core.SearchEntry, error) { s.calls++; return s.entries, nil }
+// Satisfies the reset method required by the data-source interface without mutating test state.
 func (s *testMCPSource) Reset(string) error                         { return nil }
+// Closes nothing because this indexing test double owns no resources.
 func (s *testMCPSource) Close() error                               { return nil }
 
 type fakeIndexer struct {
@@ -28,15 +34,18 @@ type fakeIndexer struct {
 	updated []string
 }
 
+// Records indexed batches so the test can verify which sources were actually passed to the indexer.
 func (f *fakeIndexer) IndexEntries(entries []core.SearchEntry) error {
 	f.indexed = append(f.indexed, entries)
 	return nil
 }
 
+// Records timestamp updates so the test can verify only globally indexed sources advance their watermark.
 func (f *fakeIndexer) UpdateSourceTimestamp(source string, _ time.Time) {
 	f.updated = append(f.updated, source)
 }
 
+// Verifies indexing skips sources whose descriptors are marked non-global even when they can return entries.
 func TestIndexSources_skipsNonIndexedSources(t *testing.T) {
 	indexedSrc := &testMCPSource{
 		name:    "indexed",

@@ -8,6 +8,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// Builds an in-memory message store with the minimal schema and triggers needed for store-level tests.
 func newTestMessageStore(t *testing.T) *MessageStore {
 	t.Helper()
 	db, err := sql.Open("sqlite3", "file::memory:?cache=shared&_foreign_keys=on")
@@ -90,6 +91,7 @@ func newTestMessageStore(t *testing.T) *MessageStore {
 	return &MessageStore{db: db, contactsDB: contactsDB}
 }
 
+// Verifies storing a chat persists its name and last-message timestamp.
 func TestStoreChat(t *testing.T) {
 	store := newTestMessageStore(t)
 	ts := time.Now()
@@ -114,6 +116,7 @@ func TestStoreChat(t *testing.T) {
 	}
 }
 
+// Verifies storing the same chat again updates the existing row instead of creating duplicates.
 func TestStoreChat_upsert(t *testing.T) {
 	store := newTestMessageStore(t)
 	ts1 := time.Now().Add(-1 * time.Hour)
@@ -129,6 +132,7 @@ func TestStoreChat_upsert(t *testing.T) {
 	}
 }
 
+// Verifies storing a message persists the content row after the parent chat exists.
 func TestStoreMessage(t *testing.T) {
 	store := newTestMessageStore(t)
 	ts := time.Now()
@@ -152,6 +156,7 @@ func TestStoreMessage(t *testing.T) {
 	}
 }
 
+// Verifies storing the same message again updates the existing row instead of duplicating it.
 func TestStoreMessage_upsert(t *testing.T) {
 	store := newTestMessageStore(t)
 	ts := time.Now()
@@ -167,6 +172,7 @@ func TestStoreMessage_upsert(t *testing.T) {
 	}
 }
 
+// Verifies message listing returns chat messages in reverse chronological order for recent-history views.
 func TestGetMessages(t *testing.T) {
 	store := newTestMessageStore(t)
 	ts := time.Now()
@@ -193,6 +199,7 @@ func TestGetMessages(t *testing.T) {
 	}
 }
 
+// Verifies chat listing returns all stored chats keyed by JID.
 func TestGetChats(t *testing.T) {
 	store := newTestMessageStore(t)
 	ts1 := time.Now().Add(-2 * time.Hour)
@@ -218,6 +225,7 @@ func TestGetChats(t *testing.T) {
 	}
 }
 
+// Verifies media metadata updates persist URL and file length on an existing message row.
 func TestStoreMediaInfo(t *testing.T) {
 	store := newTestMessageStore(t)
 	ts := time.Now()
@@ -245,6 +253,7 @@ func TestStoreMediaInfo(t *testing.T) {
 	}
 }
 
+// Verifies media-info lookups return the stored metadata needed for later download requests.
 func TestGetMediaInfo(t *testing.T) {
 	store := newTestMessageStore(t)
 	ts := time.Now()
@@ -275,6 +284,7 @@ func TestGetMediaInfo(t *testing.T) {
 	_ = fileEncSHA256
 }
 
+// Verifies storing group participants persists every participant row for the target group.
 func TestStoreGroupParticipants(t *testing.T) {
 	store := newTestMessageStore(t)
 
@@ -295,6 +305,7 @@ func TestStoreGroupParticipants(t *testing.T) {
 	}
 }
 
+// Verifies storing group participants again replaces the previous participant set for that group.
 func TestStoreGroupParticipants_upsert(t *testing.T) {
 	store := newTestMessageStore(t)
 
@@ -318,6 +329,7 @@ func TestStoreGroupParticipants_upsert(t *testing.T) {
 	}
 }
 
+// Verifies placeholder detection distinguishes synthesized group labels from real chat names.
 func TestLooksLikeGroupPlaceholder(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -342,6 +354,7 @@ func TestLooksLikeGroupPlaceholder(t *testing.T) {
 	}
 }
 
+// Verifies synthesized-name detection catches parenthesized generated names without mislabeling normal contacts.
 func TestIsSynthesizedName(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -368,6 +381,7 @@ func TestIsSynthesizedName(t *testing.T) {
 	}
 }
 
+// Verifies phone-number detection accepts numeric identifiers and rejects obvious non-phone names.
 func TestLooksLikePhoneNumber(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -394,6 +408,7 @@ func TestLooksLikePhoneNumber(t *testing.T) {
 	}
 }
 
+// Verifies sender-name resolution prefers richer contact names and falls back to normalized identifiers when needed.
 func TestGetSenderName(t *testing.T) {
 	store := newTestMessageStore(t)
 
@@ -436,6 +451,7 @@ func TestGetSenderName(t *testing.T) {
 	}
 }
 
+// Verifies closing the store closes both backing databases so later queries fail fast.
 func TestMessageStoreClose(t *testing.T) {
 	store := newTestMessageStore(t)
 	err := store.Close()
@@ -450,6 +466,7 @@ func TestMessageStoreClose(t *testing.T) {
 	}
 }
 
+// Verifies empty non-media messages are skipped instead of polluting the message table.
 func TestStoreMessage_skipEmpty(t *testing.T) {
 	store := newTestMessageStore(t)
 	ts := time.Now()
@@ -467,6 +484,7 @@ func TestStoreMessage_skipEmpty(t *testing.T) {
 	}
 }
 
+// Verifies sender-name resolution falls back to chat names when no richer contact row exists.
 func TestGetSenderName_fromChatsTable(t *testing.T) {
 	store := newTestMessageStore(t)
 	store.StoreChat("77777@s.whatsapp.net", "Charlie Brown", time.Now())
@@ -477,6 +495,7 @@ func TestGetSenderName_fromChatsTable(t *testing.T) {
 	}
 }
 
+// Verifies sender-name resolution falls back to push names when full contact names are unavailable.
 func TestGetSenderName_pushNameFallback(t *testing.T) {
 	store := newTestMessageStore(t)
 
@@ -492,6 +511,7 @@ func TestGetSenderName_pushNameFallback(t *testing.T) {
 	}
 }
 
+// Verifies LID-based sender lookup resolves through the lid map before applying normal contact-name fallbacks.
 func TestGetSenderName_lidMapping(t *testing.T) {
 	store := newTestMessageStore(t)
 

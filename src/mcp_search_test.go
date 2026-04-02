@@ -18,12 +18,12 @@ import (
 
 type failingSearchStore struct{}
 
+// Returns a fixed error so global-search MCP tests can verify tool error propagation.
 func (failingSearchStore) Search(_ string, _ int, _, _ string) ([]SearchResult, error) {
 	return nil, errors.New("search failed")
 }
 
-// buildTestMCPServerWithSearch creates an MCP server with the global search tool,
-// seeded with WhatsApp fixture data.
+// Builds a test MCP server with seeded WhatsApp data and the global search tool wired against an in-memory search store.
 func buildTestMCPServerWithSearch(t *testing.T) *server.MCPServer {
 	t.Helper()
 
@@ -65,6 +65,7 @@ func buildTestMCPServerWithSearch(t *testing.T) *server.MCPServer {
 	return s
 }
 
+// Seeds minimal WhatsApp fixtures so global-search MCP tests have chat, participant, and message content to query.
 func seedSearchFixtures(t *testing.T, store *whatsapp.MessageStore) {
 	t.Helper()
 	now := time.Now()
@@ -74,11 +75,13 @@ func seedSearchFixtures(t *testing.T, store *whatsapp.MessageStore) {
 	store.StoreMessage("m4", "group1@g.us", "11111", "Family dinner tonight", now.Add(-30*time.Minute), false, "", "", "", nil, nil, nil, 0)
 }
 
+// Invokes the global search MCP tool with args and returns the first text payload for assertions.
 func callSearchTool(t *testing.T, s *server.MCPServer, args map[string]interface{}) string {
 	t.Helper()
 	return callGlobalTool(t, s, "search", args)
 }
 
+// Invokes a named MCP tool against an initialized test server and returns the first text payload.
 func callGlobalTool(t *testing.T, s *server.MCPServer, name string, args map[string]interface{}) string {
 	t.Helper()
 	ctx := context.Background()
@@ -114,6 +117,7 @@ func callGlobalTool(t *testing.T, s *server.MCPServer, name string, args map[str
 	return resp.Result.Content[0].Text
 }
 
+// Verifies the global search tool returns non-empty results for a basic query over seeded fixtures.
 func TestMCP_GlobalSearch_basic(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Family"})
@@ -122,6 +126,7 @@ func TestMCP_GlobalSearch_basic(t *testing.T) {
 	}
 }
 
+// Verifies global search results include follow-up metadata hints for downstream tool navigation.
 func TestMCP_GlobalSearch_metadataHint(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Family"})
@@ -137,6 +142,7 @@ func TestMCP_GlobalSearch_metadataHint(t *testing.T) {
 	}
 }
 
+// Verifies global search can return message-content hits, not just title-style matches.
 func TestMCP_GlobalSearch_messageContent(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "dinner"})
@@ -145,6 +151,7 @@ func TestMCP_GlobalSearch_messageContent(t *testing.T) {
 	}
 }
 
+// Verifies global search can return participant-style hits for contact-name queries.
 func TestMCP_GlobalSearch_participant(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Alice"})
@@ -153,6 +160,7 @@ func TestMCP_GlobalSearch_participant(t *testing.T) {
 	}
 }
 
+// Verifies the source filter narrows global search results to the requested source.
 func TestMCP_GlobalSearch_sourceFilter(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Family", "source": "whatsapp"})
@@ -161,6 +169,7 @@ func TestMCP_GlobalSearch_sourceFilter(t *testing.T) {
 	}
 }
 
+// Verifies the content-type filter narrows global search results to the requested indexed type.
 func TestMCP_GlobalSearch_typeFilter(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Family", "content_type": "chat_name"})
@@ -169,6 +178,7 @@ func TestMCP_GlobalSearch_typeFilter(t *testing.T) {
 	}
 }
 
+// Verifies pure keyword search still returns an empty array when no indexed content matches.
 func TestMCP_GlobalSearch_noKeywordMatch(t *testing.T) {
 	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -198,6 +208,7 @@ func TestMCP_GlobalSearch_noKeywordMatch(t *testing.T) {
 	}
 }
 
+// Verifies the global search tool honors the caller-provided result limit.
 func TestMCP_GlobalSearch_withLimit(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Family", "limit": float64(1)})
@@ -208,6 +219,7 @@ func TestMCP_GlobalSearch_withLimit(t *testing.T) {
 	}
 }
 
+// Verifies the global search tool returns the expected retry-oriented error when `query` is missing.
 func TestMCP_GlobalSearch_missingQuery(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{})
@@ -217,6 +229,7 @@ func TestMCP_GlobalSearch_missingQuery(t *testing.T) {
 	}
 }
 
+// Verifies store-layer search failures surface as MCP tool errors instead of empty success payloads.
 func TestMCP_GlobalSearch_storeError(t *testing.T) {
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
 	RegisterSearchTool(s, failingSearchStore{})
@@ -227,6 +240,7 @@ func TestMCP_GlobalSearch_storeError(t *testing.T) {
 	}
 }
 
+// Verifies tools/list includes the global search tool with the expected schema and safety annotations.
 func TestMCP_ToolsListContainsSearchTool(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	ctx := context.Background()

@@ -8,8 +8,7 @@ import (
 	"testing"
 )
 
-// ---------- ONNX lib path ----------
-
+// Verifies the platform-specific ONNX runtime path resolves to one of the expected Homebrew locations.
 func TestOnnxLibPath(t *testing.T) {
 	path := onnxLibPath()
 	if path == "" {
@@ -32,8 +31,7 @@ func TestOnnxLibPath(t *testing.T) {
 	}
 }
 
-// ---------- No-ONNX path ----------
-
+// Verifies embedder construction degrades to a nil embedder without error when ONNX is not installed.
 func TestNewEmbedder_noONNX(t *testing.T) {
 	libPath := onnxLibPath()
 	if _, err := os.Stat(libPath); err == nil {
@@ -62,8 +60,7 @@ var (
 	sharedEmbDir  string // persists across tests in the same process
 )
 
-// stableCacheDir returns a persistent directory for the ONNX model so it is
-// downloaded once and reused across all future test runs.
+// Builds a persistent cache dir so ONNX tests reuse one downloaded model across runs instead of fetching repeatedly.
 func stableCacheDir() string {
 	base, _ := os.UserCacheDir()
 	if base == "" {
@@ -74,6 +71,7 @@ func stableCacheDir() string {
 	return d
 }
 
+// Returns the lazily shared real embedder for ONNX-backed tests, skipping when the runtime or model is unavailable.
 func getSharedEmbedder(t *testing.T) *Embedder {
 	t.Helper()
 
@@ -97,6 +95,7 @@ func getSharedEmbedder(t *testing.T) *Embedder {
 	return sharedEmb
 }
 
+// Verifies the real ONNX embedder satisfies the interface and handles representative query and batch cases.
 func TestEmbedder_RealONNX(t *testing.T) {
 	emb := getSharedEmbedder(t)
 
@@ -196,7 +195,7 @@ func TestEmbedder_RealONNX(t *testing.T) {
 	})
 }
 
-// TestEmbedder_Close uses its own fresh embedder since Close invalidates it.
+// Verifies closing a fresh embedder is safe and idempotent because Close invalidates the instance for later use.
 func TestEmbedder_Close(t *testing.T) {
 	libPath := onnxLibPath()
 	if _, err := os.Stat(libPath); err != nil {
@@ -223,12 +222,12 @@ func TestEmbedder_Close(t *testing.T) {
 	emb.Close()
 }
 
-// ---------- Mock embedder ----------
-
+// Verifies the mock embedder still satisfies the production embedding interface used by tests.
 func TestMockEmbedder_implements_interface(_ *testing.T) {
 	var _ EmbedderInterface = (*mockEmbedder)(nil)
 }
 
+// Verifies the mock embedder returns the same vector for the same query across repeated calls.
 func TestMockEmbedder_deterministic(t *testing.T) {
 	emb := &mockEmbedder{dim: 8}
 	v1, _ := emb.EmbedQuery("hello world")
@@ -240,6 +239,7 @@ func TestMockEmbedder_deterministic(t *testing.T) {
 	}
 }
 
+// Verifies batch embedding stays consistent with single-query embedding for the same input text.
 func TestMockEmbedder_batchConsistency(t *testing.T) {
 	emb := &mockEmbedder{dim: 8}
 	texts := []string{"hello", "world"}
