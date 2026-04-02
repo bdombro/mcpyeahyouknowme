@@ -44,6 +44,7 @@ func main() {
 		"sources/whatsapp/*.go",
 		"sources/gsuite/*.go",
 		"sources/google_places/*.go",
+		"sources/brave_search/*.go",
 		"sources/notebook/*.go",
 	}
 

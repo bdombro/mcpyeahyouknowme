@@ -11,21 +11,21 @@
 | [`app_sheets.go`](#app_sheetsgo) | 86 | 135 | 63.7% |
 | [`app_slides.go`](#app_slidesgo) | 80 | 129 | 62.0% |
 | [`app_tasks.go`](#app_tasksgo) | 72 | 117 | 61.5% |
-| [`cli.go`](#cligo) | 109 | 400 | 27.2% |
-| [`client.go`](#clientgo) | 157 | 302 | 52.0% |
+| [`cli.go`](#cligo) | 113 | 404 | 28.0% |
+| [`client.go`](#clientgo) | 274 | 422 | 64.9% |
 | [`cmd.go`](#cmdgo) | 25 | 79 | 31.6% |
 | [`config.go`](#configgo) | 0 | 1 | 0.0% |
 | [`daemon.go`](#daemongo) | 137 | 504 | 27.2% |
 | [`embedding.go`](#embeddinggo) | 24 | 25 | 96.0% |
 | [`embedding_init.go`](#embedding_initgo) | 17 | 24 | 70.8% |
 | `extract.go` | 50 | 50 | 100.0% |
-| [`helpers.go`](#helpersgo) | 160 | 183 | 87.4% |
+| [`helpers.go`](#helpersgo) | 167 | 190 | 87.9% |
 | [`indexer.go`](#indexergo) | 7 | 25 | 28.0% |
-| [`info_cli.go`](#info_cligo) | 65 | 73 | 89.0% |
+| [`info_cli.go`](#info_cligo) | 67 | 74 | 90.5% |
 | [`lazy_embedder.go`](#lazy_embeddergo) | 15 | 23 | 65.2% |
 | [`main.go`](#maingo) | 0 | 2 | 0.0% |
-| [`mcp.go`](#mcpgo) | 209 | 277 | 75.5% |
-| [`registry.go`](#registrygo) | 30 | 32 | 93.8% |
+| [`mcp.go`](#mcpgo) | 228 | 296 | 77.0% |
+| [`registry.go`](#registrygo) | 32 | 34 | 94.1% |
 | [`reindex_cli.go`](#reindex_cligo) | 0 | 39 | 0.0% |
 | [`runtime.go`](#runtimego) | 16 | 107 | 15.0% |
 | [`scanner.go`](#scannergo) | 98 | 105 | 93.3% |
@@ -33,15 +33,15 @@
 | [`search_store.go`](#search_storego) | 222 | 238 | 93.3% |
 | [`search_store_init.go`](#search_store_initgo) | 27 | 39 | 69.2% |
 | [`service.go`](#servicego) | 401 | 420 | 95.5% |
-| [`source.go`](#sourcego) | 202 | 215 | 94.0% |
-| [`source_init.go`](#source_initgo) | 11 | 18 | 61.1% |
+| [`source.go`](#sourcego) | 210 | 223 | 94.2% |
+| [`source_init.go`](#source_initgo) | 11 | 20 | 55.0% |
 | [`stats.go`](#statsgo) | 25 | 81 | 30.9% |
 | [`store.go`](#storego) | 139 | 155 | 89.7% |
 | [`store_init.go`](#store_initgo) | 2 | 30 | 6.7% |
-| [`system.go`](#systemgo) | 39 | 50 | 78.0% |
+| [`system.go`](#systemgo) | 41 | 50 | 82.0% |
 | [`utils.go`](#utilsgo) | 0 | 47 | 0.0% |
 | [`vision.go`](#visiongo) | 0 | 20 | 0.0% |
-| **Total** | **3291** | **5043** | **65.3%** |
+| **Total** | **3452** | **5206** | **66.3%** |
 
 ## Uncovered Blocks
 
@@ -445,12 +445,15 @@
 
 ### [`client.go`](../src/client.go)
 
+- Lines 151–153 (1 stmt)
+- Lines 125–128 (1 stmt)
+- Lines 208–211 (1 stmt)
+- Lines 215–218 (1 stmt)
 - Lines 154–156 (1 stmt)
 - Lines 159–161 (1 stmt)
 - Lines 193–195 (1 stmt)
 - Lines 219–221 (1 stmt)
 - Lines 225–227 (1 stmt)
-- Lines 151–153 (1 stmt)
 - Lines 35–36 (1 stmt)
 - Lines 36–38 (1 stmt)
 - Lines 40–45 (4 stmts)
@@ -596,6 +599,40 @@
 - Lines 106–108 (2 stmts)
 - Lines 116–118 (1 stmt)
 - Lines 119–121 (1 stmt)
+- Lines 22–24 (2 stmts)
+- Lines 24–27 (2 stmts)
+- Lines 28–28 (1 stmt)
+- Lines 32–35 (3 stmts)
+- Lines 35–38 (2 stmts)
+- Lines 39–39 (1 stmt)
+- Lines 43–45 (2 stmts)
+- Lines 45–48 (2 stmts)
+- Lines 49–49 (1 stmt)
+- Lines 53–56 (3 stmts)
+- Lines 56–59 (2 stmts)
+- Lines 60–60 (1 stmt)
+- Lines 64–67 (3 stmts)
+- Lines 67–69 (1 stmt)
+- Lines 69–69 (1 stmt)
+- Lines 69–71 (1 stmt)
+- Lines 75–79 (3 stmts)
+- Lines 79–82 (2 stmts)
+- Lines 83–83 (1 stmt)
+- Lines 83–86 (2 stmts)
+- Lines 87–87 (1 stmt)
+- Lines 91–112 (20 stmts)
+- Lines 115–116 (1 stmt)
+- Lines 117–118 (1 stmt)
+- Lines 119–120 (1 stmt)
+- Lines 121–123 (2 stmts)
+- Lines 128–162 (5 stmts)
+- Lines 165–211 (1 stmt)
+- Lines 214–216 (2 stmts)
+- Lines 216–218 (1 stmt)
+- Lines 219–219 (1 stmt)
+- Lines 223–225 (2 stmts)
+- Lines 225–227 (1 stmt)
+- Lines 228–228 (1 stmt)
 - Lines 30–37 (5 stmts)
 - Lines 37–39 (1 stmt)
 - Lines 40–40 (1 stmt)
@@ -777,40 +814,6 @@
 - Lines 636–638 (1 stmt)
 - Lines 639–641 (1 stmt)
 - Lines 654–656 (1 stmt)
-- Lines 22–24 (2 stmts)
-- Lines 24–27 (2 stmts)
-- Lines 28–28 (1 stmt)
-- Lines 32–35 (3 stmts)
-- Lines 35–38 (2 stmts)
-- Lines 39–39 (1 stmt)
-- Lines 43–45 (2 stmts)
-- Lines 45–48 (2 stmts)
-- Lines 49–49 (1 stmt)
-- Lines 53–56 (3 stmts)
-- Lines 56–59 (2 stmts)
-- Lines 60–60 (1 stmt)
-- Lines 64–67 (3 stmts)
-- Lines 67–69 (1 stmt)
-- Lines 69–69 (1 stmt)
-- Lines 69–71 (1 stmt)
-- Lines 75–79 (3 stmts)
-- Lines 79–82 (2 stmts)
-- Lines 83–83 (1 stmt)
-- Lines 83–86 (2 stmts)
-- Lines 87–87 (1 stmt)
-- Lines 91–112 (20 stmts)
-- Lines 115–116 (1 stmt)
-- Lines 117–118 (1 stmt)
-- Lines 119–120 (1 stmt)
-- Lines 121–123 (2 stmts)
-- Lines 128–162 (5 stmts)
-- Lines 165–211 (1 stmt)
-- Lines 214–216 (2 stmts)
-- Lines 216–218 (1 stmt)
-- Lines 219–219 (1 stmt)
-- Lines 223–225 (2 stmts)
-- Lines 225–227 (1 stmt)
-- Lines 228–228 (1 stmt)
 
 ### [`embedding.go`](../src/embedding.go)
 
@@ -827,27 +830,27 @@
 
 ### [`helpers.go`](../src/helpers.go)
 
-- Lines 24–25 (1 stmt)
-- Lines 25–27 (2 stmts)
-- Lines 27–29 (1 stmt)
-- Lines 30–30 (1 stmt)
-- Lines 32–32 (1 stmt)
-- Lines 49–50 (1 stmt)
+- Lines 25–26 (1 stmt)
+- Lines 26–28 (2 stmts)
+- Lines 28–30 (1 stmt)
+- Lines 31–31 (1 stmt)
+- Lines 33–33 (1 stmt)
 - Lines 50–51 (1 stmt)
-- Lines 51–53 (1 stmt)
-- Lines 55–55 (1 stmt)
-- Lines 125–126 (1 stmt)
-- Lines 127–128 (1 stmt)
-- Lines 129–130 (1 stmt)
-- Lines 131–132 (1 stmt)
-- Lines 133–134 (1 stmt)
-- Lines 141–143 (1 stmt)
-- Lines 154–156 (1 stmt)
-- Lines 184–186 (1 stmt)
-- Lines 218–221 (2 stmts)
-- Lines 229–231 (1 stmt)
-- Lines 233–235 (1 stmt)
-- Lines 237–239 (1 stmt)
+- Lines 51–52 (1 stmt)
+- Lines 52–54 (1 stmt)
+- Lines 56–56 (1 stmt)
+- Lines 139–140 (1 stmt)
+- Lines 141–142 (1 stmt)
+- Lines 143–144 (1 stmt)
+- Lines 145–146 (1 stmt)
+- Lines 147–148 (1 stmt)
+- Lines 155–157 (1 stmt)
+- Lines 168–170 (1 stmt)
+- Lines 198–200 (1 stmt)
+- Lines 232–235 (2 stmts)
+- Lines 243–245 (1 stmt)
+- Lines 247–249 (1 stmt)
+- Lines 251–253 (1 stmt)
 
 ### [`indexer.go`](../src/indexer.go)
 
@@ -865,12 +868,11 @@
 
 ### [`info_cli.go`](../src/info_cli.go)
 
-- Lines 54–56 (1 stmt)
-- Lines 57–59 (1 stmt)
-- Lines 62–64 (1 stmt)
-- Lines 67–69 (1 stmt)
-- Lines 76–78 (1 stmt)
-- Lines 95–99 (3 stmts)
+- Lines 58–60 (1 stmt)
+- Lines 63–65 (1 stmt)
+- Lines 68–70 (1 stmt)
+- Lines 77–79 (1 stmt)
+- Lines 97–101 (3 stmts)
 
 ### [`lazy_embedder.go`](../src/lazy_embedder.go)
 
@@ -888,6 +890,29 @@
 
 ### [`mcp.go`](../src/mcp.go)
 
+- Lines 15–20 (4 stmts)
+- Lines 20–22 (2 stmts)
+- Lines 22–24 (2 stmts)
+- Lines 24–26 (1 stmt)
+- Lines 27–28 (2 stmts)
+- Lines 31–33 (3 stmts)
+- Lines 33–36 (3 stmts)
+- Lines 38–38 (1 stmt)
+- Lines 38–41 (3 stmts)
+- Lines 43–43 (1 stmt)
+- Lines 45–45 (1 stmt)
+- Lines 45–46 (1 stmt)
+- Lines 46–48 (1 stmt)
+- Lines 51–55 (4 stmts)
+- Lines 55–57 (1 stmt)
+- Lines 58–58 (1 stmt)
+- Lines 58–60 (1 stmt)
+- Lines 62–68 (2 stmts)
+- Lines 68–70 (1 stmt)
+- Lines 72–72 (1 stmt)
+- Lines 72–74 (1 stmt)
+- Lines 76–76 (1 stmt)
+- Lines 76–79 (2 stmts)
 - Lines 150–151 (2 stmts)
 - Lines 151–153 (1 stmt)
 - Lines 154–154 (1 stmt)
@@ -915,34 +940,11 @@
 - Lines 248–250 (1 stmt)
 - Lines 252–254 (1 stmt)
 - Lines 256–258 (1 stmt)
-- Lines 15–20 (4 stmts)
-- Lines 20–22 (2 stmts)
-- Lines 22–24 (2 stmts)
-- Lines 24–26 (1 stmt)
-- Lines 27–28 (2 stmts)
-- Lines 31–33 (3 stmts)
-- Lines 33–36 (3 stmts)
-- Lines 38–38 (1 stmt)
-- Lines 38–41 (3 stmts)
-- Lines 43–43 (1 stmt)
-- Lines 45–45 (1 stmt)
-- Lines 45–46 (1 stmt)
-- Lines 46–48 (1 stmt)
-- Lines 51–55 (4 stmts)
-- Lines 55–57 (1 stmt)
-- Lines 58–58 (1 stmt)
-- Lines 58–60 (1 stmt)
-- Lines 62–68 (2 stmts)
-- Lines 68–70 (1 stmt)
-- Lines 72–72 (1 stmt)
-- Lines 72–74 (1 stmt)
-- Lines 76–76 (1 stmt)
-- Lines 76–79 (2 stmts)
 
 ### [`registry.go`](../src/registry.go)
 
-- Lines 53–53 (1 stmt)
-- Lines 91–93 (1 stmt)
+- Lines 63–63 (1 stmt)
+- Lines 101–103 (1 stmt)
 
 ### [`reindex_cli.go`](../src/reindex_cli.go)
 
@@ -1108,6 +1110,7 @@
 ### [`source_init.go`](../src/source_init.go)
 
 - Lines 6–15 (2 stmts)
+- Lines 6–15 (2 stmts)
 - Lines 14–16 (1 stmt)
 - Lines 22–24 (1 stmt)
 - Lines 27–29 (1 stmt)
@@ -1195,9 +1198,8 @@
 - Lines 41–43 (1 stmt)
 - Lines 60–62 (1 stmt)
 - Lines 72–74 (1 stmt)
-- Lines 79–80 (2 stmts)
+- Lines 76–78 (1 stmt)
 - Lines 80–82 (1 stmt)
-- Lines 83–83 (1 stmt)
 
 ### [`utils.go`](../src/utils.go)
 

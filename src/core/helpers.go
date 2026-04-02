@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"unicode"
 
@@ -53,6 +54,19 @@ func BoolArg(args map[string]interface{}, key string, def bool) bool {
 		}
 	}
 	return def
+}
+
+// StringArg reads an optional string from MCP-style args, returning empty when the key is absent or not a string.
+func StringArg(args map[string]interface{}, key string) string {
+	v, ok := args[key]
+	if !ok {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(s)
 }
 
 // JsonResult serializes v into the text payload shape MCP handlers return, converting marshal failures into tool errors.

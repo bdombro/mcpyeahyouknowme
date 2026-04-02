@@ -33,6 +33,23 @@ func TestIntArg_missing(t *testing.T) {
 	}
 }
 
+// Verifies StringArg trims strings and returns empty for missing keys or non-string values.
+func TestStringArg(t *testing.T) {
+	args := map[string]interface{}{
+		"a": "  x  ",
+		"b": 42,
+	}
+	if got := StringArg(args, "a"); got != "x" {
+		t.Errorf("a = %q, want x", got)
+	}
+	if got := StringArg(args, "b"); got != "" {
+		t.Errorf("b = %q, want empty", got)
+	}
+	if got := StringArg(args, "missing"); got != "" {
+		t.Errorf("missing = %q, want empty", got)
+	}
+}
+
 // Verifies JsonResult wraps marshalable values in a non-error MCP text result.
 func TestJsonResult_valid(t *testing.T) {
 	result, err := JsonResult(map[string]string{"key": "value"})

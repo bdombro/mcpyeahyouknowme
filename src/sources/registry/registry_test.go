@@ -3,8 +3,10 @@ package registry
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
+	"mcpyeahyouknowme/sources/brave_search"
 	"mcpyeahyouknowme/sources/google_places"
 	"mcpyeahyouknowme/sources/gsuite"
 )
@@ -18,6 +20,7 @@ func TestFind(t *testing.T) {
 		{name: "whatsapp", want: true},
 		{name: "gsuite", want: true},
 		{name: "google_places", want: true},
+		{name: "brave_search", want: true},
 		{name: "unknown", want: false},
 	}
 
@@ -34,7 +37,7 @@ func TestFind(t *testing.T) {
 // Verifies source construction returns working source instances for registered names and nil for unknown ones.
 func TestNewSource(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"whatsapp", "gsuite", "google_places"} {
+	for _, name := range []string{"whatsapp", "gsuite", "google_places", "brave_search", "notebook"} {
 		t.Run(name, func(t *testing.T) {
 			src := NewSource(name, dir)
 			if src == nil {
@@ -75,6 +78,14 @@ func TestIsAuthenticated(t *testing.T) {
 	if !IsAuthenticated("google_places", dir) {
 		t.Fatal("expected google_places auth to be true with a configured key")
 	}
+	oldBraveKey := brave_search.BraveAPIKey
+	brave_search.BraveAPIKey = "brave-key"
+	defer func() {
+		brave_search.BraveAPIKey = oldBraveKey
+	}()
+	if !IsAuthenticated("brave_search", dir) {
+		t.Fatal("expected brave_search auth to be true with a configured key")
+	}
 	if !IsAuthenticated("unknown", dir) {
 		t.Fatal("unknown sources should default to authenticated")
 	}
@@ -103,6 +114,7 @@ func TestDescriptorCapabilities(t *testing.T) {
 		{name: "whatsapp", indexGlobally: true, runsCore: true},
 		{name: "gsuite", indexGlobally: true, runsCore: true, hasIsEnabled: true, hasReason: true},
 		{name: "google_places", indexGlobally: false, runsCore: false, hasIsEnabled: true, hasReason: true},
+		{name: "brave_search", indexGlobally: false, runsCore: false, hasIsEnabled: true, hasReason: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -129,10 +141,12 @@ func TestDescriptorCapabilities(t *testing.T) {
 // Verifies availability checks surface missing build-time credentials for gated sources while leaving WhatsApp always available.
 func TestIsAvailable(t *testing.T) {
 	oldGooglePlacesKey := google_places.GooglePlaceAPIKey
+	oldBraveKey := brave_search.BraveAPIKey
 	oldGoogleClientID := gsuite.GoogleClientID
 	oldGoogleClientSecret := gsuite.GoogleClientSecret
 	defer func() {
 		google_places.GooglePlaceAPIKey = oldGooglePlacesKey
+		brave_search.BraveAPIKey = oldBraveKey
 		gsuite.GoogleClientID = oldGoogleClientID
 		gsuite.GoogleClientSecret = oldGoogleClientSecret
 	}()
@@ -157,6 +171,11 @@ func TestIsAvailable(t *testing.T) {
 	if available, reason := IsAvailable("google_places"); available || reason == "" {
 		t.Fatalf("google_places availability = (%v, %q), want unavailable with reason", available, reason)
 	}
+
+	brave_search.BraveAPIKey = ""
+	if available, reason := IsAvailable("brave_search"); available || reason == "" {
+		t.Fatalf("brave_search availability = (%v, %q), want unavailable with reason", available, reason)
+	}
 }
 
 // Verifies Names preserves the registered source order used by CLI and runtime iteration.
@@ -165,7 +184,8 @@ func TestNames(t *testing.T) {
 	if len(names) != len(All) {
 		t.Fatalf("Names() len = %d, want %d", len(names), len(All))
 	}
-	if names[0] != "whatsapp" || names[1] != "gsuite" || names[2] != "google_places" {
-		t.Fatalf("unexpected names order: %v", names)
+	want := []string{"whatsapp", "gsuite", "google_places", "brave_search", "notebook"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("Names() = %v, want %v", names, want)
 	}
 }

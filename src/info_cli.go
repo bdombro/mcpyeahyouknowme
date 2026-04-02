@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"mcpyeahyouknowme/core"
+	"mcpyeahyouknowme/sources/brave_search"
 	"mcpyeahyouknowme/sources/google_places"
 	"mcpyeahyouknowme/sources/gsuite"
 	"mcpyeahyouknowme/sources/notebook"
@@ -83,6 +84,7 @@ func renderInfo() string {
 	writeSourceSection(&b, "\U0001f4f2 WhatsApp", "whatsapp", dDir, whatsapp.InfoLines)
 	writeSourceSection(&b, "\U0001f537 Google Suite", "gsuite", dDir, gsuite.InfoLines)
 	writeSourceSection(&b, "\U0001f4cd Google Places", "google_places", dDir, google_places.InfoLines)
+	writeSourceSection(&b, "\U0001f50d Brave Search", "brave_search", dDir, brave_search.InfoLines)
 	writeSourceSection(&b, "\U0001f4dd Notebook", "notebook", dDir, notebook.InfoLines)
 
 	return b.String()

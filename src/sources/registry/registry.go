@@ -3,6 +3,7 @@ package registry
 
 import (
 	"mcpyeahyouknowme/core"
+	"mcpyeahyouknowme/sources/brave_search"
 	"mcpyeahyouknowme/sources/google_places"
 	"mcpyeahyouknowme/sources/gsuite"
 	"mcpyeahyouknowme/sources/notebook"
@@ -44,6 +45,15 @@ var All = []Descriptor{
 		IsEnabled:         google_places.IsConfigured,
 		UnavailableReason: "missing build-time GOOGLE_PLACE_API_KEY",
 		IsAuthenticated:   func(_ string) bool { return google_places.IsConfigured() },
+		IndexGlobally:     false,
+		RunsCore:          false,
+	},
+	{
+		Name:              "brave_search",
+		New:               func(dataDir string) core.DataSource { return brave_search.NewSource(dataDir) },
+		IsEnabled:         brave_search.IsConfigured,
+		UnavailableReason: "missing build-time BRAVE_API_KEY",
+		IsAuthenticated:   func(_ string) bool { return brave_search.IsConfigured() },
 		IndexGlobally:     false,
 		RunsCore:          false,
 	},

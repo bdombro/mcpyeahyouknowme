@@ -1,6 +1,6 @@
 # Product Spec
 
-A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides via Google APIs with OAuth 2.0), and **Google Places** (live business and address lookup via the Places API).
+A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides via Google APIs with OAuth 2.0), **Google Places** (live business and address lookup via the Places API), and **Brave Search** (live web search via the Brave Search API).
 
 ## Building
 
@@ -8,7 +8,7 @@ A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.
 ./scripts/build.sh
 ```
 
-The build script sources `.env` from the repository root (if present) and bakes `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and optional `GOOGLE_PLACE_API_KEY` into the binary via `-ldflags`. Copy `.env.example` to `.env` and fill in the values before building if you want those sources available. The shipped desktop OAuth flow uses PKCE, but Google currently still requires the desktop client secret during token exchange.
+The build script sources `.env` from the repository root (if present) and bakes `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, optional `GOOGLE_PLACE_API_KEY`, and optional `BRAVE_API_KEY` into the binary via `-ldflags`. Copy `.env.example` to `.env` and fill in the values before building if you want those sources available. The shipped desktop OAuth flow uses PKCE, but Google currently still requires the desktop client secret during token exchange.
 
 CGO is required only for the `notebook` source's macOS Vision OCR integration. All other sources use [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), a pure-Go SQLite port. `CGO_ENABLED=1` is the macOS default; no build script changes are needed for Vision.
 
@@ -159,6 +159,7 @@ src/
     registry/       — source descriptors, constructors, auth checks
     whatsapp/       — store, service, mcp, daemon, client, cli, helpers
     gsuite/         — source, app_*, mcp, daemon, client, cli
+    brave_search/   — live Brave Search API client and MCP tools
   cmd.go            — command table, usage output, command dispatch
   config.go         — delegates to core.LoadConfig for the main CLI/daemon config
   daemon.go         — LaunchAgent management + shell completion rendering
@@ -194,6 +195,7 @@ Current sources:
 | WhatsApp | `whatsapp_` | `sources/whatsapp/` | Messages, chats, contacts via local SQLite + REST API |
 | Google Suite | `gsuite_` | `sources/gsuite/` | Docs, Sheets, Gmail, Calendar, Tasks, Contacts, and Slides via Google APIs with periodic sync |
 | Google Places | `google_places_` | `sources/google_places/` | Live business and address lookup via the Places API; no local cache or indexing |
+| Brave Search | `brave_search_` | `sources/brave_search/` | Live web search via the Brave Search API; no local cache or indexing |
 | Notebook | `notebook_` | `sources/notebook/` | Markdown, PDF, and image files from user-configured local directories |
 
 ### Daemon Management
@@ -379,8 +381,10 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 | `gsuite_gmail_download_attachment` | Download one Gmail attachment on demand by message and attachment IDs. |
 | `google_places_search_places` | Live text search for businesses or addresses using the Places API. |
 | `google_places_get_place` | Live place details lookup by `place_id` using the Places API. |
+| `brave_search_web` | Live web search using the Brave Search API. |
+| `brave_search_url` | Resolve a page URL to title and description via Brave web search with canonical exact-URL matching when possible. |
 
-**Availability:** most source tools are registered only when the source is both `enabled` in config and authenticated. `google_places_*` tools are registered when the binary was built with a non-empty `GOOGLE_PLACE_API_KEY`. `search` is registered when the search store opens successfully on MCP startup. The search index is populated by the core daemon (not by MCP); run `mcpyeahyouknowme reindex` for manual indexing.
+**Availability:** most source tools are registered only when the source is both `enabled` in config and authenticated. `google_places_*` tools are registered when the binary was built with a non-empty `GOOGLE_PLACE_API_KEY`. `brave_search_*` tools are registered when the binary was built with a non-empty `BRAVE_API_KEY`. `search` is registered when the search store opens successfully on MCP startup. The search index is populated by the core daemon (not by MCP); run `mcpyeahyouknowme reindex` for manual indexing.
 
 ### Global Search
 
@@ -485,6 +489,15 @@ Metadata shapes per WhatsApp content type:
 |------|-------------|
 | `google_places_search_places` | Search for businesses or addresses using text input. Returns candidate places with `place_id`, display name, formatted address, types, coordinates, and business status. Accepts `query` (required) and `max_results` (default 5). |
 | `google_places_get_place` | Fetch detailed place information by `place_id`. Returns address, phone numbers, website, Google Maps URI, coordinates, opening hours, rating, address components, business status, types, and price level. |
+
+### Brave Search Tools
+
+**Read path:** Calls the Brave Search API live over HTTPS. No local caching, SQLite persistence, core daemon sync, or global search indexing.
+
+| Tool | Description |
+|------|-------------|
+| `brave_search_web` | Web search. Returns `query`, `more_results_available`, and `results` with `title`, `url`, `description`, and optional `age` per hit. Required `query`. Optional `count` (default 20, max 20), `offset` (0–9), `country`, `search_lang`, `ui_lang`, `safesearch`, `freshness`. |
+| `brave_search_url` | Looks up a single page by `url`: runs web search with that URL as the query, then returns one result with `exact_match` true when a returned URL matches the requested URL after canonical normalization, otherwise the first hit with `exact_match` false. |
 
 ---
 
@@ -656,9 +669,10 @@ Without this, Gatekeeper blocks execution — the first invocation is killed (SI
 | `GOOGLE_CLIENT_ID` | Optional build-time | - | Desktop OAuth client ID from Google Cloud Console; when missing, the `gsuite` source is unavailable in the built binary |
 | `GOOGLE_CLIENT_SECRET` | Optional build-time | - | Matching desktop OAuth client secret; when missing, the `gsuite` source is unavailable in the built binary |
 | `GOOGLE_PLACE_API_KEY` | No | - | Optional Places API key; set in `.env`, baked into the binary via `-ldflags`, and enables the `google_places_*` MCP tools |
+| `BRAVE_API_KEY` | No | - | Optional Brave Search API key; set in `.env`, baked into the binary via `-ldflags`, and enables the `brave_search_*` MCP tools |
 | `GOOGLE_PROJECT_ID` | No | - | Convenience project ID for `scripts/google-project-setup.sh` and `just google-project-setup` |
 
-`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are required only if you want the `gsuite` source available in the built binary. `GOOGLE_PLACE_API_KEY` is optional; when present at build time it enables the `google_places_*` tools. `scripts/google-project-setup.sh` can create a restricted Places API key automatically and write it to `.env`. Copy `.env.example` to `.env` and fill in the values. The build script prints which sources will be available or unavailable at build time.
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are required only if you want the `gsuite` source available in the built binary. `GOOGLE_PLACE_API_KEY` is optional; when present at build time it enables the `google_places_*` tools. `BRAVE_API_KEY` is optional; when present at build time it enables the `brave_search_*` tools. `scripts/google-project-setup.sh` can create a restricted Places API key automatically and write it to `.env`. Copy `.env.example` to `.env` and fill in the values. The build script prints which sources will be available or unavailable at build time.
 
 ### Hardcoded Paths
 

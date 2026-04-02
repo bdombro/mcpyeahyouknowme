@@ -63,6 +63,12 @@ if [ -n "${GOOGLE_PLACE_API_KEY:-}" ]; then
 else
 	print_source_status "google_places" "unavailable" "missing GOOGLE_PLACE_API_KEY"
 fi
+
+if [ -n "${BRAVE_API_KEY:-}" ]; then
+	print_source_status "brave_search" "available"
+else
+	print_source_status "brave_search" "unavailable" "missing BRAVE_API_KEY"
+fi
 echo
 
 build_time="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
@@ -72,5 +78,6 @@ cd "$CLI_DIR" && go build \
 		-X 'main.BuildVersion=1.0.0' \
 		-X 'mcpyeahyouknowme/sources/gsuite.GoogleClientID=$GOOGLE_CLIENT_ID' \
 		-X 'mcpyeahyouknowme/sources/gsuite.GoogleClientSecret=$GOOGLE_CLIENT_SECRET' \
-		-X 'mcpyeahyouknowme/sources/google_places.GooglePlaceAPIKey=${GOOGLE_PLACE_API_KEY:-}'" \
+		-X 'mcpyeahyouknowme/sources/google_places.GooglePlaceAPIKey=${GOOGLE_PLACE_API_KEY:-}' \
+		-X 'mcpyeahyouknowme/sources/brave_search.BraveAPIKey=${BRAVE_API_KEY:-}'" \
 	-o "$OUTFILE" .
