@@ -1,6 +1,6 @@
 # Product Spec
 
-A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides via Google APIs with OAuth 2.0), and **Google Places** (live business and address lookup via the Places API (New)).
+A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides via Google APIs with OAuth 2.0), and **Google Places** (live business and address lookup via the Places API).
 
 ## Building
 
@@ -146,7 +146,7 @@ Current sources:
 |--------|--------|---------|-------------|
 | WhatsApp | `whatsapp_` | `sources/whatsapp/` | Messages, chats, contacts via local SQLite + REST API |
 | Google Suite | `gsuite_` | `sources/gsuite/` | Docs, Sheets, Gmail, Calendar, Tasks, Contacts, and Slides via Google APIs with periodic sync |
-| Google Places | `google_places_` | `sources/google_places/` | Live business and address lookup via the Places API (New); no local cache or indexing |
+| Google Places | `google_places_` | `sources/google_places/` | Live business and address lookup via the Places API; no local cache or indexing |
 
 ### Daemon Management
 
@@ -329,8 +329,8 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 | `gsuite_gmail_get_thread` | Reconstructed Gmail thread by `thread_id`; optional `include_raw`. |
 | `gsuite_gmail_list_recent` | Recently synced Gmail messages; optional folder filter, includes `thread_id`. |
 | `gsuite_gmail_download_attachment` | Download one Gmail attachment on demand by message and attachment IDs. |
-| `google_places_search_places` | Live text search for businesses or addresses using the Places API (New). |
-| `google_places_get_place` | Live place details lookup by `place_id` using the Places API (New). |
+| `google_places_search_places` | Live text search for businesses or addresses using the Places API. |
+| `google_places_get_place` | Live place details lookup by `place_id` using the Places API. |
 
 **Availability:** most source tools are registered only when the source is both `enabled` in config and authenticated. `google_places_*` tools are registered when the binary was built with a non-empty `GOOGLE_PLACE_API_KEY`. `search` is registered when the search store opens successfully on MCP startup. The search index is populated by the core daemon (not by MCP); run `mcpyeahyouknowme reindex` for manual indexing.
 
@@ -431,7 +431,7 @@ Metadata shapes per WhatsApp content type:
 
 ### Google Places Tools
 
-**Read path:** Calls the Places API (New) live over HTTPS. No local caching, SQLite persistence, core daemon sync, or global search indexing.
+**Read path:** Calls the Places API live over HTTPS. No local caching, SQLite persistence, core daemon sync, or global search indexing.
 
 | Tool | Description |
 |------|-------------|

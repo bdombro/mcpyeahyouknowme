@@ -108,7 +108,7 @@ step_6_create_places_api_key() {
   echo "Setting up Places API key..."
 
   if ! gcloud services api-keys describe "$full_key_name" >/dev/null 2>&1; then
-    echo "Creating Places API key (restricted to Places API (New))..."
+    echo "Creating Places API key (restricted to Places API..."
     gcloud services api-keys create \
       --project="$project_id" \
       --key-id="$key_id" \
