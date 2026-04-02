@@ -239,24 +239,24 @@ func registerCalendarTools(src *Source, prefix string, s toolAdder) {
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleCalendarSearch(src, ctx, req)
+		return handleCalendarSearch(ctx, src, req)
 	})
 	s.AddTool(core.NewReadOnlyTool(prefix+"calendar_get_event",
 		core.ToolDescription("Get details of a specific calendar event by ID", `{"event_id":"abc123"}`),
 		mcp.WithString("event_id", mcp.Required(), mcp.Description("Calendar event ID")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleCalendarGetEvent(src, ctx, req)
+		return handleCalendarGetEvent(ctx, src, req)
 	})
 	s.AddTool(core.NewReadOnlyTool(prefix+"calendar_list_upcoming",
 		core.ToolDescription("List upcoming calendar events", `{"days":14,"limit":10}`),
 		mcp.WithNumber("days", mcp.Description("Number of days ahead to look (default 7)")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 20)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleCalendarListUpcoming(src, ctx, req)
+		return handleCalendarListUpcoming(ctx, src, req)
 	})
 }
 
-func handleCalendarSearch(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleCalendarSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, errResult := core.RequireStringArgument(req, "query", `{"query":"dentist","limit":5}`)
 	if errResult != nil {
 		return errResult, nil
@@ -291,7 +291,7 @@ func handleCalendarSearch(src *Source, ctx context.Context, req mcp.CallToolRequ
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
-func handleCalendarGetEvent(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleCalendarGetEvent(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	eventID, errResult := core.RequireStringArgument(req, "event_id", `{"event_id":"abc123"}`)
 	if errResult != nil {
 		return errResult, nil
@@ -321,7 +321,7 @@ func handleCalendarGetEvent(src *Source, ctx context.Context, req mcp.CallToolRe
 	})
 }
 
-func handleCalendarListUpcoming(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleCalendarListUpcoming(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	days := core.IntArg(req.GetArguments(), "days", 7)
 	limit := core.IntArg(req.GetArguments(), "limit", 20)
 	if src.db == nil {

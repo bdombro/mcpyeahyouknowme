@@ -18,10 +18,10 @@ import (
 // errorEmbedder always returns errors, for testing error-path coverage.
 type errorEmbedder struct{}
 
-func (e *errorEmbedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
+func (e *errorEmbedder) EmbedTexts(_ []string, _ int) ([][]float32, error) {
 	return nil, errors.New("embedTexts error")
 }
-func (e *errorEmbedder) EmbedQuery(query string) ([]float32, error) {
+func (e *errorEmbedder) EmbedQuery(_ string) ([]float32, error) {
 	return nil, errors.New("embedQuery error")
 }
 func (e *errorEmbedder) Close() {}
@@ -29,7 +29,7 @@ func (e *errorEmbedder) Close() {}
 // nilSlotEmbedder returns nil for the first entry, real embeddings for the rest.
 type nilSlotEmbedder struct{ mock *mockEmbedder }
 
-func (n *nilSlotEmbedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
+func (n *nilSlotEmbedder) EmbedTexts(texts []string, _ int) ([][]float32, error) {
 	out := make([][]float32, len(texts))
 	for i, t := range texts {
 		if i == 0 {
@@ -59,7 +59,7 @@ type mockEmbedder struct {
 	dim int
 }
 
-func (m *mockEmbedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
+func (m *mockEmbedder) EmbedTexts(texts []string, _ int) ([][]float32, error) {
 	out := make([][]float32, len(texts))
 	for i, t := range texts {
 		out[i] = m.hashEmbed(t)

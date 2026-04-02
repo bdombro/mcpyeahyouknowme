@@ -18,7 +18,6 @@
 #
 # Usage:
 #   ./scripts/install.sh    # From repo root
-#   just install            # If using justfile
 #
 # Prerequisites:
 #   - macOS (required for LaunchAgent daemon)

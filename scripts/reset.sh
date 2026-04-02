@@ -13,7 +13,6 @@
 #
 # Usage:
 #   ./scripts/reset.sh    # From repo root
-#   just reset            # If using justfile
 #
 # Prerequisites:
 #   - mcpyeahyouknowme binary in PATH (run update.sh or install.sh first)

@@ -408,7 +408,7 @@ func TestSendMessage_success(t *testing.T) {
 }
 
 func TestSendMessage_failure(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(500)
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "not connected"})
 	}))
@@ -425,7 +425,7 @@ func TestSendMessage_failure(t *testing.T) {
 }
 
 func TestSendFile_success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "file sent"})
 	}))
 	defer srv.Close()
@@ -441,7 +441,7 @@ func TestSendFile_success(t *testing.T) {
 }
 
 func TestSendAudioMessage_success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "audio sent"})
 	}))
 	defer srv.Close()
@@ -457,7 +457,7 @@ func TestSendAudioMessage_success(t *testing.T) {
 }
 
 func TestDownloadMedia_success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "ok", "path": "/tmp/media.jpg"})
 	}))
 	defer srv.Close()
@@ -473,7 +473,7 @@ func TestDownloadMedia_success(t *testing.T) {
 }
 
 func TestDownloadMedia_failure(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "not found"})
 	}))
 	defer srv.Close()
@@ -641,7 +641,7 @@ func TestBm25MessageSearch_truncation(t *testing.T) {
 // ---------- postSend / DownloadMedia HTTP error paths ----------
 
 func TestPostSend_invalidJSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("not json"))
 	}))
 	defer srv.Close()
@@ -657,7 +657,7 @@ func TestPostSend_invalidJSON(t *testing.T) {
 }
 
 func TestDownloadMedia_invalidJSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("not json"))
 	}))
 	defer srv.Close()

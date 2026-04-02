@@ -222,7 +222,7 @@ func TestMediaDownloader_interface(t *testing.T) {
 	}
 }
 
-func TestAnalyzeOggOpus_invalidData(t *testing.T) {
+func TestAnalyzeOggOpus_invalidData(_ *testing.T) {
 	// Test with empty data
 	duration, waveform, err := analyzeOggOpus([]byte{})
 	// Function may not error on invalid data, just check it returns something

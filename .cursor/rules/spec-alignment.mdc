@@ -1,7 +1,7 @@
 ---
 description: Keep docs/spec.md aligned with code changes
 globs: src/**/*.go
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Spec Alignment

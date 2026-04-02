@@ -11,7 +11,6 @@
 #
 # Usage:
 #   ./scripts/test-mcp.sh    # From repo root
-#   just test-mcp            # If using justfile
 #
 # What it tests:
 #   - MCP server starts and responds to stdio

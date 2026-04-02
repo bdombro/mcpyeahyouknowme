@@ -178,23 +178,23 @@ func registerDocsTools(src *Source, prefix string, s toolAdder) {
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleDocsSearch(src, ctx, req)
+		return handleDocsSearch(ctx, src, req)
 	})
 	s.AddTool(core.NewReadOnlyTool(prefix+"docs_get_document",
 		core.ToolDescription("Get full content of a specific Google Doc by ID", `{"document_id":"1AbcDefGhIj"}`),
 		mcp.WithString("document_id", mcp.Required(), mcp.Description("Google Doc ID")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleDocsGetDocument(src, ctx, req)
+		return handleDocsGetDocument(ctx, src, req)
 	})
 	s.AddTool(core.NewReadOnlyTool(prefix+"docs_list_recent",
 		core.ToolDescription("List recently modified Google Docs", `{"limit":10}`),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 20)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleDocsListRecent(src, ctx, req)
+		return handleDocsListRecent(ctx, src, req)
 	})
 }
 
-func handleDocsSearch(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleDocsSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, errResult := core.RequireStringArgument(req, "query", `{"query":"quarterly roadmap","limit":5}`)
 	if errResult != nil {
 		return errResult, nil
@@ -228,7 +228,7 @@ func handleDocsSearch(src *Source, ctx context.Context, req mcp.CallToolRequest)
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
-func handleDocsGetDocument(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleDocsGetDocument(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	docID, errResult := core.RequireStringArgument(req, "document_id", `{"document_id":"1AbcDefGhIj"}`)
 	if errResult != nil {
 		return errResult, nil
@@ -251,7 +251,7 @@ func handleDocsGetDocument(src *Source, ctx context.Context, req mcp.CallToolReq
 	})
 }
 
-func handleDocsListRecent(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleDocsListRecent(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limit := core.IntArg(req.GetArguments(), "limit", 20)
 	if src.db == nil {
 		return mcp.NewToolResultText("{\"documents\":[],\"count\":0}"), nil

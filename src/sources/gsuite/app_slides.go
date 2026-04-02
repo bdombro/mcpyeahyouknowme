@@ -185,23 +185,23 @@ func registerSlidesTools(src *Source, prefix string, s toolAdder) {
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleSlidesSearch(src, ctx, req)
+		return handleSlidesSearch(ctx, src, req)
 	})
 	s.AddTool(core.NewReadOnlyTool(prefix+"slides_get_presentation",
 		core.ToolDescription("Get full content of a specific Google Slides presentation by ID", `{"presentation_id":"1AbcDefGhIj"}`),
 		mcp.WithString("presentation_id", mcp.Required(), mcp.Description("Presentation ID")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleSlidesGetPresentation(src, ctx, req)
+		return handleSlidesGetPresentation(ctx, src, req)
 	})
 	s.AddTool(core.NewReadOnlyTool(prefix+"slides_list_recent",
 		core.ToolDescription("List recently modified Google Slides presentations", `{"limit":10}`),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 20)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleSlidesListRecent(src, ctx, req)
+		return handleSlidesListRecent(ctx, src, req)
 	})
 }
 
-func handleSlidesSearch(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleSlidesSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, errResult := core.RequireStringArgument(req, "query", `{"query":"launch deck","limit":5}`)
 	if errResult != nil {
 		return errResult, nil
@@ -235,7 +235,7 @@ func handleSlidesSearch(src *Source, ctx context.Context, req mcp.CallToolReques
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
-func handleSlidesGetPresentation(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleSlidesGetPresentation(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	presID, errResult := core.RequireStringArgument(req, "presentation_id", `{"presentation_id":"1AbcDefGhIj"}`)
 	if errResult != nil {
 		return errResult, nil
@@ -259,7 +259,7 @@ func handleSlidesGetPresentation(src *Source, ctx context.Context, req mcp.CallT
 	})
 }
 
-func handleSlidesListRecent(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleSlidesListRecent(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limit := core.IntArg(req.GetArguments(), "limit", 20)
 	if src.db == nil {
 		return mcp.NewToolResultText("{\"presentations\":[],\"count\":0}"), nil

@@ -100,7 +100,7 @@ func getSharedEmbedder(t *testing.T) *Embedder {
 func TestEmbedder_RealONNX(t *testing.T) {
 	emb := getSharedEmbedder(t)
 
-	t.Run("implements interface", func(t *testing.T) {
+	t.Run("implements interface", func(_ *testing.T) {
 		var _ EmbedderInterface = emb
 	})
 
@@ -225,7 +225,7 @@ func TestEmbedder_Close(t *testing.T) {
 
 // ---------- Mock embedder ----------
 
-func TestMockEmbedder_implements_interface(t *testing.T) {
+func TestMockEmbedder_implements_interface(_ *testing.T) {
 	var _ EmbedderInterface = (*mockEmbedder)(nil)
 }
 

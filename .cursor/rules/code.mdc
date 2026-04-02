@@ -10,5 +10,6 @@ alwaysApply: true
 - `<name>_init.go`: constructors, OS/filesystem setup, panic-recovery wrappers, schema init. Excluded from coverage.
 - No business logic in `*_init.go`.
 - Put `// nocov` on a line inside the uncovered block, and only for paths that truly cannot be tested.
+- Unused parameters: remove them and update callers when you own the signature. When a shared `func`/interface forces an argument that only some implementations need, use `_` for that parameter (or omit the name: `func(string)`).
 - Prefer dependency injection (interfaces) over concrete types.
 - Source-package-specific structure lives in `datasources.mdc`.

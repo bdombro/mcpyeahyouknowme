@@ -16,7 +16,6 @@
 #
 # Usage:
 #   ./scripts/uninstall.sh    # From repo root
-#   just uninstall            # If using justfile
 #
 # What is preserved:
 #   - This repository and source code

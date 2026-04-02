@@ -171,18 +171,18 @@ func registerTasksTools(src *Source, prefix string, s toolAdder) {
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleTasksSearch(src, ctx, req)
+		return handleTasksSearch(ctx, src, req)
 	})
 	s.AddTool(core.NewReadOnlyTool(prefix+"tasks_list",
 		core.ToolDescription("List tasks, optionally filtered by status", `{"status":"needsAction","limit":10}`),
 		mcp.WithString("status", mcp.Description("Filter by status: 'needsAction' or 'completed'")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 20)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleTasksList(src, ctx, req)
+		return handleTasksList(ctx, src, req)
 	})
 }
 
-func handleTasksSearch(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleTasksSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, errResult := core.RequireStringArgument(req, "query", `{"query":"submit expense report","limit":5}`)
 	if errResult != nil {
 		return errResult, nil
@@ -214,7 +214,7 @@ func handleTasksSearch(src *Source, ctx context.Context, req mcp.CallToolRequest
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
-func handleTasksList(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleTasksList(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limit := core.IntArg(req.GetArguments(), "limit", 20)
 	status, _ := req.GetArguments()["status"].(string)
 	if src.db == nil {

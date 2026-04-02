@@ -1,12 +1,12 @@
 ---
 description: Testing and coverage standards for Go code
 globs: src/**/*.go
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Testing Standards
 
-- 100% line coverage required on new/modified code (filtered output from `just test`).
+- 100% line coverage required on new/modified code (filtered output from `just test-coverage` or `just test-full`).
 - Build tag `sqlite_fts5` required for all test/build commands.
 - Verify: `cd src && go test -tags "sqlite_fts5" -coverprofile=coverage.out -count=1 ./... && go tool cover -func=coverage.out | grep <fn>`
 

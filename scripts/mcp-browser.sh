@@ -8,7 +8,6 @@
 #
 # Usage:
 #   ./scripts/mcp-browser.sh    # From repo root
-#   just mcp-browser           # If using justfile
 #
 # Prerequisites:
 #   - `npx` available on PATH

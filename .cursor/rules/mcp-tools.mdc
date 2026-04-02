@@ -1,7 +1,7 @@
 ---
 description: MCP tool resilience conventions for Go handlers and tests
 globs: src/**/*.go
-alwaysApply: false
+alwaysApply: true
 ---
 
 # MCP Tool Resilience

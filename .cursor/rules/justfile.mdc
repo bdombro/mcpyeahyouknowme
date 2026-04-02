@@ -1,7 +1,7 @@
 ---
 description: Keep justfile aligned with scripts/*
 globs: justfile,scripts/*.sh
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Justfile / Scripts Alignment

@@ -1,7 +1,7 @@
 ---
 description: Standards for scripts/*.sh
 globs: scripts/*.sh
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Script Standards
@@ -10,9 +10,12 @@ alwaysApply: false
 
 Every script needs a shebang + comment block: one-line description, longer description, usage, prerequisites.
 
+
 ## Structure
 
 Scripts over ~50 lines: break into `step_N_*()` functions with a `main()` entry point called at bottom (see `install.sh`).
+
+Never mention `just`, `justfile`
 
 ## Comments
 

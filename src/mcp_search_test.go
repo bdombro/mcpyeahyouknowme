@@ -18,7 +18,7 @@ import (
 
 type failingSearchStore struct{}
 
-func (failingSearchStore) Search(query string, limit int, sourceFilter, typeFilter string) ([]SearchResult, error) {
+func (failingSearchStore) Search(_ string, _ int, _, _ string) ([]SearchResult, error) {
 	return nil, errors.New("search failed")
 }
 
@@ -27,7 +27,7 @@ func (failingSearchStore) Search(query string, limit int, sourceFilter, typeFilt
 func buildTestMCPServerWithSearch(t *testing.T) *server.MCPServer {
 	t.Helper()
 
-	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 	}))
@@ -170,7 +170,7 @@ func TestMCP_GlobalSearch_typeFilter(t *testing.T) {
 }
 
 func TestMCP_GlobalSearch_noKeywordMatch(t *testing.T) {
-	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 	}))

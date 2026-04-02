@@ -41,7 +41,7 @@ var All = []Descriptor{
 		New:               func(dataDir string) core.DataSource { return google_places.NewSource(dataDir) },
 		IsEnabled:         google_places.IsConfigured,
 		UnavailableReason: "missing build-time GOOGLE_PLACE_API_KEY",
-		IsAuthenticated:   func(dataDir string) bool { return google_places.IsConfigured() },
+		IsAuthenticated:   func(_ string) bool { return google_places.IsConfigured() },
 		IndexGlobally:     false,
 		RunsCore:          false,
 	},

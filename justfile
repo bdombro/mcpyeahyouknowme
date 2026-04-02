@@ -8,7 +8,10 @@
 # Usage:
 #   just             - Show this help
 #   just install     - Full install / update (idempotent)
-#   just test        - Run tests
+#   just test           - Cached tests (no coverage)
+#   just test-coverage  - Cached tests + coverage
+#   just test-full      - No cache + coverage (-count=1)
+#   just lint        - go vet + Staticcheck + Revive
 #   just uninstall   - Complete uninstall
 #
 # Prerequisites:
@@ -32,9 +35,21 @@ google-project-setup project_id:
 install:
     @scripts/install.sh
 
-# Run tests and generate coverage reports
+# Run tests (Go test cache on, no coverage)
 test:
     @scripts/test.sh
+
+# Run tests with coverage (cache on)
+test-coverage:
+    @scripts/test.sh --coverage
+
+# Run tests with coverage and disable test cache (-count=1)
+test-full:
+    @scripts/test.sh --nocache --coverage
+
+# go vet + Staticcheck + Revive (tools pinned in src/go.mod)
+lint:
+    @scripts/lint.sh
 
 # Smoke-test MCP stdio: initialize, initialized, tools/call search
 test-mcp:

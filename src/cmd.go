@@ -33,7 +33,7 @@ func commandTree() []Command {
 			Summary: "Start the MCP server (stdio transport)",
 			Usage:   "mcp",
 			Section: "General",
-			Run: func(args []string) {
+			Run: func(_ []string) {
 				runMcp()
 			},
 		},
@@ -42,7 +42,7 @@ func commandTree() []Command {
 			Summary: "Show install status and data locations",
 			Usage:   "info",
 			Section: "General",
-			Run: func(args []string) {
+			Run: func(_ []string) {
 				runInfo()
 			},
 		},
@@ -68,7 +68,7 @@ func commandTree() []Command {
 			Summary: "Run the daemon process directly (used by LaunchAgent)",
 			Usage:   "core",
 			Section: "Core Daemon",
-			Run: func(args []string) {
+			Run: func(_ []string) {
 				runCore()
 			},
 		},
@@ -77,7 +77,7 @@ func commandTree() []Command {
 			Summary: "Start the core daemon",
 			Usage:   "start",
 			Section: "Core Daemon",
-			Run: func(args []string) {
+			Run: func(_ []string) {
 				runStart()
 			},
 		},
@@ -86,7 +86,7 @@ func commandTree() []Command {
 			Summary: "Stop the core daemon",
 			Usage:   "stop",
 			Section: "Core Daemon",
-			Run: func(args []string) {
+			Run: func(_ []string) {
 				runStop()
 			},
 		},
@@ -95,7 +95,7 @@ func commandTree() []Command {
 			Summary: "Restart the core daemon",
 			Usage:   "restart",
 			Section: "Core Daemon",
-			Run: func(args []string) {
+			Run: func(_ []string) {
 				runRestart()
 			},
 		},
@@ -113,7 +113,7 @@ func commandTree() []Command {
 			Summary: "Instructions for proper uninstall (use ./scripts/uninstall.sh)",
 			Usage:   "uninstall",
 			Section: "Maintenance",
-			Run: func(args []string) {
+			Run: func(_ []string) {
 				runUninstall()
 			},
 		},
@@ -134,7 +134,7 @@ func commandTree() []Command {
 					Name:    "reset",
 					Summary: "Wipe WhatsApp data and session",
 					Usage:   "whatsapp reset",
-					Run: func(args []string) {
+					Run: func(_ []string) {
 						whatsapp.RunReset(dataDir)
 					},
 				},
@@ -149,7 +149,7 @@ func commandTree() []Command {
 					Name:    "login",
 					Summary: "Authenticate with Google and choose apps",
 					Usage:   "gsuite login",
-					Run: func(args []string) {
+					Run: func(_ []string) {
 						gsuite.RunLogin(dataDir)
 					},
 				},
@@ -157,7 +157,7 @@ func commandTree() []Command {
 					Name:    "apps",
 					Summary: "View/toggle enabled Google apps",
 					Usage:   "gsuite apps",
-					Run: func(args []string) {
+					Run: func(_ []string) {
 						gsuite.RunApps(dataDir)
 					},
 				},
@@ -165,7 +165,7 @@ func commandTree() []Command {
 					Name:    "reset",
 					Summary: "Clear all Google Suite data and token",
 					Usage:   "gsuite reset",
-					Run: func(args []string) {
+					Run: func(_ []string) {
 						gsuite.RunReset(dataDir)
 					},
 				},
@@ -185,7 +185,7 @@ func commandTree() []Command {
 			Summary: "Legacy full reset alias (deprecated)",
 			Usage:   "reset",
 			Section: "Legacy (deprecated)",
-			Run: func(args []string) {
+			Run: func(_ []string) {
 				runReset()
 			},
 		},

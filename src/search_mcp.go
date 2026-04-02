@@ -26,7 +26,7 @@ func RegisterSearchTool(s *server.MCPServer, store searchToolStore) {
 		mcp.WithString("source", mcp.Description("Filter to a specific source (e.g. 'whatsapp')")),
 		mcp.WithString("content_type", mcp.Description("Filter by content type: 'chat_name', 'participant', or 'message'")),
 		mcp.WithNumber("limit", mcp.Description("Maximum results to return (default 20)")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		query, errResult := core.RequireStringArgument(req, "query", searchToolExample)
 		if errResult != nil {

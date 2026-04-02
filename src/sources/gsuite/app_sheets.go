@@ -189,23 +189,23 @@ func registerSheetsTools(src *Source, prefix string, s toolAdder) {
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleSheetsSearch(src, ctx, req)
+		return handleSheetsSearch(ctx, src, req)
 	})
 	s.AddTool(core.NewReadOnlyTool(prefix+"sheets_get_spreadsheet",
 		core.ToolDescription("Get full content of a specific Google Sheet by ID", `{"spreadsheet_id":"1AbcDefGhIj"}`),
 		mcp.WithString("spreadsheet_id", mcp.Required(), mcp.Description("Google Spreadsheet ID")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleSheetsGetSpreadsheet(src, ctx, req)
+		return handleSheetsGetSpreadsheet(ctx, src, req)
 	})
 	s.AddTool(core.NewReadOnlyTool(prefix+"sheets_list_recent",
 		core.ToolDescription("List recently modified Google Sheets", `{"limit":10}`),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 20)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
-		return handleSheetsListRecent(src, ctx, req)
+		return handleSheetsListRecent(ctx, src, req)
 	})
 }
 
-func handleSheetsSearch(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleSheetsSearch(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, errResult := core.RequireStringArgument(req, "query", `{"query":"headcount","limit":5}`)
 	if errResult != nil {
 		return errResult, nil
@@ -239,7 +239,7 @@ func handleSheetsSearch(src *Source, ctx context.Context, req mcp.CallToolReques
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
-func handleSheetsGetSpreadsheet(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleSheetsGetSpreadsheet(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	sheetID, errResult := core.RequireStringArgument(req, "spreadsheet_id", `{"spreadsheet_id":"1AbcDefGhIj"}`)
 	if errResult != nil {
 		return errResult, nil
@@ -263,7 +263,7 @@ func handleSheetsGetSpreadsheet(src *Source, ctx context.Context, req mcp.CallTo
 	})
 }
 
-func handleSheetsListRecent(src *Source, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleSheetsListRecent(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limit := core.IntArg(req.GetArguments(), "limit", 20)
 	if src.db == nil {
 		return mcp.NewToolResultText("{\"spreadsheets\":[],\"count\":0}"), nil

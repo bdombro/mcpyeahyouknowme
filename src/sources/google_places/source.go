@@ -28,7 +28,7 @@ func (g *Source) SearchEntries() ([]core.SearchEntry, error) {
 }
 
 // Reset is a no-op because this source owns no local files.
-func (g *Source) Reset(dataDir string) error {
+func (g *Source) Reset(_ string) error {
 	return nil
 }
 

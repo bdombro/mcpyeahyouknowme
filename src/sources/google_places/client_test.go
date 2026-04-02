@@ -72,7 +72,7 @@ func TestSearchPlaces_errorPaths(t *testing.T) {
 	})
 
 	t.Run("http error", func(t *testing.T) {
-		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
 			io.WriteString(w, `{"error":{"message":"permission denied"}}`)
 		})
@@ -83,7 +83,7 @@ func TestSearchPlaces_errorPaths(t *testing.T) {
 	})
 
 	t.Run("invalid json", func(t *testing.T) {
-		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 			io.WriteString(w, `{"places":[`)
 		})
 		_, err := client.SearchPlaces(context.Background(), "coffee", 1)
@@ -158,7 +158,7 @@ func TestGetPlace_errorPaths(t *testing.T) {
 	})
 
 	t.Run("empty place id", func(t *testing.T) {
-		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {})
+		client := newTestClient(t, func(_ http.ResponseWriter, _ *http.Request) {})
 		_, err := client.GetPlace(context.Background(), "  ")
 		if err == nil || !strings.Contains(err.Error(), "place_id is required") {
 			t.Fatalf("err = %v, want place_id required", err)
@@ -166,7 +166,7 @@ func TestGetPlace_errorPaths(t *testing.T) {
 	})
 
 	t.Run("http error", func(t *testing.T) {
-		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 			io.WriteString(w, `{"error":{"message":"place not found"}}`)
 		})
@@ -178,7 +178,7 @@ func TestGetPlace_errorPaths(t *testing.T) {
 }
 
 func TestSearchPlaces_emptyQuery(t *testing.T) {
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {})
+	client := newTestClient(t, func(_ http.ResponseWriter, _ *http.Request) {})
 	_, err := client.SearchPlaces(context.Background(), "  ", 1)
 	if err == nil || !strings.Contains(err.Error(), "query is required") {
 		t.Fatalf("err = %v, want query required", err)

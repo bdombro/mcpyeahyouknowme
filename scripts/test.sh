@@ -3,38 +3,59 @@
 # ============================================
 #
 # Description:
-#   Runs the full Go test suite with coverage tracking, filters results
-#   to focus on core business logic, and generates HTML and Markdown reports.
+#   Runs the Go test suite. --nocache and --coverage are independent.
 #
-# What it generates:
+# What it generates (only with --coverage):
 #   - coverage/coverage.md              - Filtered coverage report (business logic only)
 #   - coverage/coverage_unfiltered.md   - Full coverage report (all files)
 #   - coverage/coverage.html            - Interactive HTML coverage report
 #
 # Usage:
-#   ./scripts/test.sh    # From repo root
-#   just test            # If using justfile
+#   ./scripts/test.sh                      # Cached tests
+#   ./scripts/test.sh --nocache            # Disable test cache (-count=1)
+#   ./scripts/test.sh --coverage           # Cached tests + coverage + reports
+#   ./scripts/test.sh --nocache --coverage # Disable cache + coverage + reports
 #
 # Prerequisites:
 #   - Go 1.26+ with CGo enabled
 #   - SQLite FTS5 support
 #
 # Notes:
-#   - Uses -count=1 to disable test caching
-#   - Runs silently; check coverage/ directory for results
+#   - Without --coverage: no -coverprofile, no files under coverage/
+#   - --nocache adds -count=1
+#   - Runs silently; see coverage/ when using --coverage
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLI_DIR="$ROOT/src"
+NOCACHE=false
+COVERAGE=false
+for arg in "$@"; do
+	case "$arg" in
+		--nocache) NOCACHE=true ;;
+		--coverage) COVERAGE=true ;;
+		*)
+			echo "usage: $0 [--nocache] [--coverage]" >&2
+			exit 2
+			;;
+	esac
+done
 
 run_tests() {
-	# Run all Go tests with full coverage profiling
-	mkdir -p "$ROOT/coverage"
+	# Run Go tests. --nocache → -count=1. --coverage → -coverprofile + reports in main.
+	if $COVERAGE; then
+		mkdir -p "$ROOT/coverage"
+	fi
 	cd "$CLI_DIR"
-	go test -tags "sqlite_fts5" \
-		-coverprofile="$ROOT/coverage/coverage_unfiltered.txt" \
-		-count=1 ./...
+	local -a args=(-tags "sqlite_fts5")
+	if $NOCACHE; then
+		args+=(-count=1)
+	fi
+	if $COVERAGE; then
+		args+=(-coverprofile="$ROOT/coverage/coverage_unfiltered.txt")
+	fi
+	go test "${args[@]}" ./...
 }
 
 filter_coverage() {
@@ -62,56 +83,11 @@ filter_coverage() {
 		| grep -v '_init\.go:' \
 		> "$filtered.tmp"
 
-	# Step 2: Collect // nocov line numbers and nocov function ranges from source.
+	# Step 2: Collect // nocov line numbers and nocov function ranges from source
+	# (go/parser via scripts/nocovmeta.go).
 	local nocov_meta
 	nocov_meta=$(mktemp)
-	python3 - "$CLI_DIR" > "$nocov_meta" <<'PY'
-import sys
-from pathlib import Path
-
-cli_dir = Path(sys.argv[1])
-patterns = [
-    "*.go",
-    "sources/whatsapp/*.go",
-    "sources/gsuite/*.go",
-    "sources/google_places/*.go",
-]
-
-def emit_function_range(cov_path: str, start_line: int, lines: list[str]) -> None:
-    depth = 0
-    started = False
-    end_line = start_line
-    for line_no in range(start_line, len(lines) + 1):
-        text = lines[line_no - 1]
-        opens = text.count("{")
-        closes = text.count("}")
-        if opens > 0:
-            started = True
-        depth += opens
-        depth -= closes
-        if started and depth == 0:
-            end_line = line_no
-            break
-    print(f"func\t{cov_path}\t{start_line}\t{end_line}")
-
-seen = set()
-for pattern in patterns:
-    for path in sorted(cli_dir.glob(pattern)):
-        if path in seen:
-            continue
-        seen.add(path)
-        if path.name.endswith("_test.go") or path.name.endswith("_init.go"):
-            continue
-
-        cov_path = f"mcpyeahyouknowme/{path.relative_to(cli_dir).as_posix()}"
-        lines = path.read_text(encoding="utf-8").splitlines()
-        for idx, line in enumerate(lines, start=1):
-            if "// nocov" not in line:
-                continue
-            print(f"line\t{cov_path}\t{idx}")
-            if line.lstrip().startswith("func "):
-                emit_function_range(cov_path, idx, lines)
-PY
+	(cd "$ROOT/scripts" && go run . "$CLI_DIR") > "$nocov_meta"
 
 	# Step 3: Remove uncovered blocks whose line range contains a // nocov comment
 	# or sits inside a function whose signature is annotated with // nocov.
@@ -257,10 +233,12 @@ cleanup_txt() {
 }
 
 main() {
+	run_tests
+	if ! $COVERAGE; then return; fi
+
 	local raw_txt="$ROOT/coverage/coverage_unfiltered.txt"
 	local cov_txt="$ROOT/coverage/coverage.txt"
 
-	run_tests
 	filter_coverage
 	generate_report
 	generate_markdown "$raw_txt" "$ROOT/coverage/coverage_unfiltered.md"

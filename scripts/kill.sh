@@ -13,7 +13,6 @@
 #
 # Usage:
 #   ./scripts/kill.sh    # From repo root
-#   just kill            # If using justfile
 #
 # When to use:
 #   - Process is frozen/unresponsive

@@ -9,7 +9,7 @@ import (
 )
 
 func TestMCP_SearchPlaces_success(t *testing.T) {
-	src := newTestSource(t, func(w http.ResponseWriter, r *http.Request) {
+	src := newTestSource(t, func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `{
 			"places": [{
 				"id": "place-1",
@@ -41,7 +41,7 @@ func TestMCP_SearchPlaces_success(t *testing.T) {
 }
 
 func TestMCP_GetPlace_success(t *testing.T) {
-	src := newTestSource(t, func(w http.ResponseWriter, r *http.Request) {
+	src := newTestSource(t, func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `{
 			"id": "place-1",
 			"displayName": {"text": "Cafe"},
@@ -82,7 +82,7 @@ func TestMCP_missingKey(t *testing.T) {
 }
 
 func TestMCP_upstreamError(t *testing.T) {
-	src := newTestSource(t, func(w http.ResponseWriter, r *http.Request) {
+	src := newTestSource(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		io.WriteString(w, `{"error":{"message":"backend exploded"}}`)
 	})
@@ -100,7 +100,7 @@ func TestMCP_upstreamError(t *testing.T) {
 }
 
 func TestMCP_missingRequiredArgs(t *testing.T) {
-	src := newTestSource(t, func(w http.ResponseWriter, r *http.Request) {
+	src := newTestSource(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatal("unexpected upstream call")
 	})
 	s := buildMCPServer(t, src)

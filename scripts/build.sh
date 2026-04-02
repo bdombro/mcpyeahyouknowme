@@ -11,7 +11,6 @@
 #
 # Usage:
 #   ./scripts/build.sh    # From repo root
-#   just build            # If using justfile
 #
 # Prerequisites:
 #   - Go 1.26+ with CGo enabled

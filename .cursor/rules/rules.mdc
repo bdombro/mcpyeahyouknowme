@@ -1,7 +1,7 @@
 ---
 description: Standards for writing .cursor/rules/*.mdc files
 globs: .cursor/rules/*.mdc
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Rule Authoring Standards

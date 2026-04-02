@@ -19,7 +19,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 	s.AddTool(core.NewReadOnlyTool(p+"search_contacts",
 		core.ToolDescription("Search WhatsApp contacts by name or phone number.", `{"query":"alice"}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search term to match against contact names or phone numbers")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		q, errResult := core.RequireStringArgument(req, "query", `{"query":"alice"}`)
 		if errResult != nil {
 			return errResult, nil
@@ -38,7 +38,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		mcp.WithNumber("page", mcp.Description("Page number for pagination (default 0)")),
 		mcp.WithBoolean("include_last_message", mcp.Description("Whether to include the last message in each chat (default true)")),
 		mcp.WithString("sort_by", mcp.Description("Sort by 'last_active' or 'name' (default 'last_active')")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		query, _ := args["query"].(string)
 		limit := core.IntArg(args, "limit", 20)
@@ -59,7 +59,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		core.ToolDescription("Get WhatsApp chat metadata by JID.", `{"chat_jid":"120363025246810101@g.us"}`),
 		mcp.WithString("chat_jid", mcp.Required(), mcp.Description("The JID of the chat to retrieve")),
 		mcp.WithBoolean("include_last_message", mcp.Description("Whether to include the last message (default true)")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		jid, errResult := core.RequireStringArgument(req, "chat_jid", `{"chat_jid":"120363025246810101@g.us"}`)
 		if errResult != nil {
 			return errResult, nil
@@ -75,7 +75,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 	s.AddTool(core.NewReadOnlyTool(p+"get_direct_chat_by_contact",
 		core.ToolDescription("Get WhatsApp chat metadata by sender phone number.", `{"sender_phone_number":"15551234567"}`),
 		mcp.WithString("sender_phone_number", mcp.Required(), mcp.Description("The phone number to search for")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		phone, errResult := core.RequireStringArgument(req, "sender_phone_number", `{"sender_phone_number":"15551234567"}`)
 		if errResult != nil {
 			return errResult, nil
@@ -92,7 +92,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		mcp.WithString("jid", mcp.Required(), mcp.Description("The contact's JID to search for")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of chats to return (default 20)")),
 		mcp.WithNumber("page", mcp.Description("Page number for pagination (default 0)")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		jid, errResult := core.RequireStringArgument(req, "jid", `{"jid":"15551234567@s.whatsapp.net","limit":10}`)
 		if errResult != nil {
 			return errResult, nil
@@ -121,7 +121,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		mcp.WithBoolean("include_context", mcp.Description("Include messages before and after matches (default true)")),
 		mcp.WithNumber("context_before", mcp.Description("Number of messages to include before each match (default 1)")),
 		mcp.WithNumber("context_after", mcp.Description("Number of messages to include after each match (default 1)")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		after, _ := args["after"].(string)
 		before, _ := args["before"].(string)
@@ -145,7 +145,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		mcp.WithString("message_id", mcp.Required(), mcp.Description("The ID of the message to get context for")),
 		mcp.WithNumber("before", mcp.Description("Number of messages before (default 5)")),
 		mcp.WithNumber("after", mcp.Description("Number of messages after (default 5)")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		msgID, errResult := core.RequireStringArgument(req, "message_id", `{"message_id":"ABCD1234","before":3,"after":3}`)
 		if errResult != nil {
 			return errResult, nil
@@ -163,7 +163,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 	s.AddTool(core.NewReadOnlyTool(p+"get_last_interaction",
 		core.ToolDescription("Get most recent WhatsApp message involving the contact.", `{"jid":"15551234567@s.whatsapp.net"}`),
 		mcp.WithString("jid", mcp.Required(), mcp.Description("The JID of the contact")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		jid, errResult := core.RequireStringArgument(req, "jid", `{"jid":"15551234567@s.whatsapp.net"}`)
 		if errResult != nil {
 			return errResult, nil
@@ -181,7 +181,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		core.ToolDescription("Send a WhatsApp message to a person or group. For group chats use the JID.", `{"recipient":"15551234567","message":"On my way"}`),
 		mcp.WithString("recipient", mcp.Required(), mcp.Description("Phone number with country code (no +) or JID")),
 		mcp.WithString("message", mcp.Required(), mcp.Description("The message text to send")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		recipient, errResult := core.RequireStringArgument(req, "recipient", `{"recipient":"15551234567","message":"On my way"}`)
 		if errResult != nil {
 			return errResult, nil
@@ -201,7 +201,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		core.ToolDescription("Send a file via WhatsApp. For group messages use the JID.", `{"recipient":"15551234567","media_path":"/tmp/photo.jpg"}`),
 		mcp.WithString("recipient", mcp.Required(), mcp.Description("Phone number with country code (no +) or JID")),
 		mcp.WithString("media_path", mcp.Required(), mcp.Description("Absolute path to the file to send")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		recipient, errResult := core.RequireStringArgument(req, "recipient", `{"recipient":"15551234567","media_path":"/tmp/photo.jpg"}`)
 		if errResult != nil {
 			return errResult, nil
@@ -221,7 +221,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		core.ToolDescription("Send an audio file as a WhatsApp voice message. Non-ogg files require ffmpeg for conversion.", `{"recipient":"15551234567","media_path":"/tmp/voice.ogg"}`),
 		mcp.WithString("recipient", mcp.Required(), mcp.Description("Phone number with country code (no +) or JID")),
 		mcp.WithString("media_path", mcp.Required(), mcp.Description("Absolute path to the audio file")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		recipient, errResult := core.RequireStringArgument(req, "recipient", `{"recipient":"15551234567","media_path":"/tmp/voice.ogg"}`)
 		if errResult != nil {
 			return errResult, nil
@@ -243,7 +243,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		core.ToolDescription("Download media from a WhatsApp message and get the local file path.", `{"message_id":"ABCD1234","chat_jid":"15551234567@s.whatsapp.net"}`),
 		mcp.WithString("message_id", mcp.Required(), mcp.Description("The ID of the message containing the media")),
 		mcp.WithString("chat_jid", mcp.Required(), mcp.Description("The JID of the chat containing the message")),
-	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		msgID, errResult := core.RequireStringArgument(req, "message_id", `{"message_id":"ABCD1234","chat_jid":"15551234567@s.whatsapp.net"}`)
 		if errResult != nil {
 			return errResult, nil
