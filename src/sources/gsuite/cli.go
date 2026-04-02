@@ -289,7 +289,7 @@ func InfoLines(dataDir string) []string {
 	if !sc.Enabled {
 		lines = append(lines, "   Status:     disabled")
 		for _, app := range allApps {
-			lines = append(lines, fmt.Sprintf("   %-12s disabled", cliAppName(app)+":"))
+			lines = append(lines, fmt.Sprintf("   %-11s disabled", cliAppName(app)+":"))
 		}
 		return lines
 	}
@@ -322,16 +322,16 @@ func InfoLines(dataDir string) []string {
 	}
 	for _, app := range allApps {
 		if !src.apps.IsEnabled(app.name) {
-			lines = append(lines, fmt.Sprintf("   %-12s disabled", cliAppName(app)+":"))
+			lines = append(lines, fmt.Sprintf("   %-11s disabled", cliAppName(app)+":"))
 			continue
 		}
 		if src.db == nil {
-			lines = append(lines, fmt.Sprintf("   %-12s no database yet", cliAppName(app)+":"))
+			lines = append(lines, fmt.Sprintf("   %-11s no database yet", cliAppName(app)+":"))
 			continue
 		}
 		count, err := app.countRows(src.db)
 		if err != nil {
-			lines = append(lines, fmt.Sprintf("   %-12s unable to count", cliAppName(app)+":"))
+			lines = append(lines, fmt.Sprintf("   %-11s unable to count", cliAppName(app)+":"))
 			continue
 		}
 		syncStatus := src.getSyncStatus(app.name)
@@ -340,7 +340,7 @@ func InfoLines(dataDir string) []string {
 		if size, ok := appSizes[app.name]; ok && size > 0 {
 			statusStr = fmt.Sprintf("%s — ~%s", statusStr, core.FormatSizeMB(size))
 		}
-		lines = append(lines, fmt.Sprintf("   %-12s %s", cliAppName(app)+":", statusStr))
+		lines = append(lines, fmt.Sprintf("   %-11s %s", cliAppName(app)+":", statusStr))
 	}
 	return lines
 }
