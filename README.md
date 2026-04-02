@@ -1,6 +1,6 @@
 # MCP Bridge
 
-A pluggable [Model Context Protocol](https://modelcontextprotocol.io/) server that gives AI assistants access to personal data sources. Currently supports **WhatsApp** (search/read messages, search contacts, send messages), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides), and **Google Places** (live business/address lookup), with the architecture ready for additional sources.
+A pluggable [Model Context Protocol](https://modelcontextprotocol.io/) server that gives AI assistants access to personal data sources. Currently supports **WhatsApp** (search/read messages, search contacts, send messages), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides), **Google Places** (live business/address lookup), and **Brave Search** (live web search and URL metadata lookup), with the architecture ready for additional sources.
 
 Data is stored locally in SQLite and only sent to an LLM when accessed through MCP tools. Each data source registers its own namespaced tools (e.g. `whatsapp_list_chats`, `whatsapp_send_message`).
 
@@ -108,7 +108,11 @@ Google Suite uses a desktop OAuth client with PKCE. Google still expects both `G
 
    `just google-project-setup` will also create a restricted Places API key and write it to `.env` as `GOOGLE_PLACE_API_KEY`. When present during `just build`, it enables the `google_places_*` MCP tools for live business and address lookup.
 
-5. **Authenticate and enable the apps you want**
+5. **Build-time Brave Search API key** (optional)
+
+   Set `BRAVE_API_KEY` in `.env` before building to enable the `brave_search_*` MCP tools for live web search and URL metadata lookup. Get a key from the [Brave Search API Dashboard](https://api-dashboard.search.brave.com/).
+
+6. **Authenticate and enable the apps you want**
 
    ```bash
    mcpyeahyouknowme gsuite login
@@ -116,13 +120,13 @@ Google Suite uses a desktop OAuth client with PKCE. Google still expects both `G
 
    This opens your browser for OAuth authorization, stores the token in `~/.local/share/mcpyeahyouknowme/gsuite_token.json`, stores the account email in `~/.local/share/mcpyeahyouknowme/gsuite_email.txt`, and prompts you to choose which Google apps to enable. Apps start disabled until you explicitly enable them.
 
-6. **Manage enabled apps**
+7. **Manage enabled apps**
 
    ```bash
    mcpyeahyouknowme gsuite apps
    ```
 
-7. **Reset Google Suite data** (optional)
+8. **Reset Google Suite data** (optional)
 
    ```bash
    mcpyeahyouknowme gsuite reset
@@ -134,6 +138,7 @@ Google Suite uses a desktop OAuth client with PKCE. Google still expects both `G
 
 | Variable | Required | Description |
 |----------|----------|-------------|
+| `BRAVE_API_KEY` | Optional | Build-time Brave Search API key that enables the `brave_search_*` tools |
 | `GOOGLE_CLIENT_ID` | Optional | Desktop OAuth client ID from Google Cloud Console; required only if you want the `gsuite` source available |
 | `GOOGLE_CLIENT_SECRET` | Optional | Matching desktop OAuth client secret; required only if you want the `gsuite` source available |
 | `GOOGLE_PLACE_API_KEY` | Optional | Build-time Places API key that enables the `google_places_*` tools |

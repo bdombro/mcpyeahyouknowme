@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"syscall"
 	"testing"
 
 	"mcpyeahyouknowme/core"
@@ -161,5 +162,33 @@ func TestShouldRestartSource(t *testing.T) {
 				t.Fatalf("shouldRestartSource() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// Verifies handleCoreSignal runs an immediate index pass for SIGUSR1 without stopping the daemon.
+func TestHandleCoreSignal_reindex(t *testing.T) {
+	running := map[string]context.CancelFunc{}
+	indexCalled := false
+
+	if stop := handleCoreSignal(syscall.SIGUSR1, running, nil, nil, func() { indexCalled = true }); stop {
+		t.Fatal("expected daemon to keep running after SIGUSR1")
+	}
+	if !indexCalled {
+		t.Fatal("expected reindex callback to run")
+	}
+}
+
+// Verifies handleCoreSignal cancels running sources and stops the daemon for termination signals.
+func TestHandleCoreSignal_shutdown(t *testing.T) {
+	cancelled := false
+	running := map[string]context.CancelFunc{
+		"stub": func() { cancelled = true },
+	}
+
+	if stop := handleCoreSignal(syscall.SIGTERM, running, nil, nil, func() {}); !stop {
+		t.Fatal("expected daemon to stop after SIGTERM")
+	}
+	if !cancelled {
+		t.Fatal("expected running sources to be cancelled")
 	}
 }

@@ -11,6 +11,7 @@ import (
 
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/brave_search"
+	"mcpyeahyouknowme/sources/browser_history"
 	"mcpyeahyouknowme/sources/google_places"
 	"mcpyeahyouknowme/sources/gsuite"
 	"mcpyeahyouknowme/sources/notebook"
@@ -81,11 +82,13 @@ func renderInfo() string {
 
 	writeSearchIndexSection(&b, dDir, daemonRunning)
 
-	writeSourceSection(&b, "\U0001f4f2 WhatsApp", "whatsapp", dDir, whatsapp.InfoLines)
-	writeSourceSection(&b, "\U0001f537 Google Suite", "gsuite", dDir, gsuite.InfoLines)
-	writeSourceSection(&b, "\U0001f4cd Google Places", "google_places", dDir, google_places.InfoLines)
+	// Renders source sections in manual alphabetical order by source key.
 	writeSourceSection(&b, "\U0001f50d Brave Search", "brave_search", dDir, brave_search.InfoLines)
+	writeSourceSection(&b, "\U0001f5c2\ufe0f Browser History", "browser_history", dDir, browser_history.InfoLines)
+	writeSourceSection(&b, "\U0001f4cd Google Places", "google_places", dDir, google_places.InfoLines)
+	writeSourceSection(&b, "\U0001f537 Google Suite", "gsuite", dDir, gsuite.InfoLines)
 	writeSourceSection(&b, "\U0001f4dd Notebook", "notebook", dDir, notebook.InfoLines)
+	writeSourceSection(&b, "\U0001f4f2 WhatsApp", "whatsapp", dDir, whatsapp.InfoLines)
 
 	return b.String()
 }

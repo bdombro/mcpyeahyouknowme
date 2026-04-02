@@ -69,25 +69,18 @@ func runCore() {
 
 	runIndex()
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
 
 	for {
 		select {
-		case <-sigCh:
-			for _, cancel := range running {
-				cancel()
+		case sig := <-sigCh:
+			if handleCoreSignal(sig, running, searchStore, embedder, runIndex) {
+				return
 			}
-			if searchStore != nil {
-				searchStore.Close()
-			}
-			if embedder != nil {
-				embedder.Close()
-			}
-			return
 		case <-ticker.C:
 			newCfg := loadConfig(dir)
 			for name, sc := range newCfg.Sources {
@@ -126,6 +119,24 @@ func runCore() {
 			runIndex()
 		}
 	}
+}
+
+// handleCoreSignal runs an immediate index pass for SIGUSR1 and otherwise performs daemon shutdown cleanup.
+func handleCoreSignal(sig os.Signal, running map[string]context.CancelFunc, searchStore *SearchStore, embedder *Embedder, runIndex func()) bool {
+	if sig == syscall.SIGUSR1 {
+		runIndex()
+		return false
+	}
+	for _, cancel := range running {
+		cancel()
+	}
+	if searchStore != nil {
+		searchStore.Close()
+	}
+	if embedder != nil {
+		embedder.Close()
+	}
+	return true
 }
 
 // shouldRestartSource reports whether auth changed while enable/reset state stayed stable, so core should rebuild the source.

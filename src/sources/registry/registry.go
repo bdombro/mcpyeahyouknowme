@@ -4,6 +4,7 @@ package registry
 import (
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/brave_search"
+	"mcpyeahyouknowme/sources/browser_history"
 	"mcpyeahyouknowme/sources/google_places"
 	"mcpyeahyouknowme/sources/gsuite"
 	"mcpyeahyouknowme/sources/notebook"
@@ -47,6 +48,13 @@ var All = []Descriptor{
 		IsAuthenticated:   func(_ string) bool { return google_places.IsConfigured() },
 		IndexGlobally:     false,
 		RunsCore:          false,
+	},
+	{
+		Name:            "browser_history",
+		New:             func(dataDir string) core.DataSource { return browser_history.NewSource(dataDir) },
+		IsAuthenticated: func(dataDir string) bool { return browser_history.IsConfigured(dataDir) },
+		IndexGlobally:   true,
+		RunsCore:        false,
 	},
 	{
 		Name:              "brave_search",

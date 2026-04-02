@@ -127,13 +127,11 @@ func runCompletions(shell string) {
 // printBashCompletions writes the bash completion function so users can source it in their shell.
 func printBashCompletions() {
 	topLevel := strings.Join(commandNames(topLevelCommands()), " ")
-	whatsAppSubs := strings.Join(commandNames(findCommand(topLevelCommands(), "whatsapp").Subcommands), " ")
-	gsuiteSubs := strings.Join(commandNames(findCommand(topLevelCommands(), "gsuite").Subcommands), " ")
-	notebookSubs := strings.Join(commandNames(findCommand(topLevelCommands(), "notebook").Subcommands), " ")
 
 	fmt.Printf(`_mcpyeahyouknowme() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local cmd="${COMP_WORDS[1]}"
+    local subcmd="${COMP_WORDS[2]}"
 
     if [[ $COMP_CWORD -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "%s" -- "$cur") )
@@ -142,59 +140,36 @@ func printBashCompletions() {
 
     if [[ $COMP_CWORD -eq 2 ]]; then
         case "$cmd" in
-            whatsapp)
-                COMPREPLY=( $(compgen -W "%s" -- "$cur") )
-                ;;
-            gsuite)
-                COMPREPLY=( $(compgen -W "%s" -- "$cur") )
-                ;;
-            notebook)
-                COMPREPLY=( $(compgen -W "%s" -- "$cur") )
-                ;;
-            completions)
-                COMPREPLY=( $(compgen -W "%s" -- "$cur") )
-                ;;
+%s
+        esac
+    elif [[ $COMP_CWORD -eq 3 ]]; then
+        case "$cmd:$subcmd" in
+%s
         esac
     fi
 }
 complete -o nospace -F _mcpyeahyouknowme mcpyeahyouknowme
-`, topLevel, whatsAppSubs, gsuiteSubs, notebookSubs, shellCompletionWords())
+`, topLevel, bashSecondWordCases(topLevelCommands()), bashThirdWordCases(topLevelCommands()))
 }
 
 // printZshCompletions writes the zsh completion function so users can source it in their shell.
 func printZshCompletions() {
 	fmt.Printf(`_mcpyeahyouknowme() {
-    local -a cmds wa_cmds gs_cmds nb_cmds comp_args
+    local -a cmds values
 
     cmds=(
-%s
-    )
-    wa_cmds=(
-%s
-    )
-    gs_cmds=(
-%s
-    )
-    nb_cmds=(
-%s
-    )
-    comp_args=(
 %s
     )
 
     if (( CURRENT == 2 )); then
         _describe -t commands 'command' cmds
-    elif (( CURRENT == 3 )) && [[ "${words[2]}" == whatsapp ]]; then
-        _describe -t wa_commands 'whatsapp command' wa_cmds
-    elif (( CURRENT == 3 )) && [[ "${words[2]}" == gsuite ]]; then
-        _describe -t gs_commands 'gsuite command' gs_cmds
-    elif (( CURRENT == 3 )) && [[ "${words[2]}" == notebook ]]; then
-        _describe -t nb_commands 'notebook command' nb_cmds
-    else
+    elif (( CURRENT == 3 )); then
         case "${words[2]}" in
-            completions)
-                _describe -t shells 'shell' comp_args
-                ;;
+%s
+        esac
+    elif (( CURRENT == 4 )); then
+        case "${words[2]}:${words[3]}" in
+%s
         esac
     fi
 }
@@ -203,27 +178,102 @@ if (( ! $+functions[compdef] )); then
     autoload -Uz compinit && compinit -C
 fi
 compdef _mcpyeahyouknowme mcpyeahyouknowme
-`, zshEntries(topLevelCommands()),
-		zshEntries(findCommand(topLevelCommands(), "whatsapp").Subcommands),
-		zshEntries(findCommand(topLevelCommands(), "gsuite").Subcommands),
-		zshEntries(findCommand(topLevelCommands(), "notebook").Subcommands),
-		zshChoiceEntries(findCommand(topLevelCommands(), "completions").ArgChoices))
+`, zshEntries(topLevelCommands(), "        "),
+		zshSecondWordCases(topLevelCommands()),
+		zshThirdWordCases(topLevelCommands()))
 }
 
-// zshEntries formats command metadata as zsh `_describe` entries for completion menus.
-func zshEntries(commands []Command) string {
+// bashSecondWordCases renders bash completion branches for top-level subcommands and constrained arguments.
+func bashSecondWordCases(commands []Command) string {
 	lines := make([]string, 0, len(commands))
 	for _, cmd := range commands {
-		lines = append(lines, fmt.Sprintf("        '%s:%s'", cmd.Name, cmd.Summary))
+		switch {
+		case len(cmd.Subcommands) > 0:
+			lines = append(lines, fmt.Sprintf(`            %s)
+                COMPREPLY=( $(compgen -W "%s" -- "$cur") )
+                ;;`, cmd.Name, strings.Join(commandNames(cmd.Subcommands), " ")))
+		case len(cmd.ArgChoices) > 0:
+			lines = append(lines, fmt.Sprintf(`            %s)
+                COMPREPLY=( $(compgen -W "%s" -- "$cur") )
+                ;;`, cmd.Name, strings.Join(choiceValues(cmd.ArgChoices), " ")))
+		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-// zshChoiceEntries formats argument choices as zsh `_describe` entries for completion menus.
-func zshChoiceEntries(choices []Choice) string {
+// bashThirdWordCases renders bash completion branches for subcommand arguments with explicit choice sets.
+func bashThirdWordCases(commands []Command) string {
+	lines := []string{}
+	for _, cmd := range commands {
+		for _, subcmd := range cmd.Subcommands {
+			if len(subcmd.ArgChoices) == 0 {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf(`            %s:%s)
+                COMPREPLY=( $(compgen -W "%s" -- "$cur") )
+                ;;`, cmd.Name, subcmd.Name, strings.Join(choiceValues(subcmd.ArgChoices), " ")))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// zshSecondWordCases renders zsh completion branches for top-level subcommands and constrained arguments.
+func zshSecondWordCases(commands []Command) string {
+	lines := make([]string, 0, len(commands))
+	for _, cmd := range commands {
+		switch {
+		case len(cmd.Subcommands) > 0:
+			lines = append(lines, fmt.Sprintf(`            %s)
+                values=(
+%s
+                )
+                _describe -t subcommands 'subcommand' values
+                ;;`, cmd.Name, zshEntries(cmd.Subcommands, "                    ")))
+		case len(cmd.ArgChoices) > 0:
+			lines = append(lines, fmt.Sprintf(`            %s)
+                values=(
+%s
+                )
+                _describe -t arguments 'argument' values
+                ;;`, cmd.Name, zshChoiceEntries(cmd.ArgChoices, "                    ")))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// zshThirdWordCases renders zsh completion branches for subcommand arguments with explicit choice sets.
+func zshThirdWordCases(commands []Command) string {
+	lines := []string{}
+	for _, cmd := range commands {
+		for _, subcmd := range cmd.Subcommands {
+			if len(subcmd.ArgChoices) == 0 {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf(`            %s:%s)
+                values=(
+%s
+                )
+                _describe -t arguments 'argument' values
+                ;;`, cmd.Name, subcmd.Name, zshChoiceEntries(subcmd.ArgChoices, "                    ")))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// zshEntries formats command metadata as zsh `_describe` entries so generated branches can reuse one renderer.
+func zshEntries(commands []Command, indent string) string {
+	lines := make([]string, 0, len(commands))
+	for _, cmd := range commands {
+		lines = append(lines, fmt.Sprintf("%s'%s:%s'", indent, cmd.Name, cmd.Summary))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// zshChoiceEntries formats argument choices as zsh `_describe` entries so explicit CLI choices stay discoverable.
+func zshChoiceEntries(choices []Choice, indent string) string {
 	lines := make([]string, 0, len(choices))
 	for _, choice := range choices {
-		lines = append(lines, fmt.Sprintf("        '%s:%s'", choice.Value, choice.Summary))
+		lines = append(lines, fmt.Sprintf("%s'%s:%s'", indent, choice.Value, choice.Summary))
 	}
 	return strings.Join(lines, "\n")
 }

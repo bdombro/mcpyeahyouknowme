@@ -1,7 +1,10 @@
 package main
 
 import (
+	"io"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -26,20 +29,21 @@ func TestPlistPath(t *testing.T) {
 // Verifies the top-level command list still contains the expected public CLI surface.
 func TestCommandsListCompleteness(t *testing.T) {
 	expected := map[string]bool{
-		"mcp":         true,
-		"info":        true,
-		"completions": true,
-		"core":        true,
-		"start":       true,
-		"stop":        true,
-		"restart":     true,
-		"reindex":     true,
-		"uninstall":   true,
-		"whatsapp":    true,
-		"gsuite":      true,
-		"notebook":    true,
-		"login":       true,
-		"reset":       true,
+		"mcp":             true,
+		"info":            true,
+		"completions":     true,
+		"core":            true,
+		"start":           true,
+		"stop":            true,
+		"restart":         true,
+		"reindex":         true,
+		"uninstall":       true,
+		"whatsapp":        true,
+		"gsuite":          true,
+		"browser_history": true,
+		"notebook":        true,
+		"login":           true,
+		"reset":           true,
 	}
 
 	for _, cmd := range commandNames(topLevelCommands()) {
@@ -60,6 +64,66 @@ func TestPlistName(t *testing.T) {
 	if plistName != expectedName {
 		t.Errorf("plistName = %q, want %q", plistName, expectedName)
 	}
+}
+
+// Verifies generated bash completions stay aligned with dynamic command metadata and constrained arguments.
+func TestPrintBashCompletions_ContainsBrowserHistoryOptions(t *testing.T) {
+	out := captureStdout(t, printBashCompletions)
+	for _, want := range []string{
+		`browser_history)`,
+		`compgen -W "enable reset"`,
+		`browser_history:enable)`,
+		`compgen -W "chrome brave"`,
+		`completions)`,
+		`compgen -W "bash zsh"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("printBashCompletions() missing %q in output:\n%s", want, out)
+		}
+	}
+}
+
+// Verifies generated zsh completions stay aligned with dynamic command metadata and constrained arguments.
+func TestPrintZshCompletions_ContainsBrowserHistoryOptions(t *testing.T) {
+	out := captureStdout(t, printZshCompletions)
+	for _, want := range []string{
+		`browser_history)`,
+		`'enable:Enable history indexing for chrome or brave'`,
+		`browser_history:enable)`,
+		`'chrome:Google Chrome history'`,
+		`'brave:Brave Browser history'`,
+		`'bash:Bash completions'`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("printZshCompletions() missing %q in output:\n%s", want, out)
+		}
+	}
+}
+
+// Returns stdout from fn so completion-rendering tests can assert on generated shell scripts.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() {
+		os.Stdout = oldStdout
+	}()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	return string(out)
 }
 
 // Returns whether path contains component so plist-path assertions can stay platform-safe.

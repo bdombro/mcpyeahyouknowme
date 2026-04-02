@@ -1,6 +1,6 @@
 # Product Spec
 
-A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides via Google APIs with OAuth 2.0), **Google Places** (live business and address lookup via the Places API), and **Brave Search** (live web search via the Brave Search API).
+A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides via Google APIs with OAuth 2.0), **Google Places** (live business and address lookup via the Places API), **Brave Search** (live web search via the Brave Search API), and **Browser History** (local Chrome/Brave history snapshots).
 
 ## Building
 
@@ -94,9 +94,21 @@ Manages local directories indexed by the `notebook` source.
 - **`list`** — Prints all configured directories with per-type file counts (markdown, PDF, image).
 - **`reset`** — Clears all notebook configuration and deletes `notebook.db`. Requires interactive confirmation.
 
+### Browser History Commands
+
+```
+mcpyeahyouknowme browser_history enable <chrome|brave>
+mcpyeahyouknowme browser_history reset
+```
+
+Manages local browser history indexing through a daemon-owned snapshot (`browser_history.db`).
+
+- **`enable <chrome|brave>`** — Stores the selected browser in source config and enables `browser_history` for daemon indexing and MCP reads.
+- **`reset`** — Deletes local snapshot files and clears browser_history config. Requires interactive confirmation.
+
 ### Notebook File Indexing
 
-The `notebook` source indexes `.md`, `.txt`, `.pdf`, and image files (`.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.heic`, `.heif`, `.tiff`, `.bmp`) from configured directories. Indexing runs on each daemon 10-second tick via `SearchEntries()`.
+The `notebook` source indexes `.md`, `.txt`, `.pdf`, and image files (`.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.heic`, `.heif`, `.tiff`, `.bmp`) from configured directories. Indexing runs on each daemon 5-minute tick via `SearchEntries()`.
 
 **Change tracking** — `notebook.db` stores `(path, mod_time, size)` per file. On each tick, only new or modified files are re-extracted; unchanged files are served from cache.
 
@@ -156,10 +168,13 @@ src/
   core/             — shared interfaces, helpers (DataDir, IntArg, BoolArg, JsonResult),
                       utilities (DefaultReset, RunPollLoop, OpenDB), config (LoadConfig, SaveConfig)
   sources/
+    browser_history/ — local browser History snapshot source and MCP tools
+    brave_search/   — live Brave Search API client and MCP tools
+    google_places/  — live Google Places API client and MCP tools
+    gsuite/         — source, app_*, mcp, daemon, client, cli
+    notebook/       — source, scanner, extract, vision, store, mcp
     registry/       — source descriptors, constructors, auth checks
     whatsapp/       — store, service, mcp, daemon, client, cli, helpers
-    gsuite/         — source, app_*, mcp, daemon, client, cli
-    brave_search/   — live Brave Search API client and MCP tools
   cmd.go            — command table, usage output, command dispatch
   config.go         — delegates to core.LoadConfig for the main CLI/daemon config
   daemon.go         — LaunchAgent management + shell completion rendering
@@ -195,6 +210,7 @@ Current sources:
 | WhatsApp | `whatsapp_` | `sources/whatsapp/` | Messages, chats, contacts via local SQLite + REST API |
 | Google Suite | `gsuite_` | `sources/gsuite/` | Docs, Sheets, Gmail, Calendar, Tasks, Contacts, and Slides via Google APIs with periodic sync |
 | Google Places | `google_places_` | `sources/google_places/` | Live business and address lookup via the Places API; no local cache or indexing |
+| Browser History | `browser_history_` | `sources/browser_history/` | Local Chrome/Brave visit history from daemon-maintained SQLite snapshots |
 | Brave Search | `brave_search_` | `sources/brave_search/` | Live web search via the Brave Search API; no local cache or indexing |
 | Notebook | `notebook_` | `sources/notebook/` | Markdown, PDF, and image files from user-configured local directories |
 
@@ -223,9 +239,10 @@ mcpyeahyouknowme gsuite reset
 
 | Command | Description |
 |---------|-------------|
-| `info` | Shows build metadata; global data directory status; per-source sections with explicit disabled / enabled-without-auth / enabled status; and core daemon install status. |
+| `info` | Shows build metadata; global data directory status; per-source sections (sorted alphabetically by source) with explicit disabled / enabled-without-auth / enabled status; and core daemon install status. |
 | `whatsapp reset` | Removes WhatsApp auth/session data, clears local synced data, and leaves the source disabled in config until the user logs in again. |
 | `gsuite reset` | Prompts for confirmation, removes the Google Suite token and local synced data, and leaves the source disabled in config until the user logs in again. |
+| `browser_history reset` | Prompts for confirmation, removes local browser history snapshot files, and leaves the source disabled in config until re-enabled. |
 
 **Uninstalling:** For complete removal of the application, use `./scripts/uninstall.sh` from the repository root. This kills all processes, removes the daemon, wipes all data, removes shell completions, and deletes the binary from `/usr/local/bin`. See the [README](../README.md) for details.
 
@@ -235,6 +252,8 @@ mcpyeahyouknowme gsuite reset
 mcpyeahyouknowme completions bash
 mcpyeahyouknowme completions zsh
 ```
+
+Generated completions are derived from the canonical CLI command tree, so top-level commands, subcommands, and explicit argument choices such as `browser_history enable <chrome|brave>` stay in sync with the implemented CLI.
 
 Add to your shell profile:
 
@@ -358,33 +377,35 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 
 | Tool name | Description |
 |-----------|-------------|
-| `search` | Global hybrid search across connected sources (BM25 + vectors); optional `source`, `content_type`, `limit`. Index populated by daemon. |
-| `whatsapp_search_contacts` | Search contacts by name or phone (excludes group JIDs). |
-| `whatsapp_list_chats` | List chats; optional fuzzy search by chat or participant name. |
-| `whatsapp_get_chat` | Get one chat by JID; optional last message. |
-| `whatsapp_get_direct_chat_by_contact` | Find direct (1:1) chat for a phone number. |
-| `whatsapp_get_contact_chats` | List chats where a contact appears as sender. |
-| `whatsapp_list_messages` | Search/filter messages (time, sender, chat, text); BM25 when `query` is set. Default `limit` 200. |
-| `whatsapp_get_message_context` | Messages before/after a message ID in the same chat. |
-| `whatsapp_get_last_interaction` | Most recent message involving a contact (formatted). |
-| `whatsapp_send_message` | Send text via core daemon REST API. |
-| `whatsapp_send_file` | Send a local file as media via core daemon. |
-| `whatsapp_send_audio_message` | Send audio as a voice message via core daemon. |
-| `whatsapp_download_media` | Download media for a message via core daemon. |
-| `gsuite_docs_search` | FTS5 search across synced docs; `query`, optional `limit`. |
+| `browser_history_list` | List browser history visits from daemon-generated local snapshots with `sort`, `limit`, and `offset`. |
+| `browser_history_search` | Search browser history visits from daemon-generated local snapshots; requires `query` and supports `sort`, `limit`, and `offset`. |
+| `brave_search_get_meta` | Fast metadata lookup for a URL — returns page title and description from the search index without fetching the page. |
+| `brave_search_web` | Search the public web for current information not available in local data sources. |
+| `google_places_get_place` | Live place details lookup by `place_id` using the Places API. |
+| `google_places_search_places` | Live text search for businesses or addresses using the Places API. |
 | `gsuite_docs_get_document` | Full document body by ID. |
 | `gsuite_docs_list_recent` | Recently modified docs; optional `limit`. |
-| `gsuite_gmail_search` | Search synced Gmail messages; returns `thread_id` for thread follow-up. |
+| `gsuite_docs_search` | FTS5 search across synced docs; `query`, optional `limit`. |
+| `gsuite_gmail_download_attachment` | Download one Gmail attachment on demand by message and attachment IDs. |
 | `gsuite_gmail_get_message` | Full raw body for one Gmail message by ID, plus `thread_id`. |
 | `gsuite_gmail_get_thread` | Reconstructed Gmail thread by `thread_id`; optional `include_raw`. |
 | `gsuite_gmail_list_recent` | Recently synced Gmail messages; optional folder filter, includes `thread_id`. |
-| `gsuite_gmail_download_attachment` | Download one Gmail attachment on demand by message and attachment IDs. |
-| `google_places_search_places` | Live text search for businesses or addresses using the Places API. |
-| `google_places_get_place` | Live place details lookup by `place_id` using the Places API. |
-| `brave_search_web` | Live web search using the Brave Search API. |
-| `brave_search_url` | Resolve a page URL to title and description via Brave web search with canonical exact-URL matching when possible. |
+| `gsuite_gmail_search` | Search synced Gmail messages; returns `thread_id` for thread follow-up. |
+| `search` | Global hybrid search across connected sources (BM25 + vectors); optional `source`, `content_type`, `limit`. Index populated by daemon. |
+| `whatsapp_download_media` | Download media for a message via core daemon. |
+| `whatsapp_get_chat` | Get one chat by JID; optional last message. |
+| `whatsapp_get_contact_chats` | List chats where a contact appears as sender. |
+| `whatsapp_get_direct_chat_by_contact` | Find direct (1:1) chat for a phone number. |
+| `whatsapp_get_last_interaction` | Most recent message involving a contact (formatted). |
+| `whatsapp_get_message_context` | Messages before/after a message ID in the same chat. |
+| `whatsapp_list_chats` | List chats; optional fuzzy search by chat or participant name. |
+| `whatsapp_list_messages` | Search/filter messages (time, sender, chat, text); BM25 when `query` is set. Default `limit` 200. |
+| `whatsapp_search_contacts` | Search contacts by name or phone (excludes group JIDs). |
+| `whatsapp_send_audio_message` | Send audio as a voice message via core daemon. |
+| `whatsapp_send_file` | Send a local file as media via core daemon. |
+| `whatsapp_send_message` | Send text via core daemon REST API. |
 
-**Availability:** most source tools are registered only when the source is both `enabled` in config and authenticated. `google_places_*` tools are registered when the binary was built with a non-empty `GOOGLE_PLACE_API_KEY`. `brave_search_*` tools are registered when the binary was built with a non-empty `BRAVE_API_KEY`. `search` is registered when the search store opens successfully on MCP startup. The search index is populated by the core daemon (not by MCP); run `mcpyeahyouknowme reindex` for manual indexing.
+**Availability:** most source tools are registered only when the source is both `enabled` in config and authenticated/configured. `google_places_*` tools are registered when the binary was built with a non-empty `GOOGLE_PLACE_API_KEY`. `brave_search_*` tools are registered when the binary was built with a non-empty `BRAVE_API_KEY`. `browser_history_*` tools read only from daemon-produced snapshots and do not trigger snapshot refreshes. `search` is registered when the search store opens successfully on MCP startup. The search index is populated by the core daemon (not by MCP); run `mcpyeahyouknowme reindex` for manual indexing.
 
 ### Global Search
 
@@ -496,8 +517,17 @@ Metadata shapes per WhatsApp content type:
 
 | Tool | Description |
 |------|-------------|
-| `brave_search_web` | Web search. Returns `query`, `more_results_available`, and `results` with `title`, `url`, `description`, and optional `age` per hit. Required `query`. Optional `count` (default 20, max 20), `offset` (0–9), `country`, `search_lang`, `ui_lang`, `safesearch`, `freshness`. |
-| `brave_search_url` | Looks up a single page by `url`: runs web search with that URL as the query, then returns one result with `exact_match` true when a returned URL matches the requested URL after canonical normalization, otherwise the first hit with `exact_match` false. |
+| `brave_search_web` | Search the public web for current information. Returns `query`, `more_results_available`, and `results` with `title`, `url`, `description`, and optional `age` per hit. Required `query`. Optional `count` (default 20, max 20), `offset` (0–9), `country`, `search_lang`, `ui_lang`, `safesearch`, `freshness`. |
+| `brave_search_get_meta` | Fast metadata lookup for a URL — returns page title and description from the search index without fetching the page itself (much faster than loading the full page). Runs web search with the URL as query, returns one result with `exact_match` true when a returned URL matches after canonical normalization, otherwise the first hit with `exact_match` false. |
+
+### Browser History Tools
+
+**Read path:** Reads from `browser_history.db` snapshot in the data directory. Snapshot refresh and indexing are daemon-owned; MCP tools do not copy browser files or trigger indexing.
+
+| Tool | Description |
+|------|-------------|
+| `browser_history_list` | Returns visit rows with `visit_id`, `visit_time`, `url`, and `title` without a query filter. Supports optional `sort` (`recent` or `oldest`), `limit` (default 50, max 200), and `offset`. |
+| `browser_history_search` | Returns visit rows with `visit_id`, `visit_time`, `url`, and `title`. Requires `query` and supports optional `sort` (`recent` or `oldest`), `limit` (default 50, max 200), and `offset`. |
 
 ---
 
@@ -505,7 +535,7 @@ Metadata shapes per WhatsApp content type:
 
 ### Global Hybrid Search
 
-The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 10-second tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available. Embedding batch size scales dynamically based on available system memory (4–32, baseline 16), and embeddings are computed in chunks of 200 rows with per-chunk commits to limit resource usage. Each `DataSource` provides its indexable content via `SearchEntries()`. To reduce index size and embedding cost, numeric-dominant body chunks from long Docs, Sheets, and Slides content are skipped while titles, owners, subjects, and other short structured entries remain indexed. Content is normalized into a shared schema:
+The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 5-minute tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available. Embedding batch size scales dynamically based on available system memory (4–32, baseline 16), and embeddings are computed in chunks of 200 rows with per-chunk commits to limit resource usage. Each `DataSource` provides its indexable content via `SearchEntries()`. To reduce index size and embedding cost, numeric-dominant body chunks from long Docs, Sheets, and Slides content are skipped while titles, owners, subjects, and other short structured entries remain indexed. Content is normalized into a shared schema:
 
 | Content Type | Source | Indexed From |
 |-------------|--------|-------------|
@@ -521,13 +551,14 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 | `email_thread_subject` | Gmail | Derived Gmail thread subject |
 | `email_thread_participants` | Gmail | Derived Gmail thread participant list |
 | `email_thread_content` | Gmail | Reconstructed Gmail thread transcript chunks built from `body_visible` |
+| `browser_visit` | Browser History | Per-URL entries keyed by browser `urls.id` with latest visit timestamp |
 
 **Search algorithm:**
 
 1. **BM25** — FTS5 full-text search on the `search_fts` virtual table
 2. **Vector** — when BM25 returns fewer than the requested result limit, embed the query with BGE-Small-EN-v1.5 and compute cosine similarity against stored embeddings
 3. **Reciprocal Rank Fusion (RRF)** — combine BM25 and vector ranked lists: `score(d) = sum(1/(k+rank_i))` with k=60
-4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `message` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x), `email_thread_subject` (2.5x), `email_thread_participants` (2x), `email_thread_content` (1x)
+4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `message` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x), `email_thread_subject` (2.5x), `email_thread_participants` (2x), `email_thread_content` (1x), `browser_visit` (1.8x)
 
 The MCP server lazily initializes the embedder on first semantic-search use, so non-search tools and BM25-only search remain available even if ONNX Runtime is missing or embedding initialization fails.
 

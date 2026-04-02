@@ -140,3 +140,28 @@ func TestRenderInfo_marksUnavailableSources(t *testing.T) {
 		t.Fatalf("expected missing credential reason in output, got %q", got)
 	}
 }
+
+// Verifies data source sections render in alphabetical order by source name.
+func TestRenderInfo_sourcesSortedAlphabetically(t *testing.T) {
+	got := renderInfo()
+	order := []string{
+		"Brave Search",
+		"Browser History",
+		"Google Places",
+		"Google Suite",
+		"Notebook",
+		"WhatsApp",
+	}
+
+	last := -1
+	for _, section := range order {
+		idx := strings.Index(got, section)
+		if idx == -1 {
+			t.Fatalf("expected section %q in output, got %q", section, got)
+		}
+		if idx <= last {
+			t.Fatalf("expected %q after prior section, got output %q", section, got)
+		}
+		last = idx
+	}
+}

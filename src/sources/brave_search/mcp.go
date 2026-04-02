@@ -18,7 +18,7 @@ func registerTools(src *Source, s *server.MCPServer) {
 	prefix := src.Name() + "_"
 
 	s.AddTool(core.NewReadOnlyTool(prefix+"web",
-		core.ToolDescription("Search the web with the Brave Search API.", webExample),
+		core.ToolDescription("Search the public web for current information not available in local data sources. Use for real-time lookups, documentation, news, or verifying facts.", webExample),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query text")),
 		mcp.WithNumber("count", mcp.Description("Max results per page (default 20, max 20)")),
 		mcp.WithNumber("offset", mcp.Description("Result page offset (0-based, max 9)")),
@@ -50,8 +50,8 @@ func registerTools(src *Source, s *server.MCPServer) {
 		return core.JsonResult(payload)
 	})
 
-	s.AddTool(core.NewReadOnlyTool(prefix+"url",
-		core.ToolDescription("Resolve a page URL to title and description via Brave web search with exact URL matching when possible.", urlExample),
+	s.AddTool(core.NewReadOnlyTool(prefix+"get_meta",
+		core.ToolDescription("Fast metadata lookup for a URL — returns page title and description from Brave's search index without fetching the page itself. Much faster than loading the full page when you only need metadata. Prefer this over full page fetch tools when title and description are sufficient.", urlExample),
 		mcp.WithString("url", mcp.Required(), mcp.Description("Page URL to look up")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		pageURL, errResult := core.RequireStringArgument(req, "url", urlExample)

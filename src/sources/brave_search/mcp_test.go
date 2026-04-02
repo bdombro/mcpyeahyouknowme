@@ -43,7 +43,7 @@ func TestMCP_URL_success_exact(t *testing.T) {
 	})
 	s := buildMCPServer(t, src)
 
-	text, isErr := callTool(t, s, "brave_search_url", map[string]interface{}{
+	text, isErr := callTool(t, s, "brave_search_get_meta", map[string]interface{}{
 		"url": "https://example.com/x",
 	})
 	if isErr {
@@ -68,7 +68,7 @@ func TestMCP_URL_success_fallback(t *testing.T) {
 	})
 	s := buildMCPServer(t, src)
 
-	text, isErr := callTool(t, s, "brave_search_url", map[string]interface{}{
+	text, isErr := callTool(t, s, "brave_search_get_meta", map[string]interface{}{
 		"url": "https://target.example/page",
 	})
 	if isErr {
@@ -107,7 +107,7 @@ func TestMCP_upstreamError(t *testing.T) {
 	})
 	s := buildMCPServer(t, src)
 
-	text, isErr := callTool(t, s, "brave_search_url", map[string]interface{}{
+	text, isErr := callTool(t, s, "brave_search_get_meta", map[string]interface{}{
 		"url": "https://example.com/",
 	})
 	if !isErr {
@@ -131,7 +131,7 @@ func TestMCP_missingRequiredArgs(t *testing.T) {
 		want string
 	}{
 		{"web", "brave_search_web", "query parameter is required"},
-		{"url", "brave_search_url", "url parameter is required"},
+		{"get_meta", "brave_search_get_meta", "url parameter is required"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

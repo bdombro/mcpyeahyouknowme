@@ -1,12 +1,15 @@
 package registry
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 
+	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/brave_search"
+	"mcpyeahyouknowme/sources/browser_history"
 	"mcpyeahyouknowme/sources/google_places"
 	"mcpyeahyouknowme/sources/gsuite"
 )
@@ -20,6 +23,7 @@ func TestFind(t *testing.T) {
 		{name: "whatsapp", want: true},
 		{name: "gsuite", want: true},
 		{name: "google_places", want: true},
+		{name: "browser_history", want: true},
 		{name: "brave_search", want: true},
 		{name: "unknown", want: false},
 	}
@@ -37,7 +41,7 @@ func TestFind(t *testing.T) {
 // Verifies source construction returns working source instances for registered names and nil for unknown ones.
 func TestNewSource(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"whatsapp", "gsuite", "google_places", "brave_search", "notebook"} {
+	for _, name := range []string{"whatsapp", "gsuite", "google_places", "browser_history", "brave_search", "notebook"} {
 		t.Run(name, func(t *testing.T) {
 			src := NewSource(name, dir)
 			if src == nil {
@@ -78,6 +82,22 @@ func TestIsAuthenticated(t *testing.T) {
 	if !IsAuthenticated("google_places", dir) {
 		t.Fatal("expected google_places auth to be true with a configured key")
 	}
+	if IsAuthenticated("browser_history", dir) {
+		t.Fatal("expected browser_history auth to be false without config")
+	}
+	auth, err := json.Marshal(browser_history.BrowserHistoryConfig{Browser: "chrome"})
+	if err != nil {
+		t.Fatalf("marshal auth: %v", err)
+	}
+	if err := core.UpdateSourceConfig(dir, "browser_history", func(sc *core.SourceConfig) {
+		sc.Enabled = true
+		sc.Auth = auth
+	}); err != nil {
+		t.Fatalf("save browser_history config: %v", err)
+	}
+	if !IsAuthenticated("browser_history", dir) {
+		t.Fatal("expected browser_history auth to be true with config")
+	}
 	oldBraveKey := brave_search.BraveAPIKey
 	brave_search.BraveAPIKey = "brave-key"
 	defer func() {
@@ -114,6 +134,7 @@ func TestDescriptorCapabilities(t *testing.T) {
 		{name: "whatsapp", indexGlobally: true, runsCore: true},
 		{name: "gsuite", indexGlobally: true, runsCore: true, hasIsEnabled: true, hasReason: true},
 		{name: "google_places", indexGlobally: false, runsCore: false, hasIsEnabled: true, hasReason: true},
+		{name: "browser_history", indexGlobally: true, runsCore: false},
 		{name: "brave_search", indexGlobally: false, runsCore: false, hasIsEnabled: true, hasReason: true},
 	}
 	for _, tt := range tests {
@@ -184,7 +205,7 @@ func TestNames(t *testing.T) {
 	if len(names) != len(All) {
 		t.Fatalf("Names() len = %d, want %d", len(names), len(All))
 	}
-	want := []string{"whatsapp", "gsuite", "google_places", "brave_search", "notebook"}
+	want := []string{"whatsapp", "gsuite", "google_places", "browser_history", "brave_search", "notebook"}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("Names() = %v, want %v", names, want)
 	}

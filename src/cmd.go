@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"mcpyeahyouknowme/core"
+	"mcpyeahyouknowme/sources/browser_history"
 	"mcpyeahyouknowme/sources/gsuite"
 	"mcpyeahyouknowme/sources/notebook"
 	"mcpyeahyouknowme/sources/whatsapp"
@@ -174,6 +175,33 @@ func commandTree() []Command {
 			},
 		},
 		{
+			Name:    "browser_history",
+			Summary: "Browser history commands",
+			Section: "Browser History",
+			Subcommands: []Command{
+				{
+					Name:    "enable",
+					Summary: "Enable history indexing for chrome or brave",
+					Usage:   "browser_history enable <chrome|brave>",
+					ArgChoices: []Choice{
+						{Value: "chrome", Summary: "Google Chrome history"},
+						{Value: "brave", Summary: "Brave Browser history"},
+					},
+					Run: func(args []string) {
+						browser_history.RunEnable(dataDir, args)
+					},
+				},
+				{
+					Name:    "reset",
+					Summary: "Clear browser history snapshot and config",
+					Usage:   "browser_history reset",
+					Run: func(_ []string) {
+						browser_history.RunReset(dataDir)
+					},
+				},
+			},
+		},
+		{
 			Name:    "notebook",
 			Summary: "Notebook commands",
 			Section: "Notebook",
@@ -290,6 +318,7 @@ func printUsage() {
 		"Core Daemon",
 		"WhatsApp",
 		"Google Suite",
+		"Browser History",
 		"Notebook",
 		"Maintenance",
 		"Legacy (deprecated)",

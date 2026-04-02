@@ -67,6 +67,8 @@ var hierarchyWeights = map[string]float64{
 	"pdf_title":    2.0,
 	"pdf_content":  1.0,
 	"image":        1.5,
+	// Browser History
+	"browser_visit": 1.8,
 }
 
 var searchMetadataHints = map[string]string{
@@ -96,6 +98,7 @@ var searchMetadataHints = map[string]string{
 	"notebook:pdf_title":                `metadata contains {"path","dir"}; use path with notebook_read_pdf`,
 	"notebook:pdf_content":              `metadata contains {"path","dir","chunk"}; use path with notebook_read_pdf`,
 	"notebook:image":                    `metadata contains {"path","dir","labels"}; use path with notebook_get_image`,
+	"browser_history:browser_visit":     `metadata contains {"url","visit_count","last_visit_time","url_id","domain"}; use browser_history_search for visit rows`,
 }
 
 const rrfK = 60 // constant for Reciprocal Rank Fusion
