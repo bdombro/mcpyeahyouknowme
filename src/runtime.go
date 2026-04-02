@@ -98,7 +98,7 @@ func runCore() {
 	cfg := loadConfig(dir)
 
 	fmt.Println("Starting mcpyeahyouknowme core daemon...")
-	fmt.Print(renderInfo())
+	fmt.Printf("Data directory: %s\n", dir)
 
 	running := map[string]context.CancelFunc{}
 
@@ -112,16 +112,10 @@ func runCore() {
 		}
 	}
 
-	embedder, err := NewEmbedder(filepath.Join(dir, "models"))
+	embedder := NewLazyEmbedder(filepath.Join(dir, "models"))
+	searchStore, err := NewSearchStore(dir, embedder)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: embedding init failed: %v (search indexing disabled)\n", err)
-	}
-	var searchStore *SearchStore
-	if embedder != nil {
-		searchStore, err = NewSearchStore(dir, embedder)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: search index unavailable: %v\n", err)
-		}
+		fmt.Fprintf(os.Stderr, "Warning: search index unavailable: %v\n", err)
 	}
 
 	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst bool) {
@@ -211,7 +205,7 @@ func runCore() {
 }
 
 // handleCoreSignal runs an immediate index pass for SIGUSR1 and otherwise performs daemon shutdown cleanup.
-func handleCoreSignal(sig os.Signal, running map[string]context.CancelFunc, searchStore *SearchStore, embedder *Embedder, stopIndex func(), runIndex func()) bool {
+func handleCoreSignal(sig os.Signal, running map[string]context.CancelFunc, searchStore *SearchStore, embedder EmbedderInterface, stopIndex func(), runIndex func()) bool {
 	if sig == syscall.SIGUSR1 {
 		runIndex()
 		return false

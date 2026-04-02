@@ -46,6 +46,11 @@ func renderInfo() string {
 	writeLine("\u2699\ufe0f  Core Daemon")
 	plist := plistPath()
 	daemonRunning := false
+	if core.IsNetworkAvailable() {
+		writeLine("   Network:    online")
+	} else {
+		writeLine("   Network:    offline (sync paused)")
+	}
 	if _, err := os.Stat(plist); err == nil {
 		ctxLC, cancelLC := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancelLC()
@@ -63,11 +68,6 @@ func renderInfo() string {
 		writeLine("   Logs:       %s", filepath.Join(dDir, "core.log"))
 	} else {
 		writeLine("   Status:     not installed")
-	}
-	if core.IsNetworkAvailable() {
-		writeLine("   Network:    online")
-	} else {
-		writeLine("   Network:    offline (sync paused)")
 	}
 	writeLine("")
 
