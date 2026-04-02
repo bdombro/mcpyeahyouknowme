@@ -49,8 +49,8 @@ func (n *nilSlotEmbedder) EmbedTexts(texts []string, _ int) ([][]float32, error)
 
 // Verifies metadata-hint lookup returns guidance for known pairs and stays empty for unknown content.
 func TestSearchMetadataHint_knownAndUnknown(t *testing.T) {
-	if got := searchMetadataHint("whatsapp", "message"); !strings.Contains(got, "message_id") {
-		t.Fatalf("expected whatsapp message hint, got %q", got)
+	if got := searchMetadataHint("whatsapp", "chat_content"); !strings.Contains(got, "start_message_id") {
+		t.Fatalf("expected whatsapp chat-content hint, got %q", got)
 	}
 	if got := searchMetadataHint("unknown", "type"); got != "" {
 		t.Fatalf("expected empty hint for unknown content, got %q", got)
@@ -158,8 +158,8 @@ func seedSearchEntries() []SearchEntry {
 		{Source: "whatsapp", SourceID: "group2@g.us", ContentType: "chat_name", Title: "Work Team", Content: "Work Team", Metadata: json.RawMessage(`{"jid":"group2@g.us","is_group":true}`), Timestamp: &t2},
 		{Source: "whatsapp", SourceID: "11111@s.whatsapp.net", ContentType: "participant", Title: "Alice Smith", Content: "Alice Smith 11111", Metadata: json.RawMessage(`{"jid":"11111@s.whatsapp.net","groups":["group1@g.us"]}`)},
 		{Source: "whatsapp", SourceID: "22222@s.whatsapp.net", ContentType: "participant", Title: "Bob Jones", Content: "Bob Jones 22222", Metadata: json.RawMessage(`{"jid":"22222@s.whatsapp.net","groups":["group1@g.us"]}`)},
-		{Source: "whatsapp", SourceID: "m4:group1@g.us", ContentType: "message", Title: "Family Chat", Content: "Family dinner tonight at seven", Metadata: json.RawMessage(`{"message_id":"m4","chat_jid":"group1@g.us","sender":"11111"}`)},
-		{Source: "whatsapp", SourceID: "m7:group2@g.us", ContentType: "message", Title: "Work Team", Content: "Meeting at three pm tomorrow", Metadata: json.RawMessage(`{"message_id":"m7","chat_jid":"group2@g.us","sender":"33333"}`)},
+		{Source: "whatsapp", SourceID: "group1@g.us#chunk:000", ContentType: "chat_content", Title: "Family Chat", Content: "Chat: Family Chat\n\n[2025-01-01T10:00:00Z] Alice Smith\nFamily dinner tonight at seven", Metadata: json.RawMessage(`{"chat_jid":"group1@g.us","chunk_index":0,"start_message_id":"m4","end_message_id":"m4"}`)},
+		{Source: "whatsapp", SourceID: "group2@g.us#chunk:000", ContentType: "chat_content", Title: "Work Team", Content: "Chat: Work Team\n\n[2025-01-01T11:00:00Z] Charlie Brown\nMeeting at three pm tomorrow", Metadata: json.RawMessage(`{"chat_jid":"group2@g.us","chunk_index":0,"start_message_id":"m7","end_message_id":"m7"}`)},
 	}
 }
 
@@ -236,7 +236,7 @@ func TestSearchStore_BM25Search(t *testing.T) {
 	for _, r := range results {
 		if r.Title == "Family Chat" {
 			found = true
-			if r.ContentType != "chat_name" && r.ContentType != "message" {
+			if r.ContentType != "chat_name" && r.ContentType != "chat_content" {
 				t.Errorf("unexpected content_type: %s", r.ContentType)
 			}
 		}
@@ -309,27 +309,27 @@ func TestSearchStore_HybridSearch(t *testing.T) {
 	}
 }
 
-// Verifies hybrid search respects message-only filtering while still finding semantic matches.
-func TestSearchStore_HybridSearch_messageOnly(t *testing.T) {
+// Verifies hybrid search respects chat-content filtering while still finding semantic matches.
+func TestSearchStore_HybridSearch_chatContentOnly(t *testing.T) {
 	emb := &mockEmbedder{dim: 16}
 	store := newTestSearchStore(t, emb)
 	store.IndexEntries(seedSearchEntries())
 
-	results, err := store.Search("meeting", 10, "", "message")
+	results, err := store.Search("meeting", 10, "", "chat_content")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
 	found := false
 	for _, r := range results {
-		if r.ContentType != "message" {
-			t.Errorf("expected only messages, got %s", r.ContentType)
+		if r.ContentType != "chat_content" {
+			t.Errorf("expected only chat_content entries, got %s", r.ContentType)
 		}
 		if strings.Contains(strings.ToLower(r.Content), "meeting") {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("expected to find 'meeting' message")
+		t.Error("expected to find 'meeting' chat chunk")
 	}
 }
 
@@ -357,7 +357,7 @@ func TestSearchStore_Search_runsVectorWhenBM25Insufficient(t *testing.T) {
 	store := newTestSearchStore(t, emb)
 	store.IndexEntries(seedSearchEntries())
 
-	if _, err := store.Search("tomorrow", 10, "", "message"); err != nil {
+	if _, err := store.Search("tomorrow", 10, "", "chat_content"); err != nil {
 		t.Fatalf("Search: %v", err)
 	}
 	if emb.queryCalls == 0 {
@@ -367,7 +367,7 @@ func TestSearchStore_Search_runsVectorWhenBM25Insufficient(t *testing.T) {
 
 // ---------- Hierarchy Weighting ----------
 
-// Verifies hierarchy weights lift chat names above weaker participant and message matches.
+// Verifies hierarchy weights lift chat names above weaker participant and chat-content matches.
 func TestSearchStore_HierarchyWeighting(t *testing.T) {
 	emb := &mockEmbedder{dim: 16}
 	store := newTestSearchStore(t, emb)
@@ -376,7 +376,7 @@ func TestSearchStore_HierarchyWeighting(t *testing.T) {
 	entries := []SearchEntry{
 		{Source: "whatsapp", SourceID: "family-chat", ContentType: "chat_name", Title: "Family", Content: "Family", Timestamp: &now},
 		{Source: "whatsapp", SourceID: "alice-family", ContentType: "participant", Title: "Family Alice", Content: "Family Alice", Timestamp: &now},
-		{Source: "whatsapp", SourceID: "msg-family", ContentType: "message", Title: "Chat", Content: "Family dinner tonight", Timestamp: &now},
+		{Source: "whatsapp", SourceID: "family-chat#chunk:000", ContentType: "chat_content", Title: "Chat", Content: "Family dinner tonight", Timestamp: &now},
 	}
 	store.IndexEntries(entries)
 

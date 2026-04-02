@@ -7,7 +7,8 @@
 #   1. Initialize with proper protocol version
 #   2. Accept initialized notification
 #   3. Execute a search tool call and return results
-#   4. Execute a Google Places tool call when configured
+#   4. Return a readable error for a malformed search call
+#   5. Execute a Google Places tool call when configured
 #
 # Usage:
 #   ./scripts/test-mcp.sh    # From repo root
@@ -16,6 +17,7 @@
 #   - MCP server starts and responds to stdio
 #   - Protocol handshake (initialize/initialized)
 #   - Search tool execution with query="Eileen"
+#   - Search tool required-argument guidance for empty arguments
 #   - Google Places tool execution with query="Blue Bottle Coffee Oakland"
 #
 # Prerequisites:
@@ -61,6 +63,7 @@ main() {
 	# step_1_run_case "Search for 'Crashed ship' - should match shipwreck" "search" '{"query":"Crashed ship","limit":5}'
 	# step_1_run_case "Search for 'malt beverage' - should match beer" "search" '{"query":"malt beverage","limit":5}'
 	step_1_run_case "Search for 'squarespace holidays'" "search" '{"query":"squarespace holidays","limit":5}'
+	step_1_run_case "Search without required query (expected error)" "search" '{}'
 	# step_1_run_case "Google Places search for 'Blue Bottle Coffee Oakland'" "google_places_search_places" '{"query":"Blue Bottle Coffee Oakland","max_results":1}'
 }
 

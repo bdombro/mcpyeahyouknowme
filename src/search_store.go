@@ -33,9 +33,9 @@ type SearchResult struct {
 // Hierarchy weights: name matches are most valuable, then participants, then content.
 var hierarchyWeights = map[string]float64{
 	// WhatsApp
-	"chat_name":   3.0,
-	"participant": 2.0,
-	"message":     1.0,
+	"chat_name":    3.0,
+	"participant":  2.0,
+	"chat_content": 1.0,
 	// Google Docs
 	"document_title":   2.0,
 	"document_owner":   2.0,
@@ -74,7 +74,7 @@ var hierarchyWeights = map[string]float64{
 var searchMetadataHints = map[string]string{
 	"whatsapp:chat_name":                `metadata contains {"jid","is_group"}`,
 	"whatsapp:participant":              `metadata contains {"jid","groups"}; use jid with whatsapp_get_chat`,
-	"whatsapp:message":                  `metadata contains {"message_id","chat_jid","sender","timestamp"}; use message_id with whatsapp_get_message_context`,
+	"whatsapp:chat_content":             `metadata contains {"chat_jid","chunk_index","start_message_id","end_message_id","start_timestamp","end_timestamp"}; use start_message_id with whatsapp_get_message_context`,
 	"gsuite:document_title":             `metadata contains {"document_id","modified_time"}; use document_id with gsuite_docs_get_document`,
 	"gsuite:document_owner":             `metadata contains {"document_id","modified_time"}; use document_id with gsuite_docs_get_document`,
 	"gsuite:document_content":           `metadata contains {"document_id","modified_time"}; use document_id with gsuite_docs_get_document`,

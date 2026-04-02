@@ -1,6 +1,10 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
 	"testing"
 	"time"
 
@@ -43,6 +47,76 @@ func (f *fakeIndexer) IndexEntries(entries []core.SearchEntry) error {
 // Records timestamp updates so the test can verify only globally indexed sources advance their watermark.
 func (f *fakeIndexer) UpdateSourceTimestamp(source string, _ time.Time) {
 	f.updated = append(f.updated, source)
+}
+
+// Verifies stderr suppression drops startup writes and restores the original stream for later fatal errors.
+func TestSuppressStderr_restoresOriginalStream(t *testing.T) {
+	original := os.Stderr
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("open stderr pipe: %v", err)
+	}
+	os.Stderr = writer
+	t.Cleanup(func() {
+		os.Stderr = original
+		reader.Close()
+		writer.Close()
+	})
+
+	restore := suppressStderr()
+	if _, err := fmt.Fprint(os.Stderr, "hidden"); err != nil {
+		t.Fatalf("write suppressed stderr: %v", err)
+	}
+	restore()
+
+	if _, err := fmt.Fprint(os.Stderr, "visible"); err != nil {
+		t.Fatalf("write restored stderr: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stderr pipe writer: %v", err)
+	}
+
+	got, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read stderr pipe: %v", err)
+	}
+	if string(got) != "visible" {
+		t.Fatalf("expected only restored stderr output, got %q", string(got))
+	}
+}
+
+// Verifies stderr suppression leaves stderr untouched when the discard target cannot be opened.
+func TestSuppressStderrWithOpen_openFailureKeepsOriginalStream(t *testing.T) {
+	original := os.Stderr
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("open stderr pipe: %v", err)
+	}
+	os.Stderr = writer
+	t.Cleanup(func() {
+		os.Stderr = original
+		reader.Close()
+		writer.Close()
+	})
+
+	restore := suppressStderrWithOpen(func() (*os.File, error) {
+		return nil, errors.New("open failed")
+	})
+	if _, err := fmt.Fprint(os.Stderr, "visible"); err != nil {
+		t.Fatalf("write unsuppressed stderr: %v", err)
+	}
+	restore()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stderr pipe writer: %v", err)
+	}
+
+	got, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read stderr pipe: %v", err)
+	}
+	if string(got) != "visible" {
+		t.Fatalf("expected original stderr output when suppression fails, got %q", string(got))
+	}
 }
 
 // Verifies indexing skips sources whose descriptors are marked non-global even when they can return entries.

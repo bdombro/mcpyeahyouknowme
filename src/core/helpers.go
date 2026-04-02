@@ -70,6 +70,7 @@ func StringArg(args map[string]interface{}, key string) string {
 }
 
 // JsonResult serializes v into the text payload shape MCP handlers return, converting marshal failures into tool errors.
+//
 //revive:disable-next-line:var-naming
 func JsonResult(v interface{}) (*mcp.CallToolResult, error) {
 	data, err := json.MarshalIndent(v, "", "  ")
@@ -113,7 +114,7 @@ func NewMutatingTool(name, description string, opts ...mcp.ToolOption) mcp.Tool 
 func missingArgumentResult(key, example string) *mcp.CallToolResult {
 	msg := fmt.Sprintf("%s parameter is required", key)
 	if example != "" {
-		msg = fmt.Sprintf("%s; call with arguments: %s", msg, example)
+		msg = fmt.Sprintf("%s; retry with params.arguments: %s", msg, example)
 	}
 	return mcp.NewToolResultError(msg)
 }

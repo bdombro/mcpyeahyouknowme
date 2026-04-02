@@ -1,6 +1,6 @@
 # Product Spec
 
-A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides via Google APIs with OAuth 2.0), **Google Places** (live business and address lookup via the Places API), **Brave Search** (live web search via the Brave Search API), and **Browser History** (local Chrome/Brave history snapshots).
+A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides via Google APIs with OAuth 2.0), **Google Places** (live business and address lookup via the Places API), **Brave Search** (live web search via the Brave Search API), **Browser History** (local Chrome/Brave history snapshots), and **Notebook** (user-configured local markdown, PDF, and image directories).
 
 ## Building
 
@@ -41,7 +41,7 @@ Authenticates with Google using OAuth 2.0 for the unified Google Suite source. O
 mcpyeahyouknowme core
 ```
 
-Runs all enabled data source core services and the search indexer. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on `127.0.0.1:8080` (loopback only). For Google Suite: syncs each enabled Google app every 5 minutes via the corresponding Google APIs. The daemon also indexes all sources into `search.db` on startup and periodically on each 10-second tick, with adaptive embedding batch sizes based on available memory. Requires authentication for each enabled source.
+Runs all enabled data source core services and the search indexer. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on `127.0.0.1:8080` (loopback only). For Google Suite: syncs each enabled Google app every 5 minutes via the corresponding Google APIs. The daemon also re-reads config, starts or stops core-backed sources, and indexes all sources into `search.db` on startup and on each 5-minute loop, with adaptive embedding batch sizes based on available memory. Requires authentication for each enabled source.
 
 Re-authentication may be required after ~20 days for WhatsApp. Google OAuth access tokens refresh automatically as long as the refresh token remains valid, but repeated Google `401 Invalid Credentials` or token refresh `invalid_grant` errors should be treated as persistent credential/configuration problems rather than transient network blips.
 
@@ -51,14 +51,14 @@ Re-authentication may be required after ~20 days for WhatsApp. Google OAuth acce
 mcpyeahyouknowme mcp
 ```
 
-Starts the built-in MCP server over stdio transport. This is what Claude Desktop and Cursor invoke to interact with WhatsApp. It reads directly from the local SQLite databases for queries (including `search.db` for hybrid search) and proxies write operations (send, download) through the core daemon's REST API at `127.0.0.1:8080`. The core daemon must be running for write operations. Search indexing is handled by the daemon, not the MCP server.
+Starts the built-in MCP server over stdio transport. This is what Claude Desktop and Cursor invoke to interact with enabled local and live sources. It reads directly from the local SQLite databases for queries (including `search.db` for hybrid search) and proxies write operations (send, download) through the core daemon's REST API at `127.0.0.1:8080`. The core daemon must be running for write operations. Search indexing is handled by the daemon, not the MCP server.
 
 Configure in your AI client:
 
 ```json
 {
   "mcpServers": {
-    "whatsapp": {
+    "personal_data": {
       "command": "mcpyeahyouknowme",
       "args": ["mcp"]
     }
@@ -89,7 +89,7 @@ mcpyeahyouknowme notebook reset
 
 Manages local directories indexed by the `notebook` source.
 
-- **`add <path>`** — Resolves the path to an absolute directory, verifies it exists, appends it to the configured list (deduplicating), and enables the source. The core daemon (or `mcpyeahyouknowme reindex`) will index the contents on the next tick.
+- **`add <path>`** — Resolves the path to an absolute directory, verifies it exists, appends it to the configured list (deduplicating), and enables the source. The core daemon (or `mcpyeahyouknowme reindex`) will index the contents on the next 5-minute daemon loop.
 - **`remove <path>`** — Removes the directory from the configured list and prunes its entries from `notebook.db`. If no directories remain, disables the source.
 - **`list`** — Prints all configured directories with per-type file counts (markdown, PDF, image).
 - **`reset`** — Clears all notebook configuration and deletes `notebook.db`. Requires interactive confirmation.
@@ -110,7 +110,7 @@ Manages local browser history indexing through a daemon-owned snapshot (`browser
 
 The `notebook` source indexes `.md`, `.txt`, `.pdf`, and image files (`.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.heic`, `.heif`, `.tiff`, `.bmp`) from configured directories. Indexing runs on each daemon 5-minute tick via `SearchEntries()`.
 
-**Change tracking** — `notebook.db` stores `(path, mod_time, size)` per file. On each tick, only new or modified files are re-extracted; unchanged files are served from cache.
+**Change tracking** — `notebook.db` stores `(path, mod_time, size)` per file. On each 5-minute daemon loop, only new or modified files are re-extracted; unchanged files are served from cache.
 
 **Markdown extraction** — Title comes from the first `# H1` heading, or the filename stem. Content is the full file body. Files larger than 4 KB are chunked into `~4 KB` pieces for embedding.
 
@@ -190,12 +190,12 @@ src/
 
 ### Config-driven daemon
 
-The daemon (`runCore()`) reads `{DataDir}/config.json` every 10 seconds and:
+The daemon (`runCore()`) reads `{DataDir}/config.json` on each 5-minute loop and:
 - Starts newly-enabled sources whose descriptors declare `RunsCore=true`
 - Stops disabled sources
 - Handles `reset: true` by calling `source.Reset()`, then keeping the source entry in config with `enabled: false`
 
-`config.json` keeps a stable section for every known source, even when disabled or unauthenticated. Login commands (`whatsapp login`, `gsuite login`) mark the source `enabled: true` on success so the daemon picks it up within 10 seconds without a restart.
+`config.json` keeps a stable section for every known source, even when disabled or unauthenticated. Login commands (`whatsapp login`, `gsuite login`) mark the source `enabled: true` on success so the daemon picks it up on the next 5-minute loop without a restart. Sources that do not implement `RunsCore` are still available for MCP reads and global indexing when enabled/configured, but they do not start a background service.
 
 `sources/registry` is the single source of truth for available sources. To add a new source:
 
@@ -235,11 +235,12 @@ mcpyeahyouknowme restart
 mcpyeahyouknowme info
 mcpyeahyouknowme whatsapp reset
 mcpyeahyouknowme gsuite reset
+mcpyeahyouknowme browser_history reset
 ```
 
 | Command | Description |
 |---------|-------------|
-| `info` | Shows build metadata; global data directory status; per-source sections (sorted alphabetically by source) with explicit disabled / enabled-without-auth / enabled status; and core daemon install status. |
+| `info` | Shows build metadata; core daemon install/running status including network state and optional RSS; global data directory status; a Search Index section with entry/indexed counts and DB size; and per-source sections sorted alphabetically, including unavailable reasons when a source is not built/configured. The core daemon prints the same report on startup. |
 | `whatsapp reset` | Removes WhatsApp auth/session data, clears local synced data, and leaves the source disabled in config until the user logs in again. |
 | `gsuite reset` | Prompts for confirmation, removes the Google Suite token and local synced data, and leaves the source disabled in config until the user logs in again. |
 | `browser_history reset` | Prompts for confirmation, removes local browser history snapshot files, and leaves the source disabled in config until re-enabled. |
@@ -369,9 +370,9 @@ These are the JSON-RPC methods the server exposes for discovering and invoking t
 | `tools/list` | List tool names, schemas, descriptions |
 | `tools/call` | Run a tool (e.g. `search`, `whatsapp_*`, …) |
 
-Use `tools/call` with `params.name` set to one of the tool names below and `params.arguments` as a JSON object of that tool’s parameters (see the following sections for full parameter lists and behavior).
+Use `tools/call` with `params.name` set to one of the tool names below and `params.arguments` as a JSON object of that tool’s parameters (see the following sections for full parameter lists and behavior). Callers should always send `params.arguments`, even if it is just `{}` for tools whose parameters are all optional.
 
-Tool descriptions include compact example `arguments` payloads for common calls. Tools also advertise read-only / destructive / idempotent hints via MCP annotations so clients can reason more accurately about safe calls.
+Tool descriptions include compact example `arguments` payloads for common calls. When a required parameter is missing, the tool returns an MCP error result like `<name> parameter is required; retry with params.arguments: {...}` so callers can retry with the correct payload shape. Tools also advertise read-only / destructive / idempotent hints via MCP annotations so clients can reason more accurately about safe calls.
 
 ### `tools/call` tool names
 
@@ -383,6 +384,11 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 | `brave_search_web` | Search the public web for current information not available in local data sources. |
 | `google_places_get_place` | Live place details lookup by `place_id` using the Places API. |
 | `google_places_search_places` | Live text search for businesses or addresses using the Places API. |
+| `gsuite_calendar_get_event` | Get one synced Google Calendar event by `event_id`. |
+| `gsuite_calendar_list_upcoming` | List upcoming synced Calendar events within a day window. |
+| `gsuite_calendar_search` | Search synced Google Calendar events using local FTS5 data. |
+| `gsuite_contacts_list` | List synced Google Contacts. |
+| `gsuite_contacts_search` | Search synced Google Contacts using local FTS5 data. |
 | `gsuite_docs_get_document` | Full document body by ID. |
 | `gsuite_docs_list_recent` | Recently modified docs; optional `limit`. |
 | `gsuite_docs_search` | FTS5 search across synced docs; `query`, optional `limit`. |
@@ -391,7 +397,19 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 | `gsuite_gmail_get_thread` | Reconstructed Gmail thread by `thread_id`. |
 | `gsuite_gmail_list_recent` | Recently synced Gmail messages; optional folder filter, includes `thread_id`. |
 | `gsuite_gmail_search` | Search synced Gmail messages; returns `thread_id` for thread follow-up. |
-| `search` | Global hybrid search across connected sources (BM25 + vectors); optional `source`, `content_type`, `limit`. Index populated by daemon. |
+| `gsuite_sheets_get_spreadsheet` | Full spreadsheet body by ID. |
+| `gsuite_sheets_list_recent` | Recently modified sheets; optional `limit`. |
+| `gsuite_sheets_search` | FTS5 search across synced sheets; `query`, optional `limit`. |
+| `gsuite_slides_get_presentation` | Full presentation body by ID. |
+| `gsuite_slides_list_recent` | Recently modified presentations; optional `limit`. |
+| `gsuite_slides_search` | FTS5 search across synced presentations; `query`, optional `limit`. |
+| `gsuite_tasks_list` | List synced Google Tasks, optionally filtered by status. |
+| `gsuite_tasks_search` | Search synced Google Tasks using local FTS5 data. |
+| `notebook_get_image` | Return a base64-encoded image from a configured notebook directory. |
+| `notebook_list` | List indexed notebook files across configured directories. |
+| `notebook_read` | Read a markdown or text file from a configured notebook directory. |
+| `notebook_read_pdf` | Extract and return text from a PDF in a configured notebook directory. |
+| `search` | Global hybrid search across connected sources (BM25 + vectors); requires `query`, with optional `source`, `content_type`, and `limit`. Index populated by daemon. |
 | `whatsapp_download_media` | Download media for a message via core daemon. |
 | `whatsapp_get_chat` | Get one chat by JID; optional last message. |
 | `whatsapp_get_contact_chats` | List chats where a contact appears as sender. |
@@ -411,26 +429,26 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 
 | Tool | Description |
 |------|-------------|
-| `search` | Search across all connected data sources by name, participant, or message content. Returns results ranked by hybrid BM25 keyword + semantic vector search with hierarchy weighting (chat names ranked highest, then participants, then message content). Accepts optional `source`, `content_type`, and `limit` parameters. |
+| `search` | Search across all connected data sources by titles, names, people, and body content. Requires `query`. Returns results ranked by hybrid BM25 keyword + semantic vector search with hierarchy weighting. Accepts optional `source`, `content_type`, and `limit` parameters; `content_type` matches exact indexed types such as `chat_name`, `document_title`, `note_content`, or `browser_visit`. |
 
 Results are returned as JSON with a fixed outer shape and source-specific metadata:
 
 ```json
 {
   "source": "whatsapp",
-  "content_type": "message",
+  "content_type": "chat_content",
   "title": "Family Chat",
-  "content": "Family dinner tonight at 7pm",
+  "content": "Chat: Family Chat\n\n[2025-01-01T19:00:00Z] Alice Smith\nFamily dinner tonight at 7pm",
   "score": 0.92,
-  "metadata": {"message_id": "m4", "chat_jid": "group1@g.us", "sender": "Alice"},
-  "metadata_hint": "metadata contains {\"message_id\",\"chat_jid\",\"sender\",\"timestamp\"}; use message_id with whatsapp_get_message_context"
+  "metadata": {"chat_jid": "group1@g.us", "chunk_index": 0, "start_message_id": "m4", "end_message_id": "m5"},
+  "metadata_hint": "metadata contains {\"chat_jid\",\"chunk_index\",\"start_message_id\",\"end_message_id\",\"start_timestamp\",\"end_timestamp\"}; use start_message_id with whatsapp_get_message_context"
 }
 ```
 
 Metadata shapes per WhatsApp content type:
 - **chat_name**: `{"jid", "is_group"}`
 - **participant**: `{"jid", "groups"}` — use `jid` with `whatsapp_get_chat` or `whatsapp_list_messages`
-- **message**: `{"message_id", "chat_jid", "sender", "timestamp", "is_from_me"}` — use `message_id` with `whatsapp_get_message_context`
+- **chat_content**: `{"chat_jid", "chat_name", "chunk_index", "start_message_id", "end_message_id", "start_timestamp", "end_timestamp", "is_group", "message_count"}` — use `start_message_id` with `whatsapp_get_message_context`
 
 ### WhatsApp Tools
 
@@ -502,6 +520,44 @@ Metadata shapes per WhatsApp content type:
 | `gsuite_gmail_list_recent` | List recent synced Gmail messages, sorted by stored date descending. Accepts optional `folder` and `limit` parameters. Each result includes `thread_id`. |
 | `gsuite_gmail_download_attachment` | Download a Gmail attachment on demand via the Gmail API using `message_id` and `attachment_id`. Attachments are not cached automatically during sync. |
 
+### Google Calendar Tools
+
+**Read path**: Queries `gsuite.db` directly via SQLite. Calendar events are synced by the core daemon every 5 minutes when the Google Suite source is enabled and the Calendar app is enabled.
+
+| Tool | Description |
+|------|-------------|
+| `gsuite_calendar_search` | Full-text search across synced Calendar events using FTS5 on summary, description, location, organizer, and attendees. Accepts `query` (required) and `limit` (default 10). |
+| `gsuite_calendar_get_event` | Get one synced Calendar event by `event_id`. Returns summary, description, time range, location, organizer, attendees, recurrence, status, and calendar name. |
+| `gsuite_calendar_list_upcoming` | List upcoming Calendar events. Accepts optional `days` (default 7) and `limit` (default 20). |
+
+### Google Tasks Tools
+
+**Read path**: Queries `gsuite.db` directly via SQLite. Tasks are synced by the core daemon every 5 minutes when the Google Suite source is enabled and the Tasks app is enabled.
+
+| Tool | Description |
+|------|-------------|
+| `gsuite_tasks_search` | Full-text search across synced Google Tasks using FTS5. Accepts `query` (required) and `limit` (default 10). |
+| `gsuite_tasks_list` | List synced tasks sorted by update time. Accepts optional `status` (`needsAction` or `completed`) and `limit` (default 20). |
+
+### Google Contacts Tools
+
+**Read path**: Queries `gsuite.db` directly via SQLite. Contacts are synced by the core daemon every 5 minutes when the Google Suite source is enabled and the Contacts app is enabled.
+
+| Tool | Description |
+|------|-------------|
+| `gsuite_contacts_search` | Full-text search across synced Google Contacts using FTS5 over names, emails, phones, organizations, and notes. Accepts `query` (required) and `limit` (default 10). |
+| `gsuite_contacts_list` | List synced contacts sorted by display name. Accepts `limit` (default 50). |
+
+### Google Slides Tools
+
+**Read path**: Queries `gsuite.db` directly via SQLite. Presentations are synced by the core daemon every 5 minutes when the Google Suite source is enabled and the Slides app is enabled.
+
+| Tool | Description |
+|------|-------------|
+| `gsuite_slides_search` | Full-text search across synced Google Slides presentations using FTS5. Accepts `query` (required) and `limit` (default 10). |
+| `gsuite_slides_get_presentation` | Get the full content of a specific Google Slides presentation by ID. Returns title, extracted text, owners, timestamps, web link, and slide count. |
+| `gsuite_slides_list_recent` | List recently modified synced Google Slides presentations. Accepts `limit` (default 20). |
+
 ### Google Places Tools
 
 **Read path:** Calls the Places API live over HTTPS. No local caching, SQLite persistence, core daemon sync, or global search indexing.
@@ -529,19 +585,30 @@ Metadata shapes per WhatsApp content type:
 | `browser_history_list` | Returns visit rows with `visit_id`, `visit_time`, `url`, and `title` without a query filter. Supports optional `sort` (`recent` or `oldest`), `limit` (default 50, max 200), and `offset`. |
 | `browser_history_search` | Returns visit rows with `visit_id`, `visit_time`, `url`, and `title`. Requires `query` and supports optional `sort` (`recent` or `oldest`), `limit` (default 50, max 200), and `offset`. |
 
+### Notebook Tools
+
+**Read path**: Reads from configured local directories and `notebook.db`. File access stays within configured notebook roots; MCP requests do not expand the configured directory set.
+
+| Tool | Description |
+|------|-------------|
+| `notebook_list` | List files across configured notebook directories. Supports optional `type` (`md`, `pdf`, or `image`) and `query` substring filtering. |
+| `notebook_read` | Read a markdown or text file by path after validating that it is inside a configured notebook directory. |
+| `notebook_read_pdf` | Extract and return PDF text by path, including Vision OCR fallback for scanned PDFs. |
+| `notebook_get_image` | Return a base64-encoded image by path for AI interpretation after path validation. |
+
 ---
 
 ## Search
 
 ### Global Hybrid Search
 
-The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 5-minute tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available. Embedding batch size scales dynamically based on available system memory (4–32, baseline 16), and embeddings are computed in chunks of 200 rows with per-chunk commits to limit resource usage. Each `DataSource` provides its indexable content via `SearchEntries()`. To reduce index size and embedding cost, numeric-dominant body chunks from long Docs, Sheets, and Slides content are skipped while titles, owners, subjects, and other short structured entries remain indexed. Content is normalized into a shared schema:
+The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 5-minute tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available. Embedding batch size scales dynamically based on available system memory (4–32, baseline 16), and embeddings are computed in chunks of 200 rows with per-chunk commits to limit resource usage. Each `DataSource` provides its indexable content via `SearchEntries()`. To improve retrieval for multi-message conversations, WhatsApp is indexed as bounded per-chat transcript chunks instead of one row per message. To reduce index size and embedding cost, numeric-dominant body chunks from WhatsApp, Docs, Sheets, and Slides are skipped while titles, owners, subjects, and other short structured entries remain indexed. Content is normalized into a shared schema:
 
 | Content Type | Source | Indexed From |
 |-------------|--------|-------------|
 | `chat_name` | WhatsApp | Chat display names |
 | `participant` | WhatsApp | Contact names from `whatsmeow_contacts` |
-| `message` | WhatsApp | Message content (>20 chars only) |
+| `chat_content` | WhatsApp | Chronological chat transcript chunks with chat header, sender labels, and chunk metadata |
 | `document_title` | Google Docs | Document titles (prefixed with owner names when present) |
 | `document_owner` | Google Docs | Document owner names and emails |
 | `document_content` | Google Docs | Document text content (prefixed with owner names, chunked at 5000 chars, numeric-dominant chunks skipped) |
@@ -551,6 +618,18 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 | `email_thread_subject` | Gmail | Derived Gmail thread subject |
 | `email_thread_participants` | Gmail | Derived Gmail thread participant list |
 | `email_thread_content` | Gmail | Reconstructed Gmail thread transcript chunks built from `body_visible` |
+| `calendar_event` | Google Calendar | Event summary/location/organizer rows |
+| `calendar_event_description` | Google Calendar | Event description text |
+| `task` | Google Tasks | Task title and notes |
+| `contact` | Google Contacts | Contact names, emails, phones, and organizations |
+| `presentation_title` | Google Slides | Presentation titles |
+| `presentation_owner` | Google Slides | Presentation owner names and emails |
+| `presentation_content` | Google Slides | Extracted slide text, chunked and owner-prefixed |
+| `note_title` | Notebook | Markdown/text file titles |
+| `note_content` | Notebook | Markdown/text file bodies, chunked for embeddings |
+| `pdf_title` | Notebook | PDF file titles |
+| `pdf_content` | Notebook | Extracted PDF text, chunked for embeddings |
+| `image` | Notebook | OCR text plus classification labels from indexed images |
 | `browser_visit` | Browser History | Per-URL entries keyed by browser `urls.id` with latest visit timestamp |
 
 **Search algorithm:**
@@ -558,13 +637,13 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 1. **BM25** — FTS5 full-text search on the `search_fts` virtual table
 2. **Vector** — when BM25 returns fewer than the requested result limit, embed the query with BGE-Small-EN-v1.5 and compute cosine similarity against stored embeddings
 3. **Reciprocal Rank Fusion (RRF)** — combine BM25 and vector ranked lists: `score(d) = sum(1/(k+rank_i))` with k=60
-4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `message` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x), `email_thread_subject` (2.5x), `email_thread_participants` (2x), `email_thread_content` (1x), `browser_visit` (1.8x)
+4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `chat_content` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x), `email_thread_subject` (2.5x), `email_thread_participants` (2x), `email_thread_content` (1x), `calendar_event` (2x), `calendar_event_description` (1x), `task` (1.5x), `contact` (2x), `presentation_title` (2x), `presentation_owner` (2x), `presentation_content` (1x), `note_title` (2x), `note_content` (1x), `pdf_title` (2x), `pdf_content` (1x), `image` (1.5x), `browser_visit` (1.8x)
 
 The MCP server lazily initializes the embedder on first semantic-search use, so non-search tools and BM25-only search remain available even if ONNX Runtime is missing or embedding initialization fails.
 
 ### BM25 Keyword Search (FTS5)
 
-When `whatsapp_list_messages` is called with a `query` parameter, the server uses SQLite's FTS5 full-text search engine with BM25 scoring. The `messages_fts` virtual table in `messages.db` is maintained via triggers so the index is always in sync. The message search combines BM25 with vector results using RRF for improved recall.
+When `whatsapp_list_messages` is called with a `query` parameter, the server uses SQLite's FTS5 full-text search engine with BM25 scoring. The `messages_fts` virtual table in `messages.db` is maintained via triggers so the index is always in sync. Unlike the global `search` tool, this path stays within WhatsApp's local SQLite index and does not invoke vector search or RRF fusion.
 
 Without a `query` parameter, `whatsapp_list_messages` falls back to chronological listing with optional filters.
 
@@ -608,9 +687,11 @@ All data is stored in `~/.local/share/mcpyeahyouknowme/`.
 |------|---------|
 | `whatsapp.db` | whatsmeow session store (device credentials, contacts, LID mappings) |
 | `messages.db` | Application message and chat database (includes FTS5 index) |
+| `browser_history.db` | Daemon-owned browser history snapshot and MCP read store |
 | `gsuite.db` | Unified Google Suite database (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides) |
 | `gsuite_token.json` | OAuth 2.0 token for Google APIs |
 | `gsuite_email.txt` | Cached Google account email (fetched during login via Drive API) |
+| `notebook.db` | Local notebook metadata and extracted-content cache for configured directories |
 | `search.db` | Global search index (FTS5 + vector embeddings across all sources) |
 | `lib/` | ONNX Runtime shared library (auto-downloaded by `./scripts/install.sh`) |
 | `models/` | Cached embedding model (auto-downloaded on first semantic-search use by MCP or during daemon indexing) |

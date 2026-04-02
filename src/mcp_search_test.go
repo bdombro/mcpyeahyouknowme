@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/server"
-	_ "modernc.org/sqlite"
 	"mcpyeahyouknowme/sources/whatsapp"
+	_ "modernc.org/sqlite"
 )
 
 type failingSearchStore struct{}
@@ -81,8 +81,20 @@ func callSearchTool(t *testing.T, s *server.MCPServer, args map[string]interface
 	return callGlobalTool(t, s, "search", args)
 }
 
+// Invokes the global search MCP tool without an arguments object so tests can pin framework behavior for omitted params.arguments.
+func callSearchToolWithoutArguments(t *testing.T, s *server.MCPServer) string {
+	t.Helper()
+	return callGlobalToolWithParams(t, s, map[string]interface{}{"name": "search"})
+}
+
 // Invokes a named MCP tool against an initialized test server and returns the first text payload.
 func callGlobalTool(t *testing.T, s *server.MCPServer, name string, args map[string]interface{}) string {
+	t.Helper()
+	return callGlobalToolWithParams(t, s, map[string]interface{}{"name": name, "arguments": args})
+}
+
+// Invokes a named MCP tool against an initialized test server using raw params so tests can cover missing arguments payloads.
+func callGlobalToolWithParams(t *testing.T, s *server.MCPServer, params map[string]interface{}) string {
 	t.Helper()
 	ctx := context.Background()
 
@@ -98,7 +110,7 @@ func callGlobalTool(t *testing.T, s *server.MCPServer, name string, args map[str
 
 	msg, _ := json.Marshal(map[string]interface{}{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]interface{}{"name": name, "arguments": args},
+		"params": params,
 	})
 	result := s.HandleMessage(ctx, msg)
 	data, _ := json.Marshal(result)
@@ -109,9 +121,15 @@ func callGlobalTool(t *testing.T, s *server.MCPServer, name string, args map[str
 				Text string `json:"text"`
 			} `json:"content"`
 		} `json:"result"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
 	}
 	json.Unmarshal(data, &resp)
 	if len(resp.Result.Content) == 0 {
+		if resp.Error != nil {
+			return resp.Error.Message
+		}
 		return ""
 	}
 	return resp.Result.Content[0].Text
@@ -142,8 +160,8 @@ func TestMCP_GlobalSearch_metadataHint(t *testing.T) {
 	}
 }
 
-// Verifies global search can return message-content hits, not just title-style matches.
-func TestMCP_GlobalSearch_messageContent(t *testing.T) {
+// Verifies global search can return WhatsApp chat-transcript hits, not just title-style matches.
+func TestMCP_GlobalSearch_chatContent(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "dinner"})
 	if text == "" || text == "[]" {
@@ -175,6 +193,15 @@ func TestMCP_GlobalSearch_typeFilter(t *testing.T) {
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Family", "content_type": "chat_name"})
 	if text == "" || text == "[]" {
 		t.Error("expected results for chat_name type filter")
+	}
+}
+
+// Verifies the content-type filter can target WhatsApp chat transcript chunks directly.
+func TestMCP_GlobalSearch_chatContentTypeFilter(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+	text := callSearchTool(t, s, map[string]interface{}{"query": "dinner", "content_type": "chat_content"})
+	if text == "" || text == "[]" {
+		t.Error("expected results for chat_content type filter")
 	}
 }
 
@@ -223,7 +250,17 @@ func TestMCP_GlobalSearch_withLimit(t *testing.T) {
 func TestMCP_GlobalSearch_missingQuery(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{})
-	want := `query parameter is required; call with arguments: {"query":"meeting notes","source":"whatsapp","limit":5}`
+	want := `query parameter is required; retry with params.arguments: {"query":"meeting notes"}`
+	if text != want {
+		t.Errorf("expected missing query error, got %q", text)
+	}
+}
+
+// Verifies omitting params.arguments still returns the same retry-oriented required-query guidance.
+func TestMCP_GlobalSearch_missingArgumentsObject(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+	text := callSearchToolWithoutArguments(t, s)
+	want := `query parameter is required; retry with params.arguments: {"query":"meeting notes"}`
 	if text != want {
 		t.Errorf("expected missing query error, got %q", text)
 	}
@@ -271,8 +308,9 @@ func TestMCP_ToolsListContainsSearchTool(t *testing.T) {
 					IdempotentHint  *bool `json:"idempotentHint"`
 				} `json:"annotations"`
 				InputSchema struct {
-					Properties map[string]json.RawMessage `json:"properties"`
-					Required   []string                   `json:"required"`
+					Description string                     `json:"description"`
+					Properties  map[string]json.RawMessage `json:"properties"`
+					Required    []string                   `json:"required"`
 				} `json:"inputSchema"`
 			} `json:"tools"`
 		} `json:"result"`
@@ -299,6 +337,15 @@ func TestMCP_ToolsListContainsSearchTool(t *testing.T) {
 				if _, ok := tool.InputSchema.Properties[key]; !ok {
 					t.Fatalf("expected %q in inputSchema.properties", key)
 				}
+			}
+			var querySchema struct {
+				Description string `json:"description"`
+			}
+			if err := json.Unmarshal(tool.InputSchema.Properties["query"], &querySchema); err != nil {
+				t.Fatalf("unmarshal query schema: %v", err)
+			}
+			if querySchema.Description != "Required search query" {
+				t.Fatalf("unexpected query description: %q", querySchema.Description)
 			}
 			break
 		}

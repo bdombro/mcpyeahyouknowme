@@ -136,6 +136,9 @@ func TestRequireStringArgument_missing(t *testing.T) {
 	if !strings.Contains(text, `query parameter is required`) {
 		t.Fatalf("expected missing parameter text, got %s", text)
 	}
+	if !strings.Contains(text, `retry with params.arguments`) {
+		t.Fatalf("expected retry hint to mention params.arguments, got %s", text)
+	}
 	if !strings.Contains(text, `{\"query\":\"family dinner\"}`) {
 		t.Fatalf("expected example arguments in error, got %s", text)
 	}
@@ -196,6 +199,9 @@ func TestRequireNumberArgument_missing(t *testing.T) {
 	if !strings.Contains(text, `limit parameter is required`) {
 		t.Fatalf("expected missing parameter text, got %s", text)
 	}
+	if !strings.Contains(text, `retry with params.arguments`) {
+		t.Fatalf("expected retry hint to mention params.arguments, got %s", text)
+	}
 	if !strings.Contains(text, `{\"limit\":7}`) {
 		t.Fatalf("expected example arguments in error, got %s", text)
 	}
@@ -240,6 +246,9 @@ func TestRequireBoolArgument_missing(t *testing.T) {
 	text := string(data)
 	if !strings.Contains(text, `include_raw parameter is required`) {
 		t.Fatalf("expected missing parameter text, got %s", text)
+	}
+	if !strings.Contains(text, `retry with params.arguments`) {
+		t.Fatalf("expected retry hint to mention params.arguments, got %s", text)
 	}
 	if !strings.Contains(text, `{\"include_raw\":true}`) {
 		t.Fatalf("expected example arguments in error, got %s", text)

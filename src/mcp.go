@@ -11,8 +11,33 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+type stderrOpenFunc func() (*os.File, error)
+
+// Suppresses non-fatal stderr output during MCP startup so hosts that treat any stderr as a hard error still keep the server connected.
+func suppressStderr() func() {
+	return suppressStderrWithOpen(func() (*os.File, error) {
+		return os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	})
+}
+
+// Suppresses non-fatal stderr output using an injected writer opener so tests can cover both the happy path and fallback path deterministically.
+func suppressStderrWithOpen(openDevNull stderrOpenFunc) func() {
+	original := os.Stderr
+	devNull, err := openDevNull()
+	if err != nil {
+		return func() {}
+	}
+	os.Stderr = devNull
+	return func() {
+		os.Stderr = original
+		devNull.Close()
+	}
+}
+
 // runMcp starts the stdio MCP server, registering tools for available authenticated sources and global search.
 func runMcp() {
+	restoreStderr := suppressStderr()
+
 	dir := core.DataDir()
 	cfg := core.LoadConfig(dir)
 
@@ -72,6 +97,8 @@ func runMcp() {
 	if searchStore != nil {
 		RegisterSearchTool(s, searchStore)
 	}
+
+	restoreStderr()
 
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)

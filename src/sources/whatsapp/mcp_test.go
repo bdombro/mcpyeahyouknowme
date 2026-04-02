@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -233,7 +234,16 @@ func TestMCP_ToolsListContainsAllTools(t *testing.T) {
 	var resp struct {
 		Result struct {
 			Tools []struct {
-				Name string `json:"name"`
+				Name        string `json:"name"`
+				Annotations struct {
+					ReadOnlyHint    *bool `json:"readOnlyHint"`
+					DestructiveHint *bool `json:"destructiveHint"`
+					IdempotentHint  *bool `json:"idempotentHint"`
+				} `json:"annotations"`
+				InputSchema struct {
+					Properties map[string]json.RawMessage `json:"properties"`
+					Required   []string                   `json:"required"`
+				} `json:"inputSchema"`
 			} `json:"tools"`
 		} `json:"result"`
 	}
@@ -256,6 +266,34 @@ func TestMCP_ToolsListContainsAllTools(t *testing.T) {
 			t.Errorf("missing tool: %s", name)
 		}
 	}
+
+	foundGetChat := false
+	for _, tool := range resp.Result.Tools {
+		if tool.Name != "whatsapp_get_chat" {
+			continue
+		}
+		foundGetChat = true
+		if tool.Annotations.ReadOnlyHint == nil || !*tool.Annotations.ReadOnlyHint {
+			t.Fatal("expected whatsapp_get_chat readOnlyHint=true")
+		}
+		if tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
+			t.Fatal("expected whatsapp_get_chat destructiveHint=false")
+		}
+		if tool.Annotations.IdempotentHint == nil || !*tool.Annotations.IdempotentHint {
+			t.Fatal("expected whatsapp_get_chat idempotentHint=true")
+		}
+		if len(tool.InputSchema.Required) != 1 || tool.InputSchema.Required[0] != "chat_jid" {
+			t.Fatalf("unexpected whatsapp_get_chat required fields: %#v", tool.InputSchema.Required)
+		}
+		for _, key := range []string{"chat_jid", "include_last_message"} {
+			if _, ok := tool.InputSchema.Properties[key]; !ok {
+				t.Fatalf("expected whatsapp_get_chat inputSchema.properties[%q]", key)
+			}
+		}
+	}
+	if !foundGetChat {
+		t.Fatal("expected whatsapp_get_chat in tools list")
+	}
 }
 
 // Verifies the WhatsApp source satisfies the core data-source contract and reports the expected identity strings.
@@ -274,7 +312,7 @@ func TestWhatsAppSource_interface(t *testing.T) {
 	var _ core.DataSource = ws
 }
 
-// Verifies SearchEntries emits chat-name, participant, and message entries for globally indexed WhatsApp search.
+// Verifies SearchEntries emits chat-name, participant, and chat-content entries for globally indexed WhatsApp search.
 func TestWhatsAppSource_SearchEntries(t *testing.T) {
 	store := newTestStoreWithContacts(t)
 	ws := NewSourceFromStore(store, "http://localhost:1")
@@ -298,8 +336,8 @@ func TestWhatsAppSource_SearchEntries(t *testing.T) {
 	if types["participant"] == 0 {
 		t.Error("expected participant entries")
 	}
-	if types["message"] == 0 {
-		t.Error("expected message entries")
+	if types["chat_content"] == 0 {
+		t.Error("expected chat_content entries")
 	}
 }
 
@@ -320,7 +358,7 @@ func TestWhatsAppSource_SearchEntries_noContacts(t *testing.T) {
 	}
 }
 
-// Verifies SearchEntries prepends sender names for inbound messages but not for messages authored by the local user.
+// Verifies SearchEntries formats chat-content chunks with sender labels for inbound and self-authored messages.
 func TestWhatsAppSource_SearchEntries_senderPrepend(t *testing.T) {
 	store := newTestStoreWithContacts(t)
 
@@ -337,23 +375,189 @@ func TestWhatsAppSource_SearchEntries_senderPrepend(t *testing.T) {
 	}
 
 	for _, e := range entries {
-		if e.ContentType != "message" {
+		if e.ContentType != "chat_content" {
 			continue
 		}
-		switch {
-		case strings.Contains(e.Content, "How are you doing today?"):
-			if !strings.HasPrefix(e.Content, "Alice Smith: ") {
-				t.Errorf("expected sender prepend for other's message, got: %s", e.Content)
-			}
-		case strings.Contains(e.Content, "Family dinner tonight"):
-			if !strings.HasPrefix(e.Content, "Alice Smith: ") {
-				t.Errorf("expected sender prepend for other's group message, got: %s", e.Content)
-			}
-		case strings.Contains(e.Content, "long message from myself"):
-			if e.Content != "This is a long message from myself" {
-				t.Errorf("is_from_me message should not have sender prepended, got: %s", e.Content)
-			}
+		if strings.Contains(e.Content, "How are you doing today?") &&
+			!strings.Contains(e.Content, "Alice Smith\nHow are you doing today?") {
+			t.Errorf("expected sender label for other's message, got: %s", e.Content)
 		}
+		if strings.Contains(e.Content, "Family dinner tonight") &&
+			!strings.Contains(e.Content, "Alice Smith\nFamily dinner tonight") {
+			t.Errorf("expected sender label for other's group message, got: %s", e.Content)
+		}
+		if strings.Contains(e.Content, "long message from myself") &&
+			!strings.Contains(e.Content, "Me\nThis is a long message from myself") {
+			t.Errorf("expected self message to use Me sender label, got: %s", e.Content)
+		}
+	}
+}
+
+// Verifies SearchEntries keeps adjacent chat messages in the same chunk so split thoughts remain searchable together.
+func TestWhatsAppSource_SearchEntries_combinesAdjacentMessages(t *testing.T) {
+	store := newTestStoreWithContacts(t)
+	now := time.Now()
+	store.db.Exec(`INSERT INTO chats (jid, name, last_message_time) VALUES (?, ?, ?)`,
+		"split@g.us", "Split Thought", now.Format(time.RFC3339))
+	store.db.Exec(`INSERT INTO messages (id, chat_jid, sender, content, timestamp, is_from_me)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		"split1", "split@g.us", "11111", "I am from", now.Add(-2*time.Minute).Format(time.RFC3339), false)
+	store.db.Exec(`INSERT INTO messages (id, chat_jid, sender, content, timestamp, is_from_me)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		"split2", "split@g.us", "11111", "over the rainbow", now.Add(-1*time.Minute).Format(time.RFC3339), false)
+
+	ws := NewSourceFromStore(store, "http://localhost:1")
+	entries, err := ws.SearchEntries()
+	if err != nil {
+		t.Fatalf("SearchEntries: %v", err)
+	}
+
+	for _, e := range entries {
+		if e.ContentType != "chat_content" || !strings.Contains(e.Content, "Split Thought") {
+			continue
+		}
+		if strings.Contains(e.Content, "I am from") && strings.Contains(e.Content, "over the rainbow") {
+			return
+		}
+	}
+	t.Fatal("expected one chat_content entry to include both adjacent messages")
+}
+
+// Verifies chat-chunk building splits long chats into multiple indexed transcript entries with stable boundaries.
+func TestWhatsAppSource_buildChatChunks_longChat(t *testing.T) {
+	ws := NewSourceFromStore(newTestStoreWithContacts(t), "http://localhost:1")
+	var messages []whatsAppMessageRecord
+	base := time.Now().Add(-1 * time.Hour)
+	for i := 0; i < 40; i++ {
+		messages = append(messages, whatsAppMessageRecord{
+			ID:        fmt.Sprintf("msg-%02d", i),
+			ChatJID:   "group1@g.us",
+			Sender:    "11111",
+			Content:   strings.Repeat("long family planning update ", 6),
+			Timestamp: base.Add(time.Duration(i) * time.Minute).Format(time.RFC3339),
+			ChatName:  "Family Chat",
+		})
+	}
+
+	chunks := ws.buildChatChunks(messages)
+	if len(chunks) < 2 {
+		t.Fatalf("expected long chat to produce multiple chunks, got %d", len(chunks))
+	}
+	if chunks[0].StartMessageID != "msg-00" {
+		t.Fatalf("expected first chunk to start with msg-00, got %#v", chunks[0])
+	}
+	last := chunks[len(chunks)-1]
+	if last.EndMessageID != "msg-39" {
+		t.Fatalf("expected last chunk to end with msg-39, got %#v", last)
+	}
+}
+
+// Verifies chat-chunk building splits oversized single messages instead of dropping them from global search.
+func TestWhatsAppSource_buildChatChunks_splitLongMessage(t *testing.T) {
+	ws := NewSourceFromStore(newTestStoreWithContacts(t), "http://localhost:1")
+	messages := []whatsAppMessageRecord{{
+		ID:        "huge",
+		ChatJID:   "group1@g.us",
+		Sender:    "11111",
+		Content:   strings.Repeat("chunked content ", 400),
+		Timestamp: time.Now().Format(time.RFC3339),
+		ChatName:  "Family Chat",
+	}}
+
+	chunks := ws.buildChatChunks(messages)
+	if len(chunks) < 2 {
+		t.Fatalf("expected huge message to split into multiple chunks, got %d", len(chunks))
+	}
+	for _, chunk := range chunks {
+		if chunk.StartMessageID != "huge" || chunk.EndMessageID != "huge" {
+			t.Fatalf("expected split chunks to point at the same source message, got %#v", chunk)
+		}
+	}
+}
+
+// Verifies chat-search entry building returns nil for empty chats and filters out low-value numeric transcript chunks.
+func TestWhatsAppSource_chatSearchEntries_filtersEmptyAndLowValue(t *testing.T) {
+	ws := NewSourceFromStore(newTestStoreWithContacts(t), "http://localhost:1")
+	if got := ws.chatSearchEntries("whatsapp", nil); got != nil {
+		t.Fatalf("expected nil for empty messages, got %#v", got)
+	}
+
+	blank := ws.chatSearchEntries("whatsapp", []whatsAppMessageRecord{{
+		ID:        "blank",
+		ChatJID:   "group1@g.us",
+		Sender:    "11111",
+		Content:   "   ",
+		Timestamp: time.Now().Format(time.RFC3339),
+		ChatName:  "Family Chat",
+	}})
+	if len(blank) != 0 {
+		t.Fatalf("expected blank chat transcript to be skipped, got %#v", blank)
+	}
+
+	lowValue := ws.chatSearchEntries("whatsapp", []whatsAppMessageRecord{{
+		ID:        "numeric",
+		ChatJID:   "group1@g.us",
+		Sender:    "11111",
+		Content:   strings.Repeat("12345 !!! ", 12),
+		Timestamp: time.Now().Format(time.RFC3339),
+		ChatName:  "Family Chat",
+	}})
+	if len(lowValue) != 0 {
+		t.Fatalf("expected low-value transcript chunk to be filtered, got %#v", lowValue)
+	}
+}
+
+// Verifies chat chunk headers fall back to the chat JID when no display name is available.
+func TestFormatChatChunkHeader_fallbackToJID(t *testing.T) {
+	header := formatChatChunkHeader(whatsAppMessageRecord{ChatJID: "12345@s.whatsapp.net"})
+	if !strings.Contains(header, "Chat: 12345@s.whatsapp.net") {
+		t.Fatalf("expected header to fall back to chat jid, got %q", header)
+	}
+	if strings.Contains(header, "Chat JID:") {
+		t.Fatalf("expected fallback header to avoid duplicate jid line, got %q", header)
+	}
+}
+
+// Verifies transcript formatting skips blank bodies and falls back to the raw sender when no contact name is usable.
+func TestWhatsAppSource_formatChatTranscriptEntry_fallbackSender(t *testing.T) {
+	ws := NewSourceFromStore(newTestStore(t), "http://localhost:1")
+	if got := ws.formatChatTranscriptEntry(whatsAppMessageRecord{Content: "   "}); got != "" {
+		t.Fatalf("expected blank body to be skipped, got %q", got)
+	}
+
+	entry := ws.formatChatTranscriptEntry(whatsAppMessageRecord{
+		ID:        "phone",
+		ChatJID:   "group1@g.us",
+		Sender:    "99999",
+		Content:   "Fallback sender name",
+		Timestamp: time.Now().Format(time.RFC3339),
+	})
+	if !strings.Contains(entry, "] 99999\nFallback sender name") {
+		t.Fatalf("expected transcript to fall back to raw sender, got %q", entry)
+	}
+}
+
+// Verifies transcript splitting handles passthrough, newline, word, and hard-limit breakpoints.
+func TestSplitChatTranscriptEntry_variants(t *testing.T) {
+	tests := []struct {
+		name  string
+		entry string
+		limit int
+		parts int
+	}{
+		{name: "passthrough on nonpositive limit", entry: "hello", limit: 0, parts: 1},
+		{name: "split on newline", entry: "line1\nline2\nline3", limit: 10, parts: 3},
+		{name: "split on space", entry: "alpha beta gamma delta", limit: 11, parts: 2},
+		{name: "hard split on long token", entry: strings.Repeat("x", 30), limit: 10, parts: 3},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := splitChatTranscriptEntry(tc.entry, tc.limit)
+			if len(parts) != tc.parts {
+				t.Fatalf("expected %d parts, got %d (%#v)", tc.parts, len(parts), parts)
+			}
+		})
 	}
 }
 

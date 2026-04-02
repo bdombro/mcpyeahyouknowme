@@ -10,9 +10,9 @@ import (
 )
 
 const searchToolDescription = `Search across all connected data sources by name, participant, or content. ` +
-	`Returns results ranked by hybrid BM25 + semantic vector search.`
+	`Requires query; source, content_type, and limit are optional. Returns results ranked by hybrid BM25 + semantic vector search.`
 
-const searchToolExample = `{"query":"meeting notes","source":"whatsapp","limit":5}`
+const searchToolExample = `{"query":"meeting notes"}`
 
 type searchToolStore interface {
 	Search(query string, limit int, sourceFilter, typeFilter string) ([]SearchResult, error)
@@ -22,7 +22,7 @@ type searchToolStore interface {
 func RegisterSearchTool(s *server.MCPServer, store searchToolStore) {
 	s.AddTool(core.NewReadOnlyTool("search",
 		core.ToolDescription(searchToolDescription, searchToolExample),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
+		mcp.WithString("query", mcp.Required(), mcp.Description("Required search query")),
 		mcp.WithString("source", mcp.Description("Filter to a specific source (e.g. 'whatsapp')")),
 		mcp.WithString("content_type", mcp.Description("Filter by content type: 'chat_name', 'participant', or 'message'")),
 		mcp.WithNumber("limit", mcp.Description("Maximum results to return (default 20)")),
