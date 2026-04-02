@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -13,6 +14,13 @@ import (
 )
 
 const chunkSize = 4096
+
+var (
+	reWikiLinkAlias = regexp.MustCompile(`\[\[[^\]|]+\|([^\]]+)\]\]`)
+	reWikiLink      = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
+	reMarkdownImage = regexp.MustCompile(`!\[([^\]]*)\]\([^)]+\)`)
+	reMarkdownLink  = regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`)
+)
 
 // extractMarkdown reads a .md file and returns its title (first H1 or filename) and full content.
 func extractMarkdown(path string) (title, content string, err error) {
@@ -42,6 +50,15 @@ func stemName(filename string) string {
 	base := filepath.Base(filename)
 	ext := filepath.Ext(base)
 	return strings.TrimSuffix(base, ext)
+}
+
+// Cleans markdown link syntax before indexing so FTS and embeddings keep human-readable text without URL noise.
+func cleanMarkdownForIndex(content string) string {
+	content = reWikiLinkAlias.ReplaceAllString(content, "$1")
+	content = reWikiLink.ReplaceAllString(content, "$1")
+	content = reMarkdownImage.ReplaceAllString(content, "$1")
+	content = reMarkdownLink.ReplaceAllString(content, "$1")
+	return content
 }
 
 // chunkText splits text into ~chunkSize byte pieces on word boundaries, returning at least one chunk.

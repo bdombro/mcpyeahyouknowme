@@ -207,7 +207,8 @@ func buildTextEntries(row CacheRow, sourceName, titleType, contentType string, b
 		return entries
 	}
 
-	chunks := chunkText(row.Content)
+	content := cleanMarkdownForIndex(row.Content)
+	chunks := chunkText(content)
 	for i, chunk := range chunks {
 		chunkMeta, _ := json.Marshal(map[string]interface{}{"path": relPath, "dir": row.Dir, "chunk": i})
 		entries = append(entries, core.SearchEntry{

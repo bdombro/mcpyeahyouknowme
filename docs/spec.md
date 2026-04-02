@@ -112,7 +112,7 @@ The `notebook` source indexes `.md`, `.txt`, `.pdf`, and image files (`.jpg`, `.
 
 **Change tracking** — `notebook.db` stores `(path, mod_time, size)` per file. On each 5-minute daemon loop, only new or modified files are re-extracted; unchanged files are served from cache.
 
-**Markdown extraction** — Title comes from the first `# H1` heading, or the filename stem. Content is the full file body. Files larger than 4 KB are chunked into `~4 KB` pieces for embedding.
+**Markdown extraction** — Title comes from the first `# H1` heading, or the filename stem. Raw content is stored in `notebook.db` and returned by `notebook_read`. Before markdown text is added to the global search index, Obsidian wiki-link syntax (`[[target]]`, `[[target|alias]]`) and Markdown link/image syntax (`[text](url)`, `![alt](url)`) are reduced to their human-readable text so FTS and embeddings index readable note content instead of URL punctuation noise. Files larger than 4 KB are chunked into `~4 KB` pieces for embedding.
 
 **PDF extraction** — Uses `github.com/ledongthuc/pdf` for pure-Go text extraction. If extracted text contains fewer than 10 words (a scanned document), falls back to macOS Vision OCR (`OCRPDFPages`), which renders each page to a `CGImage` via CoreGraphics and runs `VNRecognizeTextRequest`. Title comes from the filename stem.
 

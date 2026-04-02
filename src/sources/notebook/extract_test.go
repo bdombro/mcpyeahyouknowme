@@ -78,6 +78,59 @@ func TestStemName(t *testing.T) {
 	}
 }
 
+// Verifies cleanMarkdownForIndex preserves readable markdown text while stripping link syntax before indexing.
+func TestCleanMarkdownForIndex(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "plain wiki link",
+			input: "See [[Project Plan]] next.",
+			want:  "See Project Plan next.",
+		},
+		{
+			name:  "aliased wiki link",
+			input: "Open [[project-plan|the plan]].",
+			want:  "Open the plan.",
+		},
+		{
+			name:  "markdown link",
+			input: "Read [the docs](https://example.com/docs).",
+			want:  "Read the docs.",
+		},
+		{
+			name:  "markdown image",
+			input: "Diagram: ![system architecture](https://example.com/image.png)",
+			want:  "Diagram: system architecture",
+		},
+		{
+			name:  "mixed markdown",
+			input: "Pair [[Alpha]] with [Beta docs](https://example.com/beta) and ![chart](chart.png).",
+			want:  "Pair Alpha with Beta docs and chart.",
+		},
+		{
+			name:  "empty alt text",
+			input: "Inline image ![](chart.png) here.",
+			want:  "Inline image  here.",
+		},
+		{
+			name:  "no links",
+			input: "Plain text without markdown link syntax.",
+			want:  "Plain text without markdown link syntax.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cleanMarkdownForIndex(tt.input); got != tt.want {
+				t.Fatalf("cleanMarkdownForIndex() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // Verifies chunkText returns a single chunk for short text.
 func TestChunkText_short(t *testing.T) {
 	chunks := chunkText("hello world")
