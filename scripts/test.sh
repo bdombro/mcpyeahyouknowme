@@ -15,6 +15,8 @@
 #   ./scripts/test.sh --nocache            # Disable test cache (-count=1)
 #   ./scripts/test.sh --coverage           # Cached tests + coverage + reports
 #   ./scripts/test.sh --nocache --coverage # Disable cache + coverage + reports
+#   ./scripts/test.sh --coverage --require-100
+#       # Same as --coverage, but exit 1 if filtered coverage is below 100%
 #
 # Prerequisites:
 #   - Go 1.26+
@@ -30,16 +32,23 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLI_DIR="$ROOT/src"
 NOCACHE=false
 COVERAGE=false
+REQUIRE_100=false
 for arg in "$@"; do
 	case "$arg" in
 		--nocache) NOCACHE=true ;;
 		--coverage) COVERAGE=true ;;
+		--require-100) REQUIRE_100=true ;;
 		*)
-			echo "usage: $0 [--nocache] [--coverage]" >&2
+			echo "usage: $0 [--nocache] [--coverage] [--require-100]" >&2
 			exit 2
 			;;
 	esac
 done
+
+if $REQUIRE_100 && ! $COVERAGE; then
+	echo "error: --require-100 requires --coverage" >&2
+	exit 2
+fi
 
 run_tests() {
 	# Run Go tests. --nocache → -count=1. --coverage → -coverprofile + reports in main.
@@ -232,6 +241,20 @@ cleanup_txt() {
 	rm -f "$ROOT/coverage/coverage_unfiltered.txt" "$ROOT/coverage/coverage.txt"
 }
 
+require_filtered_full_coverage() {
+	# Exits 1 when the filtered profile has any uncovered statements (count 0).
+	local cov_txt="$1"
+	perl -lane '
+		next if /^mode:/;
+		$stmts += $F[1];
+		$cov += $F[1] if $F[2] > 0;
+		END {
+			exit 0 if $stmts == 0;
+			exit($cov == $stmts ? 0 : 1);
+		}
+	' "$cov_txt"
+}
+
 main() {
 	run_tests
 	if ! $COVERAGE; then return; fi
@@ -251,6 +274,13 @@ main() {
 		$cov   += $F[1] if $F[2] > 0;
 		END { printf "Filtered coverage: %.1f%%\n", $stmts ? 100*$cov/$stmts : 0 }
 	' "$cov_txt"
+
+	if $REQUIRE_100; then
+		if ! require_filtered_full_coverage "$cov_txt"; then
+			echo "error: filtered coverage is not 100% (see $ROOT/coverage/coverage.md)" >&2
+			exit 1
+		fi
+	fi
 
 	cleanup_txt
 }

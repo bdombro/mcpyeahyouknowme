@@ -8,9 +8,11 @@
 # Usage:
 #   just             - Show this help
 #   just install     - Full install / update (idempotent)
-#   just test           - Cached tests (no coverage)
-#   just test-coverage  - Cached tests + coverage
-#   just test-full      - No cache + coverage (-count=1)
+#   just test                 - Cached tests (no coverage)
+#   just test-coverage        - Cached tests + coverage
+#   just test-full            - No cache + coverage (-count=1)
+#   just test-coverage-strict - Cached tests + coverage; fail if filtered is not 100%
+#   just test-full-strict     - No cache + coverage; fail if filtered is not 100%
 #   just lint        - go vet + Staticcheck + Revive
 #   just uninstall   - Complete uninstall
 #
@@ -46,6 +48,14 @@ test-coverage:
 # Run tests with coverage and disable test cache (-count=1)
 test-full:
     @scripts/test.sh --nocache --coverage
+
+# Run tests with coverage; exit error if filtered coverage is not 100%
+test-coverage-strict:
+    @scripts/test.sh --coverage --require-100
+
+# No cache + coverage; exit error if filtered coverage is not 100%
+test-full-strict:
+    @scripts/test.sh --nocache --coverage --require-100
 
 # go vet + Staticcheck + Revive (tools pinned in src/go.mod)
 lint:
