@@ -76,7 +76,7 @@ mcpyeahyouknowme reindex
 mcpyeahyouknowme reindex --clear
 ```
 
-Requests an immediate search reindex. When the core daemon is running, this command signals the daemon to start reindexing in the background instead of doing the work in the CLI process. When no daemon is running, it falls back to a standalone synchronous rebuild with progress output. The `--clear` flag wipes existing entries and embeddings before re-indexing, and is only allowed when the daemon is stopped.
+Requests an immediate search reindex. When the core daemon is running, this command signals the daemon to start reindexing in the background instead of doing the work in the CLI process. If a daemon-owned index pass is already running, the daemon cancels it at the next safe checkpoint (between source passes or embedding batches) and immediately restarts from the beginning. Scheduled 5-minute indexing ticks do not interrupt an active pass. When no daemon is running, it falls back to a standalone synchronous rebuild with progress output. The `--clear` flag wipes existing entries and embeddings before re-indexing, and is only allowed when the daemon is stopped.
 
 ### Notebook Commands
 

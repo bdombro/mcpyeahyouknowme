@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -183,9 +184,15 @@ const embeddingChunkSize = 200
 
 // computeEmbeddings generates embeddings for entries that don't have one yet,
 // processing in chunks with per-chunk commits and adaptive batch sizing.
-func (s *SearchStore) computeEmbeddings() error {
+func (s *SearchStore) computeEmbeddings(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	batchSize := adaptiveBatchSize()
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		n, err := s.embedChunk(batchSize, embeddingChunkSize)
 		if err != nil {
 			return err
@@ -193,17 +200,28 @@ func (s *SearchStore) computeEmbeddings() error {
 		if n == 0 {
 			return nil
 		}
-		time.Sleep(50 * time.Millisecond)
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
 }
 
 // ComputePendingEmbeddings fills in missing embeddings after indexing so
 // source insertion can finish before expensive model work starts.
 func (s *SearchStore) ComputePendingEmbeddings() error {
+	return s.ComputePendingEmbeddingsContext(context.Background())
+}
+
+// Fills in missing embeddings until completion or context cancellation so daemon reindex requests can restart promptly.
+func (s *SearchStore) ComputePendingEmbeddingsContext(ctx context.Context) error {
 	if s.embedder == nil {
 		return nil
 	}
-	return s.computeEmbeddings()
+	return s.computeEmbeddings(ctx)
 }
 
 type pendingEmbed struct {

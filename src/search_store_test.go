@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -71,6 +72,12 @@ type countingEmbedder struct {
 	textsCalls int
 }
 
+type cancelingEmbedder struct {
+	base      EmbedderInterface
+	onTexts   func()
+	textsSeen int
+}
+
 // Increments passage-call counts so tests can assert whether embedding work was skipped.
 func (c *countingEmbedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
 	c.textsCalls++
@@ -85,6 +92,26 @@ func (c *countingEmbedder) EmbedQuery(query string) ([]float32, error) {
 
 // Releases the wrapped embedder so test doubles preserve production cleanup semantics.
 func (c *countingEmbedder) Close() {
+	c.base.Close()
+}
+
+// Cancels the test context after the first batch so computeEmbeddings can cover its restart-friendly cancellation path.
+func (c *cancelingEmbedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
+	c.textsSeen++
+	embeddings, err := c.base.EmbedTexts(texts, batchSize)
+	if c.textsSeen == 1 && c.onTexts != nil {
+		c.onTexts()
+	}
+	return embeddings, err
+}
+
+// Delegates query embeddings to the wrapped base embedder because only passage cancellation matters in these tests.
+func (c *cancelingEmbedder) EmbedQuery(query string) ([]float32, error) {
+	return c.base.EmbedQuery(query)
+}
+
+// Releases the wrapped embedder so cancellation tests preserve production cleanup semantics.
+func (c *cancelingEmbedder) Close() {
 	c.base.Close()
 }
 
@@ -263,6 +290,39 @@ func TestSearchStore_ComputePendingEmbeddings(t *testing.T) {
 		store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&embCount)
 		if embCount != 0 {
 			t.Fatalf("expected 0 embeddings without embedder, got %d", embCount)
+		}
+	})
+
+	t.Run("canceled context stops early", func(t *testing.T) {
+		store := newTestSearchStore(t, &mockEmbedder{dim: 16})
+		if err := store.IndexEntries(seedSearchEntries()); err != nil {
+			t.Fatalf("IndexEntries: %v", err)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := store.ComputePendingEmbeddingsContext(ctx)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context cancellation, got %v", err)
+		}
+
+		var embCount int
+		store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&embCount)
+		if embCount != 0 {
+			t.Fatalf("expected 0 embeddings after early cancellation, got %d", embCount)
+		}
+	})
+
+	t.Run("nil context behaves like background", func(t *testing.T) {
+		store := newTestSearchStore(t, &mockEmbedder{dim: 16})
+		if err := store.IndexEntries(seedSearchEntries()); err != nil {
+			t.Fatalf("IndexEntries: %v", err)
+		}
+		var nilCtx context.Context
+
+		if err := store.computeEmbeddings(nilCtx); err != nil {
+			t.Fatalf("computeEmbeddings with nil context: %v", err)
 		}
 	})
 }
@@ -922,6 +982,49 @@ func TestSearchStore_chunkedEmbeddings_commitsPerChunk(t *testing.T) {
 	store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&count)
 	if count != len(entries) {
 		t.Errorf("expected %d embeddings, got %d", len(entries), count)
+	}
+}
+
+// Verifies computeEmbeddings exits with context cancellation between embedding batches so daemon restarts can resume quickly.
+func TestSearchStore_computeEmbeddings_contextCanceledBetweenBatches(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	emb := &cancelingEmbedder{
+		base: &mockEmbedder{dim: 8},
+		onTexts: func() {
+			cancel()
+		},
+	}
+	store := newTestSearchStore(t, emb)
+
+	entries := make([]SearchEntry, embeddingChunkSize+25)
+	for i := range entries {
+		entries[i] = SearchEntry{
+			Source: "test", SourceID: fmt.Sprintf("cancel%d", i),
+			ContentType: "message", Title: fmt.Sprintf("doc %d", i),
+			Content: fmt.Sprintf("content number %d for cancellation test", i),
+		}
+	}
+	store.IndexEntries(entries)
+
+	err := store.computeEmbeddings(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+}
+
+// Verifies computeEmbeddings returns immediately when the context is already canceled before any batch work starts.
+func TestSearchStore_computeEmbeddings_preCanceledContext(t *testing.T) {
+	store := newTestSearchStore(t, &mockEmbedder{dim: 8})
+	if err := store.IndexEntries(seedSearchEntries()); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := store.computeEmbeddings(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
 	}
 }
 

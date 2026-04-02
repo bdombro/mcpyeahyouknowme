@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"syscall"
 	"testing"
+	"time"
 
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/registry"
 
 	"github.com/mark3labs/mcp-go/server"
+	_ "modernc.org/sqlite"
 )
 
 type runtimeTestSource struct {
@@ -17,17 +20,22 @@ type runtimeTestSource struct {
 }
 
 // Returns the stub source name so runtime tests can register a minimal data source.
-func (r *runtimeTestSource) Name() string                               { return "stub" }
+func (r *runtimeTestSource) Name() string { return "stub" }
+
 // Returns the stub description so runtime tests satisfy the data-source interface.
-func (r *runtimeTestSource) Description() string                        { return "Stub" }
+func (r *runtimeTestSource) Description() string { return "Stub" }
+
 // Registers no tools because runtime tests only exercise daemon lifecycle helpers.
-func (r *runtimeTestSource) RegisterTools(*server.MCPServer)            {}
+func (r *runtimeTestSource) RegisterTools(*server.MCPServer) {}
+
 // Returns no entries because runtime tests are focused on reset/start behavior, not indexing.
 func (r *runtimeTestSource) SearchEntries() ([]core.SearchEntry, error) { return nil, nil }
+
 // Marks resetCalled so runtime tests can verify the reset path invokes the source.
-func (r *runtimeTestSource) Reset(string) error                         { r.resetCalled = true; return nil }
+func (r *runtimeTestSource) Reset(string) error { r.resetCalled = true; return nil }
+
 // Closes nothing because the runtime test stub owns no resources.
-func (r *runtimeTestSource) Close() error                               { return nil }
+func (r *runtimeTestSource) Close() error { return nil }
 
 // Verifies handleReset keeps the source config entry but clears enabled/reset state instead of deleting it.
 func TestHandleReset_disablesSourceInsteadOfDeleting(t *testing.T) {
@@ -165,12 +173,108 @@ func TestShouldRestartSource(t *testing.T) {
 	}
 }
 
+// Verifies the coordinator cancels the active run and starts one fresh rerun after the worker yields.
+func TestIndexCoordinator_requestRestart(t *testing.T) {
+	started := make(chan context.Context, 2)
+	released := make(chan struct{}, 1)
+	coordinator := newIndexCoordinator(func(ctx context.Context) {
+		started <- ctx
+		<-released
+	})
+
+	coordinator.Request(false)
+	firstCtx := <-started
+
+	coordinator.Request(true)
+
+	select {
+	case <-firstCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("expected first run context to be canceled")
+	}
+
+	released <- struct{}{}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("expected restart run to begin after cancellation")
+	}
+}
+
+// Verifies ticker-style requests do not cancel an active run and do not queue a second pass.
+func TestIndexCoordinator_requestWhileRunning_noRestart(t *testing.T) {
+	started := make(chan context.Context, 1)
+	released := make(chan struct{}, 1)
+	coordinator := newIndexCoordinator(func(ctx context.Context) {
+		started <- ctx
+		<-released
+	})
+
+	coordinator.Request(false)
+	firstCtx := <-started
+
+	coordinator.Request(false)
+
+	select {
+	case <-firstCtx.Done():
+		t.Fatal("expected non-restart request to leave current run alone")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	released <- struct{}{}
+
+	select {
+	case <-started:
+		t.Fatal("expected no queued restart for non-restart request")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// Verifies nil-safe coordinator helpers return without panicking when no worker is configured.
+func TestIndexCoordinator_nilSafety(_ *testing.T) {
+	var nilCoordinator *indexCoordinator
+	nilCoordinator.Request(false)
+	nilCoordinator.Stop()
+
+	coordinator := newIndexCoordinator(nil)
+	coordinator.Request(false)
+}
+
+// Verifies Stop cancels the active run and clears pending restart state.
+func TestIndexCoordinator_stop(t *testing.T) {
+	started := make(chan context.Context, 1)
+	released := make(chan struct{}, 1)
+	coordinator := newIndexCoordinator(func(ctx context.Context) {
+		started <- ctx
+		<-released
+	})
+
+	coordinator.Request(false)
+	runCtx := <-started
+	coordinator.restartPending = true
+
+	coordinator.Stop()
+
+	select {
+	case <-runCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("expected Stop to cancel the active run")
+	}
+
+	released <- struct{}{}
+	time.Sleep(10 * time.Millisecond)
+	if coordinator.restartPending {
+		t.Fatal("expected Stop to clear pending restart state")
+	}
+}
+
 // Verifies handleCoreSignal runs an immediate index pass for SIGUSR1 without stopping the daemon.
 func TestHandleCoreSignal_reindex(t *testing.T) {
 	running := map[string]context.CancelFunc{}
 	indexCalled := false
 
-	if stop := handleCoreSignal(syscall.SIGUSR1, running, nil, nil, func() { indexCalled = true }); stop {
+	if stop := handleCoreSignal(syscall.SIGUSR1, running, nil, nil, nil, func() { indexCalled = true }); stop {
 		t.Fatal("expected daemon to keep running after SIGUSR1")
 	}
 	if !indexCalled {
@@ -181,14 +285,29 @@ func TestHandleCoreSignal_reindex(t *testing.T) {
 // Verifies handleCoreSignal cancels running sources and stops the daemon for termination signals.
 func TestHandleCoreSignal_shutdown(t *testing.T) {
 	cancelled := false
+	indexStopped := false
+	db, err := sql.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if err := initSearchSchema(db); err != nil {
+		t.Fatalf("initSearchSchema: %v", err)
+	}
+	searchStore := &SearchStore{db: db}
 	running := map[string]context.CancelFunc{
 		"stub": func() { cancelled = true },
 	}
 
-	if stop := handleCoreSignal(syscall.SIGTERM, running, nil, nil, func() {}); !stop {
+	if stop := handleCoreSignal(syscall.SIGTERM, running, searchStore, &Embedder{}, func() { indexStopped = true }, func() {}); !stop {
 		t.Fatal("expected daemon to stop after SIGTERM")
+	}
+	if !indexStopped {
+		t.Fatal("expected in-flight indexing to be canceled during shutdown")
 	}
 	if !cancelled {
 		t.Fatal("expected running sources to be cancelled")
+	}
+	if err := db.Ping(); err == nil {
+		t.Fatal("expected search store database to be closed on shutdown")
 	}
 }

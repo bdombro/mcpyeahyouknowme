@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -19,9 +20,15 @@ type sourceIndexer interface {
 	UpdateSourceTimestamp(source string, ts time.Time)
 }
 
-// indexSources populates the search index from all data sources.
-func indexSources(store sourceIndexer, sources []activeSource) {
+// Populates the search index from all global sources until the context is canceled.
+func indexSources(ctx context.Context, store sourceIndexer, sources []activeSource) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	for _, active := range sources {
+		if ctx.Err() != nil {
+			return false
+		}
 		if !active.desc.IndexGlobally {
 			continue
 		}
@@ -30,12 +37,16 @@ func indexSources(store sourceIndexer, sources []activeSource) {
 			fmt.Fprintf(os.Stderr, "Warning: failed to get search entries from %s: %v\n", active.src.Name(), err)
 			continue
 		}
+		if ctx.Err() != nil {
+			return false
+		}
 		if err := store.IndexEntries(entries); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to index %s entries: %v\n", active.src.Name(), err)
 			continue
 		}
 		store.UpdateSourceTimestamp(active.src.Name(), time.Now())
 	}
+	return true
 }
 
 // buildActiveSources constructs DataSource instances for all available, enabled,

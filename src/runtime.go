@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,6 +15,76 @@ import (
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/registry"
 )
+
+// indexCoordinator serializes background index runs and can request a restart after the current run yields.
+type indexCoordinator struct {
+	mu             sync.Mutex
+	running        bool
+	restartPending bool
+	cancel         context.CancelFunc
+	start          func(context.Context)
+}
+
+// Builds a coordinator that owns one cancellable background indexing worker at a time.
+func newIndexCoordinator(start func(context.Context)) *indexCoordinator {
+	return &indexCoordinator{start: start}
+}
+
+// Starts a new index run or requests cancellation-and-restart when one is already active.
+func (c *indexCoordinator) Request(restartIfRunning bool) {
+	if c == nil || c.start == nil {
+		return
+	}
+
+	c.mu.Lock()
+	if c.running {
+		if restartIfRunning {
+			c.restartPending = true
+			if c.cancel != nil {
+				c.cancel()
+			}
+		}
+		c.mu.Unlock()
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	c.running = true
+	c.restartPending = false
+	c.cancel = cancel
+	c.mu.Unlock()
+
+	go func() {
+		c.start(ctx)
+
+		c.mu.Lock()
+		c.running = false
+		c.cancel = nil
+		restart := c.restartPending
+		c.restartPending = false
+		c.mu.Unlock()
+
+		if restart {
+			c.Request(false)
+		}
+	}()
+}
+
+// Cancels the active run and clears any queued restart so daemon shutdown does not relaunch indexing.
+func (c *indexCoordinator) Stop() {
+	if c == nil {
+		return
+	}
+
+	c.mu.Lock()
+	c.restartPending = false
+	cancel := c.cancel
+	c.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+}
 
 // runCore is the long-lived daemon loop: it polls config, starts/stops/reset sources, and kicks optional search indexing on each tick.
 func runCore() {
@@ -47,30 +118,33 @@ func runCore() {
 		}
 	}
 
-	var indexMu sync.Mutex
-	runIndex := func() {
+	coordinator := newIndexCoordinator(func(ctx context.Context) {
 		if searchStore == nil {
 			return
 		}
-		if !indexMu.TryLock() {
-			return
-		}
-		go func() {
-			defer indexMu.Unlock()
-			sources := buildActiveSources(dir)
-			defer func() {
-				for _, s := range sources {
-					s.src.Close()
-				}
-			}()
-			indexSources(searchStore, sources)
-			if err := searchStore.ComputePendingEmbeddings(); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: embedding pass failed: %v\n", err)
+		sources := buildActiveSources(dir)
+		defer func() {
+			for _, s := range sources {
+				s.src.Close()
 			}
 		}()
+
+		completed := indexSources(ctx, searchStore, sources)
+		if !completed {
+			return
+		}
+		if err := searchStore.ComputePendingEmbeddingsContext(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			fmt.Fprintf(os.Stderr, "Warning: embedding pass failed: %v\n", err)
+		}
+	})
+	requestIndex := func(restartIfRunning bool) {
+		if searchStore == nil {
+			return
+		}
+		coordinator.Request(restartIfRunning)
 	}
 
-	runIndex()
+	requestIndex(false)
 
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -81,7 +155,7 @@ func runCore() {
 	for {
 		select {
 		case sig := <-sigCh:
-			if handleCoreSignal(sig, running, searchStore, embedder, runIndex) {
+			if handleCoreSignal(sig, running, searchStore, embedder, coordinator.Stop, func() { requestIndex(true) }) {
 				return
 			}
 		case <-ticker.C:
@@ -119,16 +193,19 @@ func runCore() {
 			}
 			cfg = newCfg
 
-			runIndex()
+			requestIndex(false)
 		}
 	}
 }
 
 // handleCoreSignal runs an immediate index pass for SIGUSR1 and otherwise performs daemon shutdown cleanup.
-func handleCoreSignal(sig os.Signal, running map[string]context.CancelFunc, searchStore *SearchStore, embedder *Embedder, runIndex func()) bool {
+func handleCoreSignal(sig os.Signal, running map[string]context.CancelFunc, searchStore *SearchStore, embedder *Embedder, stopIndex func(), runIndex func()) bool {
 	if sig == syscall.SIGUSR1 {
 		runIndex()
 		return false
+	}
+	if stopIndex != nil {
+		stopIndex()
 	}
 	for _, cancel := range running {
 		cancel()
