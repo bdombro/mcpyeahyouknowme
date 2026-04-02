@@ -21,17 +21,18 @@ type indexCoordinator struct {
 	mu             sync.Mutex
 	running        bool
 	restartPending bool
+	clearPending   bool
 	cancel         context.CancelFunc
-	start          func(context.Context)
+	start          func(context.Context, bool)
 }
 
 // Builds a coordinator that owns one cancellable background indexing worker at a time.
-func newIndexCoordinator(start func(context.Context)) *indexCoordinator {
+func newIndexCoordinator(start func(context.Context, bool)) *indexCoordinator {
 	return &indexCoordinator{start: start}
 }
 
 // Starts a new index run or requests cancellation-and-restart when one is already active.
-func (c *indexCoordinator) Request(restartIfRunning bool) {
+func (c *indexCoordinator) Request(restartIfRunning, clearFirst bool) {
 	if c == nil || c.start == nil {
 		return
 	}
@@ -40,6 +41,7 @@ func (c *indexCoordinator) Request(restartIfRunning bool) {
 	if c.running {
 		if restartIfRunning {
 			c.restartPending = true
+			c.clearPending = c.clearPending || clearFirst
 			if c.cancel != nil {
 				c.cancel()
 			}
@@ -51,21 +53,24 @@ func (c *indexCoordinator) Request(restartIfRunning bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.running = true
 	c.restartPending = false
+	c.clearPending = false
 	c.cancel = cancel
 	c.mu.Unlock()
 
 	go func() {
-		c.start(ctx)
+		c.start(ctx, clearFirst)
 
 		c.mu.Lock()
 		c.running = false
 		c.cancel = nil
 		restart := c.restartPending
+		clearFirstNext := c.clearPending
 		c.restartPending = false
+		c.clearPending = false
 		c.mu.Unlock()
 
 		if restart {
-			c.Request(false)
+			c.Request(false, clearFirstNext)
 		}
 	}()
 }
@@ -78,6 +83,7 @@ func (c *indexCoordinator) Stop() {
 
 	c.mu.Lock()
 	c.restartPending = false
+	c.clearPending = false
 	cancel := c.cancel
 	c.mu.Unlock()
 
@@ -118,9 +124,15 @@ func runCore() {
 		}
 	}
 
-	coordinator := newIndexCoordinator(func(ctx context.Context) {
+	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst bool) {
 		if searchStore == nil {
 			return
+		}
+		if clearFirst {
+			if err := searchStore.Clear(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to clear search index: %v\n", err)
+				return
+			}
 		}
 		sources := buildActiveSources(dir)
 		defer func() {
@@ -137,14 +149,14 @@ func runCore() {
 			fmt.Fprintf(os.Stderr, "Warning: embedding pass failed: %v\n", err)
 		}
 	})
-	requestIndex := func(restartIfRunning bool) {
+	requestIndex := func(restartIfRunning, clearFirst bool) {
 		if searchStore == nil {
 			return
 		}
-		coordinator.Request(restartIfRunning)
+		coordinator.Request(restartIfRunning, clearFirst)
 	}
 
-	requestIndex(false)
+	requestIndex(false, false)
 
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -155,7 +167,7 @@ func runCore() {
 	for {
 		select {
 		case sig := <-sigCh:
-			if handleCoreSignal(sig, running, searchStore, embedder, coordinator.Stop, func() { requestIndex(true) }) {
+			if handleCoreSignal(sig, running, searchStore, embedder, coordinator.Stop, func() { requestIndex(true, true) }) {
 				return
 			}
 		case <-ticker.C:
@@ -193,7 +205,7 @@ func runCore() {
 			}
 			cfg = newCfg
 
-			requestIndex(false)
+			requestIndex(false, false)
 		}
 	}
 }

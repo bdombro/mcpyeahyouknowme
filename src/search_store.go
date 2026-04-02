@@ -123,6 +123,20 @@ func (s *SearchStore) Close() error {
 	return s.db.Close()
 }
 
+// Clears all search entries, embeddings, FTS rows, and source timestamps so a full rebuild starts from an empty index.
+func (s *SearchStore) Clear() error {
+	_, err := s.db.Exec(`
+		DELETE FROM search_embeddings;
+		DELETE FROM search_entries;
+		INSERT INTO search_fts(search_fts) VALUES('rebuild');
+		DELETE FROM search_meta;
+	`)
+	if err != nil {
+		return fmt.Errorf("clear search index: %w", err)
+	}
+	return nil
+}
+
 // IndexEntries upserts entries into the search index so all sources become
 // searchable before any background embedding work begins.
 func (s *SearchStore) IndexEntries(entries []SearchEntry) error {

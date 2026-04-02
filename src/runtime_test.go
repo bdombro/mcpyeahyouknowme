@@ -175,20 +175,24 @@ func TestShouldRestartSource(t *testing.T) {
 
 // Verifies the coordinator cancels the active run and starts one fresh rerun after the worker yields.
 func TestIndexCoordinator_requestRestart(t *testing.T) {
-	started := make(chan context.Context, 2)
+	type run struct {
+		ctx        context.Context
+		clearFirst bool
+	}
+	started := make(chan run, 2)
 	released := make(chan struct{}, 1)
-	coordinator := newIndexCoordinator(func(ctx context.Context) {
-		started <- ctx
+	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst bool) {
+		started <- run{ctx: ctx, clearFirst: clearFirst}
 		<-released
 	})
 
-	coordinator.Request(false)
-	firstCtx := <-started
+	coordinator.Request(false, false)
+	firstRun := <-started
 
-	coordinator.Request(true)
+	coordinator.Request(true, true)
 
 	select {
-	case <-firstCtx.Done():
+	case <-firstRun.ctx.Done():
 	case <-time.After(time.Second):
 		t.Fatal("expected first run context to be canceled")
 	}
@@ -196,7 +200,10 @@ func TestIndexCoordinator_requestRestart(t *testing.T) {
 	released <- struct{}{}
 
 	select {
-	case <-started:
+	case nextRun := <-started:
+		if !nextRun.clearFirst {
+			t.Fatal("expected restarted run to request a full clear")
+		}
 	case <-time.After(time.Second):
 		t.Fatal("expected restart run to begin after cancellation")
 	}
@@ -204,20 +211,24 @@ func TestIndexCoordinator_requestRestart(t *testing.T) {
 
 // Verifies ticker-style requests do not cancel an active run and do not queue a second pass.
 func TestIndexCoordinator_requestWhileRunning_noRestart(t *testing.T) {
-	started := make(chan context.Context, 1)
+	type run struct {
+		ctx        context.Context
+		clearFirst bool
+	}
+	started := make(chan run, 1)
 	released := make(chan struct{}, 1)
-	coordinator := newIndexCoordinator(func(ctx context.Context) {
-		started <- ctx
+	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst bool) {
+		started <- run{ctx: ctx, clearFirst: clearFirst}
 		<-released
 	})
 
-	coordinator.Request(false)
-	firstCtx := <-started
+	coordinator.Request(false, false)
+	firstRun := <-started
 
-	coordinator.Request(false)
+	coordinator.Request(false, true)
 
 	select {
-	case <-firstCtx.Done():
+	case <-firstRun.ctx.Done():
 		t.Fatal("expected non-restart request to leave current run alone")
 	case <-time.After(50 * time.Millisecond):
 	}
@@ -234,30 +245,35 @@ func TestIndexCoordinator_requestWhileRunning_noRestart(t *testing.T) {
 // Verifies nil-safe coordinator helpers return without panicking when no worker is configured.
 func TestIndexCoordinator_nilSafety(_ *testing.T) {
 	var nilCoordinator *indexCoordinator
-	nilCoordinator.Request(false)
+	nilCoordinator.Request(false, false)
 	nilCoordinator.Stop()
 
 	coordinator := newIndexCoordinator(nil)
-	coordinator.Request(false)
+	coordinator.Request(false, false)
 }
 
 // Verifies Stop cancels the active run and clears pending restart state.
 func TestIndexCoordinator_stop(t *testing.T) {
-	started := make(chan context.Context, 1)
+	type run struct {
+		ctx        context.Context
+		clearFirst bool
+	}
+	started := make(chan run, 1)
 	released := make(chan struct{}, 1)
-	coordinator := newIndexCoordinator(func(ctx context.Context) {
-		started <- ctx
+	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst bool) {
+		started <- run{ctx: ctx, clearFirst: clearFirst}
 		<-released
 	})
 
-	coordinator.Request(false)
-	runCtx := <-started
+	coordinator.Request(false, false)
+	activeRun := <-started
 	coordinator.restartPending = true
+	coordinator.clearPending = true
 
 	coordinator.Stop()
 
 	select {
-	case <-runCtx.Done():
+	case <-activeRun.ctx.Done():
 	case <-time.After(time.Second):
 		t.Fatal("expected Stop to cancel the active run")
 	}
@@ -266,6 +282,9 @@ func TestIndexCoordinator_stop(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	if coordinator.restartPending {
 		t.Fatal("expected Stop to clear pending restart state")
+	}
+	if coordinator.clearPending {
+		t.Fatal("expected Stop to clear pending full-clear state")
 	}
 }
 

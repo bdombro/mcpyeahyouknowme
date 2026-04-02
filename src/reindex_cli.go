@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +14,14 @@ var reindexDaemonPID = coreDaemonPID
 var reindexSignalProcess = func(pid int, signal syscall.Signal) error {
 	return syscall.Kill(pid, signal)
 }
+var reindexDataDir = core.DataDir
+var reindexNewEmbedder = func(cacheDir string) (EmbedderInterface, error) {
+	return NewEmbedder(cacheDir)
+}
+var reindexNewSearchStore = func(dir string, embedder EmbedderInterface) (*SearchStore, error) {
+	return NewSearchStore(dir, embedder)
+}
+var reindexActiveSources = buildActiveSources
 var reindexLocalRunner = runLocalReindex
 
 // runReindex routes manual reindex requests to the daemon when it is running,
@@ -26,14 +33,12 @@ func runReindex(args []string) {
 	}
 }
 
-// handleReindex routes reindex requests so one process owns indexing work and
-// `--clear` remains a stop-the-daemon-first maintenance path.
+// Routes reindex requests so one process owns indexing work and every manual run does a full clear-and-rebuild.
 func handleReindex(args []string) error {
-	clearIndex := len(args) > 0 && args[0] == "--clear"
+	if len(args) > 0 {
+		return fmt.Errorf("reindex does not accept arguments")
+	}
 	if pid := reindexDaemonPID(); pid > 0 {
-		if clearIndex {
-			return errors.New("--clear requires the core daemon to be stopped first")
-		}
 		if err := reindexSignalProcess(pid, syscall.SIGUSR1); err != nil {
 			return fmt.Errorf("signal core daemon reindex: %w", err)
 		}
@@ -43,34 +48,28 @@ func handleReindex(args []string) error {
 	return reindexLocalRunner(args)
 }
 
-// runLocalReindex performs a full standalone search index rebuild with progress
-// output for cases where the daemon is not installed or not currently running.
-func runLocalReindex(args []string) error {
-	dir := core.DataDir()
+// Performs a full standalone search index rebuild with progress output when no daemon is running.
+func runLocalReindex(_ []string) error {
+	dir := reindexDataDir()
 
-	clearIndex := len(args) > 0 && args[0] == "--clear"
-
-	embedder, err := NewEmbedder(filepath.Join(dir, "models"))
+	embedder, err := reindexNewEmbedder(filepath.Join(dir, "models"))
 	if err != nil {
 		return err
 	}
 	defer embedder.Close()
 
-	searchStore, err := NewSearchStore(dir, embedder)
+	searchStore, err := reindexNewSearchStore(dir, embedder)
 	if err != nil {
 		return fmt.Errorf("search index unavailable: %w", err)
 	}
 	defer searchStore.Close()
 
-	if clearIndex {
-		fmt.Fprintln(os.Stderr, "Clearing existing index...")
-		searchStore.db.Exec("DELETE FROM search_embeddings")
-		searchStore.db.Exec("DELETE FROM search_entries")
-		searchStore.db.Exec("INSERT INTO search_fts(search_fts) VALUES('rebuild')")
-		searchStore.db.Exec("DELETE FROM search_meta")
+	fmt.Fprintln(os.Stderr, "Clearing existing index...")
+	if err := searchStore.Clear(); err != nil {
+		return fmt.Errorf("clear search index: %w", err)
 	}
 
-	sources := buildActiveSources(dir)
+	sources := reindexActiveSources(dir)
 	defer func() {
 		for _, s := range sources {
 			s.src.Close()

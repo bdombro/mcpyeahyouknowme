@@ -104,8 +104,8 @@ func commandTree() []Command {
 		},
 		{
 			Name:    "reindex",
-			Summary: "Request a search reindex (signals daemon when running)",
-			Usage:   "reindex [--clear]",
+			Summary: "Rebuild the search index from scratch",
+			Usage:   "reindex",
 			Section: "Maintenance",
 			Run: func(args []string) {
 				runReindex(args)

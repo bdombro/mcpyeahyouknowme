@@ -1063,6 +1063,46 @@ func TestSearchStore_IndexStats(t *testing.T) {
 	}
 }
 
+// Verifies Clear removes indexed rows, embedding rows, and source timestamps so full rebuilds restart from zero.
+func TestSearchStore_Clear(t *testing.T) {
+	emb := &mockEmbedder{dim: 8}
+	store := newTestSearchStore(t, emb)
+	entries := seedSearchEntries()
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+	computePendingEmbeddingsForTest(t, store)
+	store.UpdateSourceTimestamp("test", time.Now())
+
+	if err := store.Clear(); err != nil {
+		t.Fatalf("Clear: %v", err)
+	}
+
+	stats := store.IndexStats()
+	if stats.Entries != 0 || stats.Embedded != 0 {
+		t.Fatalf("expected cleared stats, got %+v", stats)
+	}
+
+	var metaCount int
+	store.db.QueryRow("SELECT COUNT(*) FROM search_meta").Scan(&metaCount)
+	if metaCount != 0 {
+		t.Fatalf("expected cleared search_meta, got %d rows", metaCount)
+	}
+}
+
+// Verifies Clear reports a useful error when the underlying DB handle is unavailable.
+func TestSearchStore_Clear_closedDB(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	err := store.Clear()
+	if err == nil || !strings.Contains(err.Error(), "clear search index") {
+		t.Fatalf("Clear error = %v", err)
+	}
+}
+
 // Verifies read-only stats return zeros when no search database exists yet.
 func TestReadOnlySearchIndexStats_noDB(t *testing.T) {
 	stats := ReadOnlySearchIndexStats(t.TempDir())
