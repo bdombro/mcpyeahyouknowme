@@ -32,7 +32,6 @@ func initCalendarSchema(db *sql.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS calendar_events (
 		id TEXT PRIMARY KEY,
-		calendar_id TEXT NOT NULL DEFAULT '',
 		calendar_name TEXT NOT NULL DEFAULT '',
 		summary TEXT NOT NULL DEFAULT '',
 		description TEXT NOT NULL DEFAULT '',
@@ -52,6 +51,12 @@ func initCalendarSchema(db *sql.DB) error {
 	`)
 	if err != nil { // nocov
 		return err
+	}
+	needsVacuum := false
+	if dropped, err := dropSQLiteColumnIfExists(db, "calendar_events", "calendar_id"); err != nil { // nocov
+		return err
+	} else if dropped {
+		needsVacuum = true
 	}
 	_, err = db.Exec(`
 	CREATE VIRTUAL TABLE IF NOT EXISTS calendar_events_fts USING fts5(
@@ -77,7 +82,7 @@ func initCalendarSchema(db *sql.DB) error {
 		return err
 	}
 	db.Exec("INSERT INTO calendar_events_fts(calendar_events_fts) VALUES('rebuild')")
-	return nil
+	return vacuumSQLiteIfRequested(db, needsVacuum)
 }
 
 // syncCalendar refreshes recent calendar events into SQLite and removes local rows absent from the latest API window.
@@ -126,11 +131,11 @@ func syncCalendar(sctx syncContext) error { // nocov
 					continue
 				}
 				sctx.DB.Exec(`INSERT OR REPLACE INTO calendar_events
-					(id, calendar_id, calendar_name, summary, description, location,
+					(id, calendar_name, summary, description, location,
 					 start_time, end_time, all_day, created_time, updated_time,
 					 organizer, attendees, status, recurrence, html_link, last_synced)
-					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-					record.ID, record.CalendarID, record.CalendarName, record.Summary, record.Description, record.Location,
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+					record.ID, record.CalendarName, record.Summary, record.Description, record.Location,
 					record.StartTime, record.EndTime, record.AllDay, record.CreatedTime, record.UpdatedTime,
 					record.Organizer, record.Attendees, record.Status, record.Recurrence, record.HTMLLink)
 				updatedCount++
@@ -148,7 +153,6 @@ func syncCalendar(sctx syncContext) error { // nocov
 
 type calendarEventRecord struct {
 	ID           string
-	CalendarID   string
 	CalendarName string
 	Summary      string
 	Description  string
@@ -184,7 +188,6 @@ func buildCalendarEventRecord(cal *calendar.CalendarListEntry, ev *calendar.Even
 	record.Attendees = strings.Join(formatCalendarAttendees(ev.Attendees), ", ")
 	record.Recurrence = strings.Join(ev.Recurrence, "; ")
 	if cal != nil {
-		record.CalendarID = cal.Id
 		record.CalendarName = cal.Summary
 		if ev.Id != "" {
 			record.ID = cal.Id + "|" + ev.Id

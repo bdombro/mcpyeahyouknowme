@@ -29,21 +29,25 @@ func initTasksSchema(db *sql.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS tasks_items (
 		id TEXT PRIMARY KEY,
-		tasklist_id TEXT NOT NULL DEFAULT '',
 		tasklist_title TEXT NOT NULL DEFAULT '',
 		title TEXT NOT NULL DEFAULT '',
 		notes TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT '',
 		due TEXT NOT NULL DEFAULT '',
-		completed TEXT NOT NULL DEFAULT '',
 		updated TEXT NOT NULL DEFAULT '',
-		position TEXT NOT NULL DEFAULT '',
-		parent TEXT NOT NULL DEFAULT '',
 		last_synced TEXT NOT NULL
 	);
 	`)
 	if err != nil { // nocov
 		return err
+	}
+	needsVacuum := false
+	for _, column := range []string{"tasklist_id", "completed", "position", "parent"} {
+		if dropped, err := dropSQLiteColumnIfExists(db, "tasks_items", column); err != nil { // nocov
+			return err
+		} else if dropped {
+			needsVacuum = true
+		}
 	}
 	_, err = db.Exec(`
 	CREATE VIRTUAL TABLE IF NOT EXISTS tasks_items_fts USING fts5(
@@ -69,7 +73,7 @@ func initTasksSchema(db *sql.DB) error {
 		return err
 	}
 	db.Exec("INSERT INTO tasks_items_fts(tasks_items_fts) VALUES('rebuild')")
-	return nil
+	return vacuumSQLiteIfRequested(db, needsVacuum)
 }
 
 // syncTasks refreshes task lists/items into SQLite and removes local tasks absent from the latest Tasks API listing.
@@ -111,12 +115,10 @@ func syncTasks(sctx syncContext) error { // nocov
 					continue
 				}
 				sctx.DB.Exec(`INSERT OR REPLACE INTO tasks_items
-					(id, tasklist_id, tasklist_title, title, notes, status, due, completed,
-					 updated, position, parent, last_synced)
-					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-					record.ID, record.TasklistID, record.TasklistTitle, record.Title, record.Notes,
-					record.Status, record.Due, record.Completed, record.Updated, record.Position,
-					record.Parent)
+					(id, tasklist_title, title, notes, status, due, updated, last_synced)
+					VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+					record.ID, record.TasklistTitle, record.Title, record.Notes,
+					record.Status, record.Due, record.Updated)
 				updatedCount++
 			}
 			pageToken = taskList.NextPageToken
@@ -132,16 +134,12 @@ func syncTasks(sctx syncContext) error { // nocov
 
 type taskRecord struct {
 	ID            string
-	TasklistID    string
 	TasklistTitle string
 	Title         string
 	Notes         string
 	Status        string
 	Due           string
-	Completed     string
 	Updated       string
-	Position      string
-	Parent        string
 }
 
 // buildTaskRecord flattens a Google Tasks item plus its list into one stored task row.
@@ -156,13 +154,7 @@ func buildTaskRecord(taskList *tasks.TaskList, task *tasks.Task) taskRecord {
 	record.Status = task.Status
 	record.Due = task.Due
 	record.Updated = task.Updated
-	record.Position = task.Position
-	record.Parent = task.Parent
-	if task.Completed != nil {
-		record.Completed = *task.Completed
-	}
 	if taskList != nil {
-		record.TasklistID = taskList.Id
 		record.TasklistTitle = taskList.Title
 	}
 	return record

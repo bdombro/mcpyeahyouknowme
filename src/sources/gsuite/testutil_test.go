@@ -72,17 +72,17 @@ func seedGmail(t *testing.T, db *sql.DB) {
 	msg2Raw := "Yes, I can make it.\n\nOn Fri, Mar 1, 2024 at 10:00 AM Alice <alice@example.com> wrote:\n> Hi Bob,\n> \n> Can you make the meeting tomorrow?\n> \n> Thanks,\n> Alice"
 	_, err := db.Exec(`INSERT INTO gmail_messages
 		(id, thread_id, labels, folder, subject, from_addr, to_addrs, cc_addrs, bcc_addrs,
-		 date, snippet, body_text, body_raw, body_visible, has_attachments, size_estimate, last_synced)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')),
-		       (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		 date, snippet, body_visible, has_attachments, size_estimate, last_synced)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')),
+		       (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
 		"msg1", "thread1", "INBOX,UNREAD", "INBOX",
 		"Meeting Tomorrow", "alice@example.com", "bob@example.com", "", "",
 		"2024-03-01T10:00:00Z", "Can you make the meeting tomorrow?",
-		msg1Raw, msg1Raw, deriveVisibleBody(msg1Raw), 0, 1024,
+		deriveVisibleBody(msg1Raw), 0, 1024,
 		"msg2", "thread1", "INBOX", "INBOX",
 		"Re: Meeting Tomorrow", "bob@example.com", "alice@example.com", "", "",
 		"2024-03-01T11:00:00Z", "Yes, I can make it.",
-		msg2Raw, msg2Raw, deriveVisibleBody(msg2Raw), 0, 2048)
+		deriveVisibleBody(msg2Raw), 0, 2048)
 	if err != nil {
 		t.Fatalf("seed gmail: %v", err)
 	}
@@ -97,11 +97,11 @@ func seedCalendar(t *testing.T, db *sql.DB) {
 	future := time.Now().Add(48 * time.Hour).Format(time.RFC3339)
 	futureEnd := time.Now().Add(49 * time.Hour).Format(time.RFC3339)
 	_, err := db.Exec(`INSERT INTO calendar_events
-		(id, calendar_id, calendar_name, summary, description, location,
+		(id, calendar_name, summary, description, location,
 		 start_time, end_time, all_day, created_time, updated_time,
 		 organizer, attendees, status, recurrence, html_link, last_synced)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-		"cal1|ev1", "cal1", "Work", "Team Standup", "Daily standup meeting", "Zoom",
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		"cal1|ev1", "Work", "Team Standup", "Daily standup meeting", "Zoom",
 		future, futureEnd, 0, "2024-01-01T00:00:00Z", "2024-01-15T00:00:00Z",
 		"alice@example.com", "bob@example.com, carol@example.com", "confirmed", "", "https://calendar.google.com/ev1")
 	if err != nil {
@@ -113,10 +113,10 @@ func seedCalendar(t *testing.T, db *sql.DB) {
 func seedTasks(t *testing.T, db *sql.DB) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO tasks_items
-		(id, tasklist_id, tasklist_title, title, notes, status, due, completed, updated, position, parent, last_synced)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-		"task1", "list1", "My Tasks", "Write unit tests", "Cover all new gsuite code", "needsAction",
-		"2024-04-01T00:00:00Z", "", "2024-03-20T12:00:00Z", "00000000001", "")
+		(id, tasklist_title, title, notes, status, due, updated, last_synced)
+		VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		"task1", "My Tasks", "Write unit tests", "Cover all new gsuite code", "needsAction",
+		"2024-04-01T00:00:00Z", "2024-03-20T12:00:00Z")
 	if err != nil {
 		t.Fatalf("seed task: %v", err)
 	}
@@ -126,10 +126,10 @@ func seedTasks(t *testing.T, db *sql.DB) {
 func seedContacts(t *testing.T, db *sql.DB) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO contacts_people
-		(resource_name, display_name, given_name, family_name, emails, phones, organizations, addresses, notes, updated_time, last_synced)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-		"people/c1", "Alice Smith", "Alice", "Smith", "alice@example.com", "+1-555-0100",
-		"Acme Corp (Engineer)", "123 Main St", "VIP customer", "2024-01-10T00:00:00Z")
+		(resource_name, display_name, emails, phones, organizations, notes, updated_time, last_synced)
+		VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		"people/c1", "Alice Smith", "alice@example.com", "+1-555-0100",
+		"Acme Corp (Engineer)", "VIP customer", "2024-01-10T00:00:00Z")
 	if err != nil {
 		t.Fatalf("seed contact: %v", err)
 	}

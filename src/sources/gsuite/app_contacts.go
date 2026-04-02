@@ -31,12 +31,9 @@ func initContactsSchema(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS contacts_people (
 		resource_name TEXT PRIMARY KEY,
 		display_name TEXT NOT NULL DEFAULT '',
-		given_name TEXT NOT NULL DEFAULT '',
-		family_name TEXT NOT NULL DEFAULT '',
 		emails TEXT NOT NULL DEFAULT '',
 		phones TEXT NOT NULL DEFAULT '',
 		organizations TEXT NOT NULL DEFAULT '',
-		addresses TEXT NOT NULL DEFAULT '',
 		notes TEXT NOT NULL DEFAULT '',
 		updated_time TEXT NOT NULL DEFAULT '',
 		last_synced TEXT NOT NULL
@@ -44,6 +41,14 @@ func initContactsSchema(db *sql.DB) error {
 	`)
 	if err != nil { // nocov
 		return err
+	}
+	needsVacuum := false
+	for _, column := range []string{"given_name", "family_name", "addresses"} {
+		if dropped, err := dropSQLiteColumnIfExists(db, "contacts_people", column); err != nil { // nocov
+			return err
+		} else if dropped {
+			needsVacuum = true
+		}
 	}
 	_, err = db.Exec(`
 	CREATE VIRTUAL TABLE IF NOT EXISTS contacts_people_fts USING fts5(
@@ -69,7 +74,7 @@ func initContactsSchema(db *sql.DB) error {
 		return err
 	}
 	db.Exec("INSERT INTO contacts_people_fts(contacts_people_fts) VALUES('rebuild')")
-	return nil
+	return vacuumSQLiteIfRequested(db, needsVacuum)
 }
 
 // syncContacts refreshes Google contacts into SQLite and removes local rows missing from the latest People listing.
@@ -88,7 +93,7 @@ func syncContacts(sctx syncContext) error { // nocov
 	pageToken := ""
 	for {
 		call := peopleSvc.People.Connections.List("people/me").
-			PersonFields("names,emailAddresses,phoneNumbers,organizations,addresses,biographies,metadata").
+			PersonFields("names,emailAddresses,phoneNumbers,organizations,biographies,metadata").
 			PageSize(1000)
 		if pageToken != "" { // nocov
 			call = call.PageToken(pageToken)
@@ -106,11 +111,11 @@ func syncContacts(sctx syncContext) error { // nocov
 				continue
 			}
 			sctx.DB.Exec(`INSERT OR REPLACE INTO contacts_people
-				(resource_name, display_name, given_name, family_name, emails, phones,
-				 organizations, addresses, notes, updated_time, last_synced)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-				record.ResourceName, record.DisplayName, record.GivenName, record.FamilyName,
-				record.Emails, record.Phones, record.Organizations, record.Addresses,
+				(resource_name, display_name, emails, phones,
+				 organizations, notes, updated_time, last_synced)
+				VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+				record.ResourceName, record.DisplayName,
+				record.Emails, record.Phones, record.Organizations,
 				record.Notes, record.UpdatedTime)
 			updatedCount++
 		}
@@ -127,12 +132,9 @@ func syncContacts(sctx syncContext) error { // nocov
 type contactRecord struct {
 	ResourceName  string
 	DisplayName   string
-	GivenName     string
-	FamilyName    string
 	Emails        string
 	Phones        string
 	Organizations string
-	Addresses     string
 	Notes         string
 	UpdatedTime   string
 }
@@ -149,10 +151,8 @@ func buildContactRecord(p *people.Person) contactRecord {
 	}
 	if len(p.Names) > 0 {
 		record.DisplayName = p.Names[0].DisplayName
-		record.GivenName = p.Names[0].GivenName
-		record.FamilyName = p.Names[0].FamilyName
 	}
-	var emails, phones, orgs, addrs []string
+	var emails, phones, orgs []string
 	for _, e := range p.EmailAddresses {
 		emails = append(emails, e.Value)
 	}
@@ -166,16 +166,12 @@ func buildContactRecord(p *people.Person) contactRecord {
 		}
 		orgs = append(orgs, org)
 	}
-	for _, a := range p.Addresses {
-		addrs = append(addrs, a.FormattedValue)
-	}
 	if len(p.Biographies) > 0 {
 		record.Notes = p.Biographies[0].Value
 	}
 	record.Emails = strings.Join(emails, ", ")
 	record.Phones = strings.Join(phones, ", ")
 	record.Organizations = strings.Join(orgs, ", ")
-	record.Addresses = strings.Join(addrs, "; ")
 	return record
 }
 

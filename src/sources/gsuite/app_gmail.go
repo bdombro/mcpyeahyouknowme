@@ -45,8 +45,6 @@ func initGmailSchema(db *sql.DB) error {
 		bcc_addrs TEXT NOT NULL DEFAULT '',
 		date TEXT NOT NULL DEFAULT '',
 		snippet TEXT NOT NULL DEFAULT '',
-		body_text TEXT NOT NULL DEFAULT '',
-		body_raw TEXT NOT NULL DEFAULT '',
 		body_visible TEXT NOT NULL DEFAULT '',
 		has_attachments INTEGER NOT NULL DEFAULT 0,
 		size_estimate INTEGER NOT NULL DEFAULT 0,
@@ -59,8 +57,6 @@ func initGmailSchema(db *sql.DB) error {
 		message_count INTEGER NOT NULL DEFAULT 0,
 		first_date TEXT NOT NULL DEFAULT '',
 		last_date TEXT NOT NULL DEFAULT '',
-		last_message_id TEXT NOT NULL DEFAULT '',
-		thread_text_visible TEXT NOT NULL DEFAULT '',
 		last_synced TEXT NOT NULL
 	);
 	`)
@@ -68,22 +64,42 @@ func initGmailSchema(db *sql.DB) error {
 		return err
 	}
 	migrated := false
-	if added, err := addGmailMessageColumnIfMissing(db, "body_raw", "TEXT NOT NULL DEFAULT ''"); err != nil { // nocov
-		return err
-	} else if added {
-		migrated = true
-	}
+	needsVacuum := false
 	if added, err := addGmailMessageColumnIfMissing(db, "body_visible", "TEXT NOT NULL DEFAULT ''"); err != nil { // nocov
 		return err
 	} else if added {
 		migrated = true
 	}
-	if migrated {
-		if err := backfillGmailMessageBodies(db); err != nil { // nocov
-			return err
-		}
+	if filled, err := backfillGmailVisibleBodies(db); err != nil { // nocov
+		return err
+	} else if filled {
+		migrated = true
 	}
-	if migrated || !gmailFTSIndexesBodyVisible(db) {
+	if dropped, err := dropSQLiteColumnIfExists(db, "gmail_messages", "body_text"); err != nil { // nocov
+		return err
+	} else if dropped {
+		migrated = true
+		needsVacuum = true
+	}
+	if dropped, err := dropSQLiteColumnIfExists(db, "gmail_messages", "body_raw"); err != nil { // nocov
+		return err
+	} else if dropped {
+		migrated = true
+		needsVacuum = true
+	}
+	if dropped, err := dropSQLiteColumnIfExists(db, "gmail_threads", "last_message_id"); err != nil { // nocov
+		return err
+	} else if dropped {
+		migrated = true
+		needsVacuum = true
+	}
+	if dropped, err := dropSQLiteColumnIfExists(db, "gmail_threads", "thread_text_visible"); err != nil { // nocov
+		return err
+	} else if dropped {
+		migrated = true
+		needsVacuum = true
+	}
+	if migrated || !gmailMessageFTSReady(db) {
 		if err := recreateGmailMessageFTS(db); err != nil { // nocov
 			return err
 		}
@@ -93,7 +109,7 @@ func initGmailSchema(db *sql.DB) error {
 			return err
 		}
 	}
-	return nil
+	return vacuumSQLiteIfRequested(db, needsVacuum)
 }
 
 // syncGmail refreshes synced Gmail messages into SQLite, rebuilds derived threads, and drops trashed-or-missing rows.
@@ -166,8 +182,6 @@ type gmailStoredRecord struct {
 	BccAddrs       string
 	Date           string
 	Snippet        string
-	BodyText       string
-	BodyRaw        string
 	BodyVisible    string
 	HasAttachments int
 	SizeEstimate   int64
@@ -199,25 +213,22 @@ func buildGmailStoredRecord(msg *gmail.Message) gmailStoredRecord {
 		BccAddrs:       headers["Bcc"],
 		Date:           headers["Date"],
 		Snippet:        msg.Snippet,
-		BodyText:       bodyRaw,
-		BodyRaw:        bodyRaw,
 		BodyVisible:    bodyVisible,
 		HasAttachments: hasAttachments,
 		SizeEstimate:   msg.SizeEstimate,
 	}
 }
 
-// storeGmailMessage upserts one synced Gmail message row, keeping body_raw canonical and thread rebuild inputs current.
+// storeGmailMessage upserts one synced Gmail message row, keeping visible body text canonical for thread and search reads.
 func storeGmailMessage(db *sql.DB, msg *gmail.Message) {
 	rec := buildGmailStoredRecord(msg)
-	// body_text is a legacy alias kept for backward compatibility; body_raw is canonical.
 	db.Exec(`INSERT OR REPLACE INTO gmail_messages
 		(id, thread_id, labels, folder, subject, from_addr, to_addrs, cc_addrs, bcc_addrs,
-		 date, snippet, body_text, body_raw, body_visible, has_attachments, size_estimate, last_synced)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		 date, snippet, body_visible, has_attachments, size_estimate, last_synced)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
 		rec.ID, rec.ThreadID, rec.Labels, rec.Folder,
 		rec.Subject, rec.FromAddr, rec.ToAddrs, rec.CcAddrs, rec.BccAddrs,
-		rec.Date, rec.Snippet, rec.BodyText, rec.BodyRaw, rec.BodyVisible, rec.HasAttachments, rec.SizeEstimate)
+		rec.Date, rec.Snippet, rec.BodyVisible, rec.HasAttachments, rec.SizeEstimate)
 }
 
 // parseGmailHeaders extracts the subset of mail headers used for storage, thread views, and search metadata.
@@ -504,9 +515,8 @@ func registerGmailTools(src *Source, prefix string, s toolAdder) {
 		return handleGmailGetMessage(ctx, src, req)
 	})
 	s.AddTool(core.NewReadOnlyTool(prefix+"gmail_get_thread",
-		core.ToolDescription("Get a reconstructed Gmail thread by thread ID", `{"thread_id":"190a2b3c4d","include_raw":false}`),
+		core.ToolDescription("Get a reconstructed Gmail thread by thread ID", `{"thread_id":"190a2b3c4d"}`),
 		mcp.WithString("thread_id", mcp.Required(), mcp.Description("Gmail thread ID")),
-		mcp.WithBoolean("include_raw", mcp.Description("Include raw unstripped message bodies")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleGmailGetThread(ctx, src, req)
 	})
@@ -563,7 +573,7 @@ func handleGmailSearch(_ context.Context, src *Source, req mcp.CallToolRequest) 
 	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
 }
 
-// handleGmailGetMessage looks up req `message_id` in SQLite and returns the stored headers, labels, folder, and raw body.
+// handleGmailGetMessage looks up req `message_id` in SQLite and returns the stored headers, labels, folder, and canonical visible body.
 func handleGmailGetMessage(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	msgID, errResult := core.RequireStringArgument(req, "message_id", `{"message_id":"190a2b3c4d"}`)
 	if errResult != nil {
@@ -572,12 +582,12 @@ func handleGmailGetMessage(_ context.Context, src *Source, req mcp.CallToolReque
 	if src.db == nil {
 		return mcp.NewToolResultError("Database not available"), nil
 	}
-	var threadID, subject, from, to, cc, bcc, date, folder, bodyRaw, labels string
+	var threadID, subject, from, to, cc, bcc, date, folder, bodyVisible, labels string
 	var hasAttach, sizeEst int
 	err := src.db.QueryRow(`SELECT thread_id, subject, from_addr, to_addrs, cc_addrs, bcc_addrs, date, folder,
-		COALESCE(NULLIF(body_raw, ''), body_text), labels, has_attachments, size_estimate
+		body_visible, labels, has_attachments, size_estimate
 		FROM gmail_messages WHERE id = ?`, msgID).
-		Scan(&threadID, &subject, &from, &to, &cc, &bcc, &date, &folder, &bodyRaw, &labels, &hasAttach, &sizeEst)
+		Scan(&threadID, &subject, &from, &to, &cc, &bcc, &date, &folder, &bodyVisible, &labels, &hasAttach, &sizeEst)
 	if err == sql.ErrNoRows {
 		return mcp.NewToolResultError("Message not found"), nil
 	}
@@ -586,18 +596,17 @@ func handleGmailGetMessage(_ context.Context, src *Source, req mcp.CallToolReque
 	}
 	return core.JsonResult(map[string]interface{}{
 		"id": msgID, "thread_id": threadID, "subject": subject, "from": from, "to": to, "cc": cc, "bcc": bcc,
-		"date": date, "folder": folder, "body": bodyRaw, "labels": labels,
+		"date": date, "folder": folder, "body": bodyVisible, "labels": labels,
 		"has_attachments": hasAttach > 0, "size_estimate": sizeEst,
 	})
 }
 
-// handleGmailGetThread loads req `thread_id`, returning reconstructed chronological messages with visible bodies unless `include_raw` asks for raw text too.
+// handleGmailGetThread loads req `thread_id`, returning reconstructed chronological messages with the stored visible bodies.
 func handleGmailGetThread(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	threadID, errResult := core.RequireStringArgument(req, "thread_id", `{"thread_id":"190a2b3c4d","include_raw":false}`)
+	threadID, errResult := core.RequireStringArgument(req, "thread_id", `{"thread_id":"190a2b3c4d"}`)
 	if errResult != nil {
 		return errResult, nil
 	}
-	includeRaw := core.BoolArg(req.GetArguments(), "include_raw", false)
 	if src.db == nil {
 		return mcp.NewToolResultError("Database not available"), nil
 	}
@@ -617,10 +626,6 @@ func handleGmailGetThread(_ context.Context, src *Source, req mcp.CallToolReques
 	}
 	resultMessages := make([]map[string]interface{}, 0, len(messages))
 	for _, msg := range messages {
-		body := msg.BodyVisible
-		if body == "" { // nocov — scanGmailMessages already derives BodyVisible from BodyRaw
-			body = msg.BodyRaw
-		}
 		entry := map[string]interface{}{
 			"message_id":      msg.ID,
 			"from":            msg.From,
@@ -631,10 +636,7 @@ func handleGmailGetThread(_ context.Context, src *Source, req mcp.CallToolReques
 			"folder":          msg.Folder,
 			"labels":          msg.Labels,
 			"has_attachments": msg.HasAttachments,
-			"body":            body,
-		}
-		if includeRaw {
-			entry["body_raw"] = msg.BodyRaw
+			"body":            msg.BodyVisible,
 		}
 		resultMessages = append(resultMessages, entry)
 	}
@@ -814,20 +816,17 @@ type gmailMessageRecord struct {
 	Date           string
 	Folder         string
 	Labels         string
-	BodyRaw        string
 	BodyVisible    string
 	HasAttachments bool
 }
 
 type gmailThreadRecord struct {
-	threadID          string
-	Subject           string
-	Participants      string
-	MessageCount      int
-	FirstDate         string
-	LastDate          string
-	LastMessageID     string
-	ThreadTextVisible string
+	threadID     string
+	Subject      string
+	Participants string
+	MessageCount int
+	FirstDate    string
+	LastDate     string
 }
 
 type gmailThreadChunk struct {
@@ -852,17 +851,6 @@ func addGmailMessageColumnIfMissing(db *sql.DB, column, definition string) (bool
 	return err == nil, err
 }
 
-// gmailFTSIndexesBodyVisible returns true when the insert trigger already
-// references body_visible, meaning the FTS schema is up-to-date.
-func gmailFTSIndexesBodyVisible(db *sql.DB) bool {
-	var triggerSQL sql.NullString
-	err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name='gmail_messages_ai'`).Scan(&triggerSQL)
-	if err != nil || !triggerSQL.Valid {
-		return false
-	}
-	return strings.Contains(triggerSQL.String, "body_visible")
-}
-
 // gmailThreadsPopulated reports whether the gmail_threads table has any rows.
 func gmailThreadsPopulated(db *sql.DB) bool {
 	var count int
@@ -870,6 +858,13 @@ func gmailThreadsPopulated(db *sql.DB) bool {
 		return false
 	}
 	return count > 0
+}
+
+// gmailMessageFTSReady reports whether the Gmail FTS table and insert trigger already exist for local search reads.
+func gmailMessageFTSReady(db *sql.DB) bool {
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name IN ('gmail_messages_fts', 'gmail_messages_ai')`).Scan(&count)
+	return err == nil && count == 2
 }
 
 // tableHasColumn reports whether tableName already has column so migrations can stay idempotent.
@@ -895,64 +890,91 @@ func tableHasColumn(db *sql.DB, tableName, column string) (bool, error) {
 	return false, rows.Err()
 }
 
-// mergeGmailMessageBodyFields computes canonical body_text / body_raw / body_visible for a row
-// and reports whether an UPDATE is needed.
-func mergeGmailMessageBodyFields(bodyText, bodyRaw, bodyVisible string) (nextBodyText, nextRaw, nextVisible string, needsUpdate bool) {
-	nextRaw = bodyRaw
-	if nextRaw == "" {
-		nextRaw = bodyText
+// backfillGmailVisibleBodies derives body_visible from older raw/text columns before they are dropped from the schema.
+func backfillGmailVisibleBodies(db *sql.DB) (bool, error) {
+	hasBodyText, err := tableHasColumn(db, "gmail_messages", "body_text")
+	if err != nil { // nocov
+		return false, err
 	}
-	nextVisible = bodyVisible
-	if nextVisible == "" {
-		nextVisible = deriveVisibleBody(nextRaw)
+	hasBodyRaw, err := tableHasColumn(db, "gmail_messages", "body_raw")
+	if err != nil { // nocov
+		return false, err
 	}
-	nextBodyText = bodyText
-	if nextBodyText == "" {
-		nextBodyText = nextRaw
+	switch {
+	case hasBodyText && hasBodyRaw:
+		return backfillGmailVisibleBodiesFromLegacyColumns(db, `SELECT id, body_text, body_raw, body_visible FROM gmail_messages`)
+	case hasBodyRaw:
+		return backfillGmailVisibleBodiesFromLegacyColumns(db, `SELECT id, '', body_raw, body_visible FROM gmail_messages`)
+	case hasBodyText:
+		return backfillGmailVisibleBodiesFromLegacyColumns(db, `SELECT id, body_text, '', body_visible FROM gmail_messages`)
+	default:
+		return false, nil
 	}
-	needsUpdate = nextBodyText != bodyText || nextRaw != bodyRaw || nextVisible != bodyVisible
-	return nextBodyText, nextRaw, nextVisible, needsUpdate
 }
 
-// backfillGmailMessageBodies repairs legacy rows so raw and visible body columns are populated consistently.
-func backfillGmailMessageBodies(db *sql.DB) error {
-	rows, err := db.Query(`SELECT id, body_text, body_raw, body_visible FROM gmail_messages`)
+// backfillGmailVisibleBodiesFromLegacyColumns derives missing body_visible values from a legacy query shape before column drops.
+func backfillGmailVisibleBodiesFromLegacyColumns(db *sql.DB, query string) (bool, error) {
+	rows, err := db.Query(query)
 	if err != nil { // nocov
-		return err
+		return false, err
 	}
 	defer rows.Close()
 	type pendingUpdate struct {
 		id          string
-		bodyText    string
-		bodyRaw     string
 		bodyVisible string
 	}
 	var updates []pendingUpdate
 	for rows.Next() {
 		var id, bodyText, bodyRaw, bodyVisible string
 		if err := rows.Scan(&id, &bodyText, &bodyRaw, &bodyVisible); err != nil { // nocov
-			return err
+			return false, err
 		}
-		nextBodyText, nextRaw, nextVisible, changed := mergeGmailMessageBodyFields(bodyText, bodyRaw, bodyVisible)
-		if changed {
-			updates = append(updates, pendingUpdate{
-				id:          id,
-				bodyText:    nextBodyText,
-				bodyRaw:     nextRaw,
-				bodyVisible: nextVisible,
-			})
+		if strings.TrimSpace(bodyVisible) != "" {
+			continue
 		}
+		sourceBody := bodyRaw
+		if sourceBody == "" {
+			sourceBody = bodyText
+		}
+		if strings.TrimSpace(sourceBody) == "" {
+			continue
+		}
+		updates = append(updates, pendingUpdate{
+			id:          id,
+			bodyVisible: deriveVisibleBody(sourceBody),
+		})
 	}
 	if err := rows.Err(); err != nil { // nocov
-		return err
+		return false, err
 	}
 	for _, update := range updates {
-		if _, err := db.Exec(`UPDATE gmail_messages SET body_text = ?, body_raw = ?, body_visible = ? WHERE id = ?`,
-			update.bodyText, update.bodyRaw, update.bodyVisible, update.id); err != nil { // nocov
-			return err
+		if _, err := db.Exec(`UPDATE gmail_messages SET body_visible = ? WHERE id = ?`, update.bodyVisible, update.id); err != nil { // nocov
+			return false, err
 		}
 	}
-	return nil
+	return len(updates) > 0, nil
+}
+
+// dropSQLiteColumnIfExists removes one SQLite column when it still exists so schema cleanups stay idempotent.
+func dropSQLiteColumnIfExists(db *sql.DB, tableName, column string) (bool, error) {
+	exists, err := tableHasColumn(db, tableName, column)
+	if err != nil { // nocov
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+	_, err = db.Exec(fmt.Sprintf(`ALTER TABLE %s DROP COLUMN %s`, tableName, column))
+	return err == nil, err
+}
+
+// vacuumSQLiteIfRequested compacts the database after destructive schema migrations so dropped-column bytes are reclaimed on disk.
+func vacuumSQLiteIfRequested(db *sql.DB, shouldVacuum bool) error {
+	if !shouldVacuum {
+		return nil
+	}
+	_, err := db.Exec(`VACUUM`)
+	return err
 }
 
 // recreateGmailMessageFTS rebuilds the Gmail FTS table/triggers so searches index the current visible-body schema.
@@ -1000,10 +1022,10 @@ func rebuildAllGmailThreads(db *sql.DB) error {
 	}
 	for _, thread := range threads {
 		if _, err := db.Exec(`INSERT INTO gmail_threads
-			(thread_id, subject, participants, message_count, first_date, last_date, last_message_id, thread_text_visible, last_synced)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+			(thread_id, subject, participants, message_count, first_date, last_date, last_synced)
+			VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
 			thread.threadID, thread.Subject, thread.Participants, thread.MessageCount,
-			thread.FirstDate, thread.LastDate, thread.LastMessageID, thread.ThreadTextVisible); err != nil { // nocov
+			thread.FirstDate, thread.LastDate); err != nil { // nocov
 			return err
 		}
 	}
@@ -1013,7 +1035,7 @@ func rebuildAllGmailThreads(db *sql.DB) error {
 // loadAllGmailMessages loads every stored Gmail message row so migrations and thread rebuilds can derive consistent caches.
 func loadAllGmailMessages(db *sql.DB) ([]gmailMessageRecord, error) {
 	rows, err := db.Query(`SELECT id, thread_id, subject, from_addr, to_addrs, cc_addrs, bcc_addrs, date, folder,
-		labels, COALESCE(NULLIF(body_raw, ''), body_text), COALESCE(NULLIF(body_visible, ''), ''), has_attachments
+		labels, body_visible, has_attachments
 		FROM gmail_messages`)
 	if err != nil { // nocov
 		return nil, err
@@ -1025,7 +1047,7 @@ func loadAllGmailMessages(db *sql.DB) ([]gmailMessageRecord, error) {
 // loadGmailMessagesByThread loads and orders the stored messages for one thread so thread reads and search chunking stay consistent.
 func loadGmailMessagesByThread(db *sql.DB, threadID string) ([]gmailMessageRecord, error) {
 	rows, err := db.Query(`SELECT id, thread_id, subject, from_addr, to_addrs, cc_addrs, bcc_addrs, date, folder,
-		labels, COALESCE(NULLIF(body_raw, ''), body_text), COALESCE(NULLIF(body_visible, ''), ''), has_attachments
+		labels, body_visible, has_attachments
 		FROM gmail_messages WHERE thread_id = ?`, threadID)
 	if err != nil { // nocov
 		return nil, err
@@ -1034,20 +1056,15 @@ func loadGmailMessagesByThread(db *sql.DB, threadID string) ([]gmailMessageRecor
 	return scanGmailMessages(rows)
 }
 
-// scanGmailMessages scans stored Gmail rows, derives missing visible bodies, and sorts them chronologically.
+// scanGmailMessages scans stored Gmail rows and sorts them chronologically for thread rendering and search chunking.
 func scanGmailMessages(rows *sql.Rows) ([]gmailMessageRecord, error) {
 	var messages []gmailMessageRecord
 	for rows.Next() {
 		var msg gmailMessageRecord
-		var bodyVisible string
 		var hasAttachments int
 		if err := rows.Scan(&msg.ID, &msg.ThreadID, &msg.Subject, &msg.From, &msg.To, &msg.CC, &msg.BCC,
-			&msg.Date, &msg.Folder, &msg.Labels, &msg.BodyRaw, &bodyVisible, &hasAttachments); err != nil { // nocov
+			&msg.Date, &msg.Folder, &msg.Labels, &msg.BodyVisible, &hasAttachments); err != nil { // nocov
 			return nil, err
-		}
-		msg.BodyVisible = bodyVisible
-		if msg.BodyVisible == "" {
-			msg.BodyVisible = deriveVisibleBody(msg.BodyRaw)
 		}
 		msg.HasAttachments = hasAttachments > 0
 		messages = append(messages, msg)
@@ -1132,14 +1149,12 @@ func buildThreadRecord(messages []gmailMessageRecord) gmailThreadRecord {
 	first := messages[0]
 	last := messages[len(messages)-1]
 	return gmailThreadRecord{
-		threadID:          first.ThreadID,
-		Subject:           subject,
-		Participants:      joinParticipants(messages),
-		MessageCount:      len(messages),
-		FirstDate:         first.Date,
-		LastDate:          last.Date,
-		LastMessageID:     last.ID,
-		ThreadTextVisible: buildThreadTranscript(subject, joinParticipants(messages), messages),
+		threadID:     first.ThreadID,
+		Subject:      subject,
+		Participants: joinParticipants(messages),
+		MessageCount: len(messages),
+		FirstDate:    first.Date,
+		LastDate:     last.Date,
 	}
 }
 
@@ -1166,23 +1181,13 @@ func joinParticipants(messages []gmailMessageRecord) string {
 	return strings.Join(ordered, ", ")
 }
 
-// buildThreadTranscript joins thread chunks into one visible transcript for the derived thread cache.
-func buildThreadTranscript(subject, participants string, messages []gmailMessageRecord) string {
-	chunks := buildGmailThreadChunks(subject, participants, messages)
-	var parts []string
-	for _, chunk := range chunks {
-		parts = append(parts, chunk.Content)
-	}
-	return strings.TrimSpace(strings.Join(parts, "\n\n"))
-}
-
 // loadGmailThreadMeta reads one cached derived thread row so thread reads can reuse stored metadata instead of rebuilding it.
 func loadGmailThreadMeta(db *sql.DB, threadID string) (gmailThreadRecord, error) {
 	var record gmailThreadRecord
-	err := db.QueryRow(`SELECT thread_id, subject, participants, message_count, first_date, last_date, last_message_id, thread_text_visible
+	err := db.QueryRow(`SELECT thread_id, subject, participants, message_count, first_date, last_date
 		FROM gmail_threads WHERE thread_id = ?`, threadID).
 		Scan(&record.threadID, &record.Subject, &record.Participants, &record.MessageCount,
-			&record.FirstDate, &record.LastDate, &record.LastMessageID, &record.ThreadTextVisible)
+			&record.FirstDate, &record.LastDate)
 	if err == sql.ErrNoRows {
 		return gmailThreadRecord{}, nil
 	}
@@ -1283,9 +1288,6 @@ func formatThreadChunkHeader(subject, participants string) string {
 // formatThreadTranscriptEntry renders one message into transcript text for thread views and chunking.
 func formatThreadTranscriptEntry(msg gmailMessageRecord) string {
 	body := strings.TrimSpace(msg.BodyVisible)
-	if body == "" {
-		body = strings.TrimSpace(msg.BodyRaw)
-	}
 	if body == "" {
 		return ""
 	}

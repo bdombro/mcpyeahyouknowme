@@ -15,18 +15,6 @@ func b64(s string) string {
 	return base64.URLEncoding.EncodeToString([]byte(s))
 }
 
-// Verifies body-field merging preserves the visible/raw/body-text fields used by Gmail storage migrations.
-func TestMergeGmailMessageBodyFields(t *testing.T) {
-	nextText, nextRaw, nextVis, changed := mergeGmailMessageBodyFields("hello", "", "")
-	if !changed || nextRaw != "hello" || nextVis != "hello" || nextText != "hello" {
-		t.Fatalf("expected fill from body_text, got text=%q raw=%q vis=%q changed=%v", nextText, nextRaw, nextVis, changed)
-	}
-	_, _, _, same := mergeGmailMessageBodyFields("a", "a", "a")
-	if same {
-		t.Fatal("expected no update when all fields already match")
-	}
-}
-
 // Verifies Gmail message storage records map headers and body fields into the persisted message shape.
 func TestBuildGmailStoredRecord(t *testing.T) {
 	rec := buildGmailStoredRecord(&gmail.Message{
@@ -54,7 +42,7 @@ func TestBuildGmailStoredRecord(t *testing.T) {
 	if rec.ID != "m1" || rec.ThreadID != "t1" || rec.Folder != "INBOX" {
 		t.Fatalf("unexpected record: %#v", rec)
 	}
-	if rec.Subject != "Hello" || rec.BodyRaw != "Hi" || rec.BodyVisible != "Hi" {
+	if rec.Subject != "Hello" || rec.BodyVisible != "Hi" {
 		t.Fatalf("unexpected headers/body: %#v", rec)
 	}
 	if rec.HasAttachments != 0 {
@@ -262,8 +250,8 @@ func TestSplitLongThreadEntry_splitsOnNewlineBoundary(t *testing.T) {
 	}
 }
 
-// Verifies Gmail schema initialization backfills legacy body columns and rebuilds thread rows.
-func TestInitGmailSchema_backfillsLegacyRowsAndBuildsThreads(t *testing.T) {
+// Verifies Gmail schema initialization migrates legacy body columns into body_visible, drops old columns, and rebuilds thread rows.
+func TestInitGmailSchema_migratesLegacyRowsAndBuildsThreads(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)&cache=shared")
 	if err != nil {
 		t.Fatalf("open legacy db: %v", err)
@@ -305,12 +293,12 @@ func TestInitGmailSchema_backfillsLegacyRowsAndBuildsThreads(t *testing.T) {
 		t.Fatalf("initGmailSchema: %v", err)
 	}
 
-	hasBodyRaw, err := tableHasColumn(db, "gmail_messages", "body_raw")
+	hasBodyText, err := tableHasColumn(db, "gmail_messages", "body_text")
 	if err != nil {
-		t.Fatalf("tableHasColumn body_raw: %v", err)
+		t.Fatalf("tableHasColumn body_text: %v", err)
 	}
-	if !hasBodyRaw {
-		t.Fatal("expected body_raw column to exist after migration")
+	if hasBodyText {
+		t.Fatal("expected body_text column to be dropped after migration")
 	}
 	hasBodyVisible, err := tableHasColumn(db, "gmail_messages", "body_visible")
 	if err != nil {
@@ -320,12 +308,17 @@ func TestInitGmailSchema_backfillsLegacyRowsAndBuildsThreads(t *testing.T) {
 		t.Fatal("expected body_visible column to exist after migration")
 	}
 
-	var bodyRaw, bodyVisible string
-	if err := db.QueryRow(`SELECT body_raw, body_visible FROM gmail_messages WHERE id = 'legacy1'`).Scan(&bodyRaw, &bodyVisible); err != nil {
-		t.Fatalf("query migrated bodies: %v", err)
+	hasThreadTextVisible, err := tableHasColumn(db, "gmail_threads", "thread_text_visible")
+	if err != nil {
+		t.Fatalf("tableHasColumn thread_text_visible: %v", err)
 	}
-	if !strings.Contains(bodyRaw, "On Fri, Mar 1, 2024") {
-		t.Fatalf("expected body_raw to preserve quoted text, got %q", bodyRaw)
+	if hasThreadTextVisible {
+		t.Fatal("expected thread_text_visible column to be dropped after migration")
+	}
+
+	var bodyVisible string
+	if err := db.QueryRow(`SELECT body_visible FROM gmail_messages WHERE id = 'legacy1'`).Scan(&bodyVisible); err != nil {
+		t.Fatalf("query migrated body_visible: %v", err)
 	}
 	if strings.Contains(bodyVisible, "On Fri, Mar 1, 2024") {
 		t.Fatalf("expected body_visible to strip quoted text, got %q", bodyVisible)
@@ -361,13 +354,13 @@ func TestStoreGmailMessage_direct(t *testing.T) {
 			},
 		},
 	})
-	var subject, bodyRaw string
-	err := db.QueryRow(`SELECT subject, body_raw FROM gmail_messages WHERE id = 'direct1'`).Scan(&subject, &bodyRaw)
+	var subject, bodyVisible string
+	err := db.QueryRow(`SELECT subject, body_visible FROM gmail_messages WHERE id = 'direct1'`).Scan(&subject, &bodyVisible)
 	if err != nil {
 		t.Fatalf("query stored row: %v", err)
 	}
-	if subject != "Direct" || bodyRaw != "Hello from direct store" {
-		t.Fatalf("unexpected stored values: subject=%q bodyRaw=%q", subject, bodyRaw)
+	if subject != "Direct" || bodyVisible != "Hello from direct store" {
+		t.Fatalf("unexpected stored values: subject=%q bodyVisible=%q", subject, bodyVisible)
 	}
 }
 
@@ -393,15 +386,6 @@ func TestBuildGmailStoredRecord_withAttachments(t *testing.T) {
 	})
 	if rec.HasAttachments != 1 {
 		t.Fatalf("expected has_attachments=1, got %d", rec.HasAttachments)
-	}
-}
-
-// Verifies body-field merging handles empty body_text without clobbering other stored fields.
-func TestMergeGmailMessageBodyFields_emptyBodyText(t *testing.T) {
-	nextText, nextRaw, nextVis, changed := mergeGmailMessageBodyFields("", "raw content", "")
-	if !changed || nextText != "raw content" || nextRaw != "raw content" || nextVis != "raw content" {
-		t.Fatalf("expected fill from body_raw when body_text empty, got text=%q raw=%q vis=%q changed=%v",
-			nextText, nextRaw, nextVis, changed)
 	}
 }
 
@@ -579,7 +563,7 @@ func TestBuildGmailThreadChunks_overflowEntry(t *testing.T) {
 // Verifies thread-chunk building skips messages whose bodies are empty after cleanup.
 func TestBuildGmailThreadChunks_emptyBodySkipped(t *testing.T) {
 	messages := []gmailMessageRecord{
-		{ID: "empty", ThreadID: "t1", BodyVisible: "", BodyRaw: ""},
+		{ID: "empty", ThreadID: "t1", BodyVisible: ""},
 	}
 	chunks := buildGmailThreadChunks("S", "p", messages)
 	if len(chunks) != 0 {
@@ -597,17 +581,9 @@ func TestFormatThreadChunkHeader_empty(t *testing.T) {
 
 // Verifies transcript-entry formatting handles messages whose visible body is empty.
 func TestFormatThreadTranscriptEntry_emptyBody(t *testing.T) {
-	s := formatThreadTranscriptEntry(gmailMessageRecord{BodyVisible: "", BodyRaw: ""})
+	s := formatThreadTranscriptEntry(gmailMessageRecord{BodyVisible: ""})
 	if s != "" {
 		t.Fatalf("expected empty string for no-body message, got %q", s)
-	}
-}
-
-// Verifies transcript-entry formatting falls back to raw body content when visible text is unavailable.
-func TestFormatThreadTranscriptEntry_fallbackToRaw(t *testing.T) {
-	s := formatThreadTranscriptEntry(gmailMessageRecord{BodyVisible: "", BodyRaw: "raw content", From: "x@y.com", Date: "2024-01-01"})
-	if !strings.Contains(s, "raw content") {
-		t.Fatalf("expected raw fallback, got %q", s)
 	}
 }
 
@@ -672,11 +648,15 @@ func TestDeleteOrphanedRowsByResourceName(t *testing.T) {
 	}
 }
 
-// Verifies Gmail FTS indexing targets the visible-body column used by search.
-func TestGmailFTSIndexesBodyVisible(t *testing.T) {
+// Verifies Gmail FTS triggers index the visible-body column used by search.
+func TestInitGmailSchema_buildsVisibleBodyFTSTriggers(t *testing.T) {
 	db := newTestDB(t)
-	if !gmailFTSIndexesBodyVisible(db) {
-		t.Fatal("expected FTS to index body_visible after full schema init")
+	var triggerSQL string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name='gmail_messages_ai'`).Scan(&triggerSQL); err != nil {
+		t.Fatalf("load FTS trigger SQL: %v", err)
+	}
+	if !strings.Contains(triggerSQL, "body_visible") {
+		t.Fatal("expected gmail_messages_ai trigger to reference body_visible")
 	}
 }
 

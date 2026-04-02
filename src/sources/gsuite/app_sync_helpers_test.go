@@ -13,9 +13,6 @@ import (
 	tasksapi "google.golang.org/api/tasks/v1"
 )
 
-// Returns a string pointer so Google API fixture structs can be built inline in tests.
-func strPtr(v string) *string { return &v }
-
 // Verifies contact-record building maps People API fields into the stored contact shape.
 func TestBuildContactRecord(t *testing.T) {
 	record := buildContactRecord(&peopleapi.Person{
@@ -25,13 +22,10 @@ func TestBuildContactRecord(t *testing.T) {
 		},
 		Names: []*peopleapi.Name{{
 			DisplayName: "Alice Example",
-			GivenName:   "Alice",
-			FamilyName:  "Example",
 		}},
 		EmailAddresses: []*peopleapi.EmailAddress{{Value: "alice@example.com"}},
 		PhoneNumbers:   []*peopleapi.PhoneNumber{{Value: "555-0001"}},
 		Organizations:  []*peopleapi.Organization{{Name: "Acme", Title: "Manager"}},
-		Addresses:      []*peopleapi.Address{{FormattedValue: "123 Main St"}},
 		Biographies:    []*peopleapi.Biography{{Value: "Met at conference"}},
 	})
 
@@ -41,8 +35,8 @@ func TestBuildContactRecord(t *testing.T) {
 	if record.Emails != "alice@example.com" || record.Phones != "555-0001" {
 		t.Fatalf("expected flattened contact fields, got %#v", record)
 	}
-	if record.Organizations != "Acme (Manager)" || record.Addresses != "123 Main St" {
-		t.Fatalf("expected organization/address formatting, got %#v", record)
+	if record.Organizations != "Acme (Manager)" {
+		t.Fatalf("expected organization formatting, got %#v", record)
 	}
 	if record.Notes != "Met at conference" || record.UpdatedTime != "2026-04-01T10:00:00Z" {
 		t.Fatalf("expected notes and updated time, got %#v", record)
@@ -152,21 +146,18 @@ func TestBuildTaskRecord(t *testing.T) {
 		Id:    "list-1",
 		Title: "Personal",
 	}, &tasksapi.Task{
-		Id:        "task-1",
-		Title:     "Buy milk",
-		Notes:     "2%",
-		Status:    "needsAction",
-		Due:       "2026-04-03T00:00:00Z",
-		Completed: strPtr(""),
-		Updated:   "2026-04-01T14:00:00Z",
-		Position:  "0001",
-		Parent:    "parent-1",
+		Id:      "task-1",
+		Title:   "Buy milk",
+		Notes:   "2%",
+		Status:  "needsAction",
+		Due:     "2026-04-03T00:00:00Z",
+		Updated: "2026-04-01T14:00:00Z",
 	})
 
-	if record.TasklistID != "list-1" || record.TasklistTitle != "Personal" {
+	if record.TasklistTitle != "Personal" {
 		t.Fatalf("unexpected task list fields: %#v", record)
 	}
-	if record.ID != "task-1" || record.Title != "Buy milk" || record.Position != "0001" {
+	if record.ID != "task-1" || record.Title != "Buy milk" {
 		t.Fatalf("unexpected task fields: %#v", record)
 	}
 }
@@ -274,7 +265,7 @@ func TestBuildTaskRecord_nilTask(t *testing.T) {
 // Verifies task-record building returns nil when the tasklist context is missing.
 func TestBuildTaskRecord_nilTaskList(t *testing.T) {
 	r := buildTaskRecord(nil, &tasksapi.Task{Id: "t1", Title: "Buy milk"})
-	if r.ID != "t1" || r.TasklistID != "" {
+	if r.ID != "t1" || r.TasklistTitle != "" {
 		t.Fatalf("expected task without list info, got %#v", r)
 	}
 }
@@ -341,7 +332,7 @@ func TestFormatCalendarOrganizer_withDisplayName(t *testing.T) {
 func TestBuildCalendarEventRecord_nilCalendar(t *testing.T) {
 	ev := &calendarapi.Event{Id: "ev1", Summary: "Meeting"}
 	r := buildCalendarEventRecord(nil, ev)
-	if r.Summary != "Meeting" || r.CalendarID != "" {
+	if r.Summary != "Meeting" || r.CalendarName != "" {
 		t.Fatalf("expected event data without calendar info, got %#v", r)
 	}
 }

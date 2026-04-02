@@ -387,8 +387,8 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 | `gsuite_docs_list_recent` | Recently modified docs; optional `limit`. |
 | `gsuite_docs_search` | FTS5 search across synced docs; `query`, optional `limit`. |
 | `gsuite_gmail_download_attachment` | Download one Gmail attachment on demand by message and attachment IDs. |
-| `gsuite_gmail_get_message` | Full raw body for one Gmail message by ID, plus `thread_id`. |
-| `gsuite_gmail_get_thread` | Reconstructed Gmail thread by `thread_id`; optional `include_raw`. |
+| `gsuite_gmail_get_message` | Full stored Gmail body for one message by ID, plus `thread_id`. |
+| `gsuite_gmail_get_thread` | Reconstructed Gmail thread by `thread_id`. |
 | `gsuite_gmail_list_recent` | Recently synced Gmail messages; optional folder filter, includes `thread_id`. |
 | `gsuite_gmail_search` | Search synced Gmail messages; returns `thread_id` for thread follow-up. |
 | `search` | Global hybrid search across connected sources (BM25 + vectors); optional `source`, `content_type`, `limit`. Index populated by daemon. |
@@ -497,8 +497,8 @@ Metadata shapes per WhatsApp content type:
 | Tool | Description |
 |------|-------------|
 | `gsuite_gmail_search` | Full-text search across synced Gmail messages using FTS5 on `body_visible` (quoted reply text stripped pessimistically when possible). Returns message hits with `thread_id` so clients can pivot to the full conversation. |
-| `gsuite_gmail_get_message` | Get the full raw content of a specific Gmail message by ID. Returns headers, labels, folder, message body, and `thread_id`. |
-| `gsuite_gmail_get_thread` | Get a reconstructed Gmail thread by `thread_id`. Returns chronological messages with `body_visible` by default and `body_raw` when `include_raw=true`. |
+| `gsuite_gmail_get_message` | Get the stored content of a specific Gmail message by ID. Returns headers, labels, folder, message body, and `thread_id`. |
+| `gsuite_gmail_get_thread` | Get a reconstructed Gmail thread by `thread_id`. Returns chronological messages using the stored `body_visible` text. |
 | `gsuite_gmail_list_recent` | List recent synced Gmail messages, sorted by stored date descending. Accepts optional `folder` and `limit` parameters. Each result includes `thread_id`. |
 | `gsuite_gmail_download_attachment` | Download a Gmail attachment on demand via the Gmail API using `message_id` and `attachment_id`. Attachments are not cached automatically during sync. |
 
@@ -630,11 +630,11 @@ Tables are created on startup if they don't exist. The FTS5 index is automatical
 
 | Table | Key | Contents |
 |-------|-----|----------|
-| `gmail_messages` | `id` (primary) | Canonical Gmail message records: `thread_id`, headers, labels, folder, date, snippet, `body_text` (legacy raw alias), `body_raw`, `body_visible`, attachment flag, size estimate, `last_synced` |
-| `gmail_threads` | `thread_id` (primary) | Derived Gmail thread cache: subject, participants, message count, first/last dates, last message ID, reconstructed `thread_text_visible`, `last_synced` |
+| `gmail_messages` | `id` (primary) | Canonical Gmail message records: `thread_id`, headers, labels, folder, date, snippet, `body_visible`, attachment flag, size estimate, `last_synced` |
+| `gmail_threads` | `thread_id` (primary) | Derived Gmail thread cache: subject, participants, message count, first/last dates, `last_synced` |
 | `gmail_messages_fts` | (FTS5 virtual) | Local Gmail full-text index on message subject/body-visible content, maintained via triggers |
 
-`body_raw` preserves the extracted Gmail message body exactly as stored after MIME decoding / HTML stripping. `body_visible` is a pessimistically stripped view used for thread reconstruction and indexing when quoted reply boundaries can be identified safely. Global search indexes Gmail at the thread level rather than indexing raw message bodies directly.
+`body_visible` stores the canonical Gmail message text after MIME decoding and conservative quoted-reply trimming. When stripping would remove too much authored content, it falls back to the normalized extracted body instead. Global search indexes Gmail at the thread level rather than indexing raw message bodies directly. Schema cleanup migrations drop obsolete Gmail columns and run `VACUUM` so reclaimed bytes are returned to disk automatically.
 
 ### search.db Schema
 

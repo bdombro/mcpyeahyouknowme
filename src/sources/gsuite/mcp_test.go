@@ -288,22 +288,6 @@ func TestGmailGetThread_Found(t *testing.T) {
 	}
 }
 
-// Verifies the Gmail get-thread tool can include raw bodies when the caller requests them.
-func TestGmailGetThread_IncludeRaw(t *testing.T) {
-	s := buildMCPServer(t)
-	text := callTool(t, s, "gsuite_gmail_get_thread", map[string]interface{}{"thread_id": "thread1", "include_raw": true})
-	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(text), &result); err != nil {
-		t.Fatalf("parse result: %v\ntext: %s", err, text)
-	}
-	messages := result["messages"].([]interface{})
-	second := messages[1].(map[string]interface{})
-	raw, _ := second["body_raw"].(string)
-	if !strings.Contains(raw, "On Fri, Mar 1, 2024") {
-		t.Errorf("expected raw body to include quoted text, got %q", raw)
-	}
-}
-
 // Verifies the Gmail get-thread tool reports a readable not-found error for unknown thread IDs.
 func TestGmailGetThread_NotFound(t *testing.T) {
 	s := buildMCPServer(t)
@@ -318,9 +302,9 @@ func TestGmailGetThread_NoThreadMetadata(t *testing.T) {
 	src := newTestSource(t)
 	src.db.Exec(`INSERT INTO gmail_messages
 		(id, thread_id, labels, folder, subject, from_addr, to_addrs, cc_addrs, bcc_addrs,
-		 date, snippet, body_text, body_raw, body_visible, has_attachments, size_estimate, last_synced)
+		 date, snippet, body_visible, has_attachments, size_estimate, last_synced)
 		VALUES ('orphan1', 'orphan_thread', 'INBOX', 'INBOX', 'Orphan', 'a@b.com', 'c@d.com', '', '',
-		 '2024-01-01', 'snip', 'raw only', 'raw only', '', 0, 100, datetime('now'))`)
+		 '2024-01-01', 'snip', 'raw only', 0, 100, datetime('now'))`)
 	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
 	src.RegisterTools(s)
 	text := callTool(t, s, "gsuite_gmail_get_thread", map[string]interface{}{"thread_id": "orphan_thread"})
@@ -665,16 +649,16 @@ func TestStripHTML(t *testing.T) {
 	}
 }
 
-// Verifies storeGmailMessage persists body fields needed for Gmail search and thread reconstruction.
+// Verifies storeGmailMessage persists visible-body fields needed for Gmail search and thread reconstruction.
 func TestStoreGmailMessage(t *testing.T) {
 	src := newTestSource(t)
 	seedGmail(t, src.db)
 
-	var subject, from, folder, bodyRaw, bodyVisible string
+	var subject, from, folder, bodyVisible string
 	var hasAttach int
-	err := src.db.QueryRow(`SELECT subject, from_addr, folder, body_raw, body_visible, has_attachments
+	err := src.db.QueryRow(`SELECT subject, from_addr, folder, body_visible, has_attachments
 		FROM gmail_messages WHERE id = 'msg2'`).
-		Scan(&subject, &from, &folder, &bodyRaw, &bodyVisible, &hasAttach)
+		Scan(&subject, &from, &folder, &bodyVisible, &hasAttach)
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -686,9 +670,6 @@ func TestStoreGmailMessage(t *testing.T) {
 	}
 	if folder != "INBOX" {
 		t.Errorf("expected folder 'INBOX', got %q", folder)
-	}
-	if !strings.Contains(bodyRaw, "On Fri, Mar 1, 2024") {
-		t.Errorf("expected raw body to keep quoted text, got %q", bodyRaw)
 	}
 	if strings.Contains(bodyVisible, "On Fri, Mar 1, 2024") {
 		t.Errorf("expected visible body to strip quoted text, got %q", bodyVisible)
