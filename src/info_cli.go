@@ -48,6 +48,9 @@ func renderInfo() string {
 		if err == nil && len(out) > 0 {
 			daemonRunning = true
 			writeLine("   Status:     running")
+			if rssBytes := daemonRSSBytes(plistName); rssBytes > 0 {
+				writeLine("   RAM:        %s RSS", core.FormatSizeMB(rssBytes))
+			}
 		} else {
 			writeLine("   Status:     installed (not running)")
 		}
@@ -95,6 +98,9 @@ func writeSearchIndexSection(b *strings.Builder, dataDir string, daemonRunning b
 	}
 	fmt.Fprintf(b, "   Entries:    %d\n", stats.Entries)
 	fmt.Fprintf(b, "   Indexed:    %d (%d%%)\n", stats.Embedded, pct)
+	if sizeBytes := core.FileGroupSizeBytes(filepath.Join(dataDir, "search.db")); sizeBytes > 0 {
+		fmt.Fprintf(b, "   DB Size:    %s\n", core.FormatSizeMB(sizeBytes))
+	}
 	if stats.Embedded < stats.Entries {
 		if daemonRunning {
 			fmt.Fprintln(b, "   Status:     indexing in progress")

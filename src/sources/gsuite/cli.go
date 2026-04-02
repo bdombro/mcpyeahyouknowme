@@ -300,10 +300,22 @@ func InfoLines(dataDir string) []string {
 	} else {
 		lines = append(lines, "   Logged in:  yes")
 	}
+	if dbSize := core.FileGroupSizeBytes(filepath.Join(dataDir, "gsuite.db")); dbSize > 0 {
+		lines = append(lines, fmt.Sprintf("   Database:   %s", core.FormatSizeMB(dbSize)))
+	}
 
 	src := NewSource(dataDir)
 	defer src.Close()
 
+	appSizes := map[string]int64{}
+	if src.db != nil {
+		for _, app := range allApps {
+			size, err := core.SQLiteObjectSizeBytes(src.db, app.tablesToDrop)
+			if err == nil && size > 0 {
+				appSizes[app.name] = size
+			}
+		}
+	}
 	for _, app := range allApps {
 		if !src.apps.IsEnabled(app.name) {
 			lines = append(lines, fmt.Sprintf("   %-12s disabled", cliAppName(app)+":"))
@@ -321,6 +333,9 @@ func InfoLines(dataDir string) []string {
 		syncStatus := src.getSyncStatus(app.name)
 		lastSync := src.getLastSyncTime(app.name)
 		statusStr := formatSyncStatus(syncStatus, lastSync, count)
+		if size, ok := appSizes[app.name]; ok && size > 0 {
+			statusStr = fmt.Sprintf("%s — ~%s", statusStr, core.FormatSizeMB(size))
+		}
 		lines = append(lines, fmt.Sprintf("   %-12s %s", cliAppName(app)+":", statusStr))
 	}
 	return lines

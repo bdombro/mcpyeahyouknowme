@@ -89,6 +89,13 @@ func TestInfoLines_WithDB(t *testing.T) {
 	}
 	os.WriteFile(dir+"/gsuite_token.json", []byte(`{"access_token":"x"}`), 0600)
 
+	src := &Source{dataDir: dir}
+	apps := DefaultAppsConfig()
+	apps.SetEnabled("docs", true)
+	if err := src.saveAppsConfig(apps); err != nil {
+		t.Fatalf("saveAppsConfig: %v", err)
+	}
+
 	// Create a real DB via openGSuiteDB and seed it
 	db, err := openGSuiteDB(dir)
 	if err != nil {
@@ -100,9 +107,17 @@ func TestInfoLines_WithDB(t *testing.T) {
 	lines := InfoLines(dir)
 	// Should include count line for Docs and omit the "Google " prefix.
 	found := false
+	foundDBSize := false
+	foundAppSize := false
 	for _, l := range lines {
 		if containsStr(l, "Docs") {
 			found = true
+			if containsStr(l, "~") && containsStr(l, "MB") {
+				foundAppSize = true
+			}
+		}
+		if containsStr(l, "Database:") && containsStr(l, "MB") {
+			foundDBSize = true
 		}
 		if containsStr(l, "Google Docs") {
 			t.Fatalf("expected shortened app name, got: %v", lines)
@@ -110,6 +125,12 @@ func TestInfoLines_WithDB(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected 'Docs' in info lines, got: %v", lines)
+	}
+	if !foundDBSize {
+		t.Errorf("expected database size line in info lines, got: %v", lines)
+	}
+	if !foundAppSize {
+		t.Errorf("expected app size suffix in docs line, got: %v", lines)
 	}
 }
 

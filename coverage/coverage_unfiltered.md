@@ -6,21 +6,21 @@
 |------|---------|-------|----------|
 | [`app_calendar.go`](#app_calendargo) | 119 | 169 | 70.4% |
 | [`app_contacts.go`](#app_contactsgo) | 95 | 137 | 69.3% |
-| [`app_docs.go`](#app_docsgo) | 122 | 173 | 70.5% |
+| [`app_docs.go`](#app_docsgo) | 123 | 173 | 71.1% |
 | [`app_gmail.go`](#app_gmailgo) | 517 | 607 | 85.2% |
 | [`app_sheets.go`](#app_sheetsgo) | 86 | 135 | 63.7% |
 | [`app_slides.go`](#app_slidesgo) | 80 | 129 | 62.0% |
 | [`app_tasks.go`](#app_tasksgo) | 72 | 117 | 61.5% |
-| [`cli.go`](#cligo) | 92 | 310 | 29.7% |
+| [`cli.go`](#cligo) | 109 | 320 | 34.1% |
 | [`client.go`](#clientgo) | 157 | 302 | 52.0% |
 | [`cmd.go`](#cmdgo) | 25 | 75 | 33.3% |
 | [`config.go`](#configgo) | 0 | 3 | 0.0% |
-| [`daemon.go`](#daemongo) | 133 | 516 | 25.8% |
+| [`daemon.go`](#daemongo) | 137 | 520 | 26.3% |
 | [`embedding.go`](#embeddinggo) | 24 | 25 | 96.0% |
 | [`embedding_init.go`](#embedding_initgo) | 17 | 24 | 70.8% |
 | [`helpers.go`](#helpersgo) | 160 | 183 | 87.4% |
 | [`indexer.go`](#indexergo) | 7 | 25 | 28.0% |
-| [`info_cli.go`](#info_cligo) | 61 | 68 | 89.7% |
+| [`info_cli.go`](#info_cligo) | 65 | 72 | 90.3% |
 | [`main.go`](#maingo) | 0 | 2 | 0.0% |
 | [`mcp.go`](#mcpgo) | 130 | 195 | 66.7% |
 | [`registry.go`](#registrygo) | 29 | 30 | 96.7% |
@@ -32,11 +32,12 @@
 | [`service.go`](#servicego) | 335 | 348 | 96.3% |
 | [`source.go`](#sourcego) | 139 | 151 | 92.1% |
 | [`source_init.go`](#source_initgo) | 0 | 2 | 0.0% |
+| [`stats.go`](#statsgo) | 61 | 81 | 75.3% |
 | [`store.go`](#storego) | 111 | 122 | 91.0% |
 | [`store_init.go`](#store_initgo) | 0 | 28 | 0.0% |
-| [`system.go`](#systemgo) | 24 | 30 | 80.0% |
+| [`system.go`](#systemgo) | 41 | 50 | 82.0% |
 | [`utils.go`](#utilsgo) | 0 | 46 | 0.0% |
-| **Total** | **2816** | **4391** | **64.1%** |
+| **Total** | **2920** | **4510** | **64.7%** |
 
 ## Uncovered Blocks
 
@@ -100,7 +101,6 @@
 
 ### [`app_docs.go`](../src/app_docs.go)
 
-- Lines 25–25 (1 stmt)
 - Lines 42–44 (1 stmt)
 - Lines 67–69 (1 stmt)
 - Lines 74–80 (5 stmts)
@@ -336,20 +336,17 @@
 - Lines 272–274 (1 stmt)
 - Lines 276–277 (2 stmts)
 - Lines 292–296 (3 stmts)
-- Lines 312–312 (1 stmt)
-- Lines 312–314 (2 stmts)
-- Lines 316–317 (2 stmts)
-- Lines 317–319 (2 stmts)
-- Lines 321–324 (4 stmts)
-- Lines 347–351 (3 stmts)
-- Lines 353–356 (2 stmts)
-- Lines 358–362 (3 stmts)
-- Lines 364–366 (1 stmt)
-- Lines 368–371 (3 stmts)
-- Lines 371–373 (1 stmt)
-- Lines 374–380 (3 stmts)
-- Lines 380–382 (1 stmt)
-- Lines 383–383 (1 stmt)
+- Lines 324–326 (2 stmts)
+- Lines 329–331 (2 stmts)
+- Lines 362–366 (3 stmts)
+- Lines 368–371 (2 stmts)
+- Lines 373–377 (3 stmts)
+- Lines 379–381 (1 stmt)
+- Lines 383–386 (3 stmts)
+- Lines 386–388 (1 stmt)
+- Lines 389–395 (3 stmts)
+- Lines 395–397 (1 stmt)
+- Lines 398–398 (1 stmt)
 - Lines 23–25 (1 stmt)
 - Lines 27–29 (1 stmt)
 - Lines 40–42 (2 stmts)
@@ -402,6 +399,11 @@
 
 ### [`client.go`](../src/client.go)
 
+- Lines 146–148 (1 stmt)
+- Lines 151–153 (1 stmt)
+- Lines 184–186 (1 stmt)
+- Lines 208–210 (1 stmt)
+- Lines 214–216 (1 stmt)
 - Lines 147–149 (1 stmt)
 - Lines 34–35 (1 stmt)
 - Lines 35–37 (1 stmt)
@@ -482,11 +484,6 @@
 - Lines 349–354 (3 stmts)
 - Lines 378–380 (1 stmt)
 - Lines 380–382 (1 stmt)
-- Lines 146–148 (1 stmt)
-- Lines 151–153 (1 stmt)
-- Lines 184–186 (1 stmt)
-- Lines 208–210 (1 stmt)
-- Lines 214–216 (1 stmt)
 
 ### [`cmd.go`](../src/cmd.go)
 
@@ -742,9 +739,9 @@
 - Lines 630–632 (1 stmt)
 - Lines 632–634 (1 stmt)
 - Lines 644–645 (1 stmt)
-- Lines 660–662 (1 stmt)
 - Lines 663–665 (1 stmt)
-- Lines 675–677 (1 stmt)
+- Lines 666–668 (1 stmt)
+- Lines 681–683 (1 stmt)
 - Lines 20–22 (2 stmts)
 - Lines 22–25 (2 stmts)
 - Lines 26–26 (1 stmt)
@@ -833,11 +830,11 @@
 
 ### [`info_cli.go`](../src/info_cli.go)
 
-- Lines 51–53 (1 stmt)
-- Lines 56–58 (1 stmt)
-- Lines 61–63 (1 stmt)
-- Lines 70–72 (1 stmt)
-- Lines 87–91 (3 stmts)
+- Lines 54–56 (1 stmt)
+- Lines 59–61 (1 stmt)
+- Lines 64–66 (1 stmt)
+- Lines 73–75 (1 stmt)
+- Lines 90–94 (3 stmts)
 
 ### [`main.go`](../src/main.go)
 
@@ -1046,6 +1043,25 @@
 
 - Lines 6–15 (2 stmts)
 
+### [`stats.go`](../src/stats.go)
+
+- Lines 25–26 (1 stmt)
+- Lines 40–43 (3 stmts)
+- Lines 43–46 (3 stmts)
+- Lines 46–48 (1 stmt)
+- Lines 49–49 (1 stmt)
+- Lines 49–51 (1 stmt)
+- Lines 53–53 (1 stmt)
+- Lines 58–60 (1 stmt)
+- Lines 68–70 (1 stmt)
+- Lines 78–80 (1 stmt)
+- Lines 86–88 (1 stmt)
+- Lines 96–98 (1 stmt)
+- Lines 99–101 (1 stmt)
+- Lines 111–113 (1 stmt)
+- Lines 119–121 (1 stmt)
+- Lines 132–134 (1 stmt)
+
 ### [`store.go`](../src/store.go)
 
 - Lines 18–20 (1 stmt)
@@ -1077,12 +1093,15 @@
 
 ### [`system.go`](../src/system.go)
 
-- Lines 13–15 (1 stmt)
-- Lines 17–18 (1 stmt)
-- Lines 19–20 (1 stmt)
-- Lines 21–22 (1 stmt)
-- Lines 40–42 (1 stmt)
-- Lines 58–60 (1 stmt)
+- Lines 14–16 (1 stmt)
+- Lines 18–19 (1 stmt)
+- Lines 20–21 (1 stmt)
+- Lines 22–23 (1 stmt)
+- Lines 41–43 (1 stmt)
+- Lines 59–61 (1 stmt)
+- Lines 70–72 (1 stmt)
+- Lines 74–76 (1 stmt)
+- Lines 78–80 (1 stmt)
 
 ### [`utils.go`](../src/utils.go)
 

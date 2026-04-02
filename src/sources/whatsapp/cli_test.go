@@ -60,17 +60,23 @@ func TestInfoLines_withSessionAndMessages(t *testing.T) {
 	msgDB.Close()
 
 	lines := InfoLines(dir)
-	if len(lines) != 3 {
-		t.Fatalf("want 2 lines, got %d: %q", len(lines), lines)
+	if len(lines) != 5 {
+		t.Fatalf("want 5 lines, got %d: %q", len(lines), lines)
 	}
 	if !strings.Contains(lines[0], "enabled") {
 		t.Errorf("status line: %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "user@s.whatsapp.net") {
-		t.Errorf("jid line: %q", lines[1])
+	if !strings.Contains(lines[1], "Session DB:") || !strings.Contains(lines[1], "MB") {
+		t.Errorf("session size line: %q", lines[1])
 	}
-	if !strings.Contains(lines[2], "3 across 2 chats") {
-		t.Errorf("counts line: %q", lines[2])
+	if !strings.Contains(lines[2], "user@s.whatsapp.net") {
+		t.Errorf("jid line: %q", lines[2])
+	}
+	if !strings.Contains(lines[3], "Message DB:") || !strings.Contains(lines[3], "MB") {
+		t.Errorf("message size line: %q", lines[3])
+	}
+	if !strings.Contains(lines[4], "3 across 2 chats") {
+		t.Errorf("counts line: %q", lines[4])
 	}
 }
 
@@ -96,7 +102,7 @@ func TestInfoLines_messagesDBUnreadable(t *testing.T) {
 	}
 
 	lines := InfoLines(dir)
-	if len(lines) != 3 || !strings.Contains(lines[2], "unable to read database") {
+	if len(lines) != 5 || !strings.Contains(lines[4], "unable to read database") {
 		t.Fatalf("lines: %q", lines)
 	}
 }

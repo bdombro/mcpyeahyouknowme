@@ -79,6 +79,9 @@ func TestWriteSearchIndexSection_partialIndexing(t *testing.T) {
 	if !strings.Contains(got, "Indexed:") {
 		t.Fatalf("expected Indexed label in output, got %q", got)
 	}
+	if !strings.Contains(got, "DB Size:") {
+		t.Fatalf("expected DB Size label in output, got %q", got)
+	}
 	if strings.Contains(got, "Embedded:") {
 		t.Fatalf("did not expect Embedded label in output, got %q", got)
 	}

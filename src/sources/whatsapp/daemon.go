@@ -648,6 +648,9 @@ func InfoLines(dDir string) []string {
 	}
 	waDB := filepath.Join(dDir, "whatsapp.db")
 	if _, err := os.Stat(waDB); err == nil {
+		if sizeBytes := core.FileGroupSizeBytes(waDB); sizeBytes > 0 {
+			lines = append(lines, fmt.Sprintf("   Session DB: %s", core.FormatSizeMB(sizeBytes)))
+		}
 		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", waDB))
 		if err == nil {
 			defer db.Close()
@@ -671,6 +674,9 @@ func InfoLines(dDir string) []string {
 	if _, err := os.Stat(msgDB); err != nil {
 		lines = append(lines, "   Messages:   no database yet")
 	} else {
+		if sizeBytes := core.FileGroupSizeBytes(msgDB); sizeBytes > 0 {
+			lines = append(lines, fmt.Sprintf("   Message DB: %s", core.FormatSizeMB(sizeBytes)))
+		}
 		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro&_busy_timeout=30000", msgDB))
 		if err != nil {
 			lines = append(lines, "   Messages:   unable to read database")

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -62,4 +63,38 @@ func parseVMStatValue(line string) int64 {
 	s = strings.TrimSuffix(s, ".")
 	v, _ := strconv.ParseInt(s, 10, 64)
 	return v
+}
+
+func daemonRSSBytes(label string) int64 {
+	out, err := exec.Command("launchctl", "list", label).Output()
+	if err != nil {
+		return 0
+	}
+	pid := parseLaunchctlPID(string(out))
+	if pid <= 0 {
+		return 0
+	}
+	psOut, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return 0
+	}
+	return parseProcessRSSBytes(string(psOut))
+}
+
+func parseLaunchctlPID(output string) int {
+	re := regexp.MustCompile(`"PID"\s*=\s*(\d+)`)
+	matches := re.FindStringSubmatch(output)
+	if len(matches) != 2 {
+		return 0
+	}
+	pid, _ := strconv.Atoi(matches[1])
+	return pid
+}
+
+func parseProcessRSSBytes(output string) int64 {
+	rssKB, err := strconv.ParseInt(strings.TrimSpace(output), 10, 64)
+	if err != nil || rssKB <= 0 {
+		return 0
+	}
+	return rssKB * 1024
 }
