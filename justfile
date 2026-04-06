@@ -14,6 +14,7 @@
 #   just test-coverage-strict - Cached tests + coverage; fail if filtered is not 100%
 #   just test-full-strict     - No cache + coverage; fail if filtered is not 100%
 #   just lint        - go vet + Staticcheck + Revive
+#   just vulncheck   - Scan for known Go vulnerabilities
 #   just uninstall   - Complete uninstall
 #
 # Prerequisites:
@@ -60,6 +61,10 @@ test-full-strict:
 # go vet + Staticcheck + Revive (tools pinned in src/go.mod)
 lint:
     @scripts/lint.sh
+
+# Scan for known vulnerabilities via govulncheck (pinned in src/go.mod)
+vulncheck:
+    @scripts/vulncheck.sh
 
 # Smoke-test MCP stdio: initialize, initialized, tools/call search
 test-mcp:
