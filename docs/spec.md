@@ -446,7 +446,7 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 | `notebook_list` | List indexed notebook files across configured directories. |
 | `notebook_read` | Read a markdown or text file from a configured notebook directory. |
 | `notebook_read_pdf` | Extract and return text from a PDF in a configured notebook directory. |
-| `profile_about_me` | Searches all connected sources for an "About Me" note, reconstructs its content from indexed chunks, and aggregates referenced notes as separate sections. Call before making personalized recommendations. Response includes `skipped_refs` (list of reference names that could not be fetched). |
+| `profile_about_me` | Returns the owner's personal profile (identity, hobbies, skills, preferences, background). Call first when the user asks about themselves or when personalization benefits from knowing the owner. Reconstructs the "About Me" note and aggregates referenced notes. Response includes `skipped_refs` (list of reference names that could not be fetched). |
 | `search` | Global keyword search across connected sources (BM25/FTS5); requires `query`, with optional `source`, `content_type`, and `limit`. Index populated by daemon. |
 | `whatsapp_download_media` | Download media for a message via core daemon. |
 | `whatsapp_get_chat` | Get one chat by JID; optional last message. |

@@ -16,11 +16,10 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-const profileToolDescription = `Returns structured profile information about the MCP owner. ` +
-	`Searches all connected data sources for a note titled "AGENTS About Me", reconstructs its full content from ` +
-	`indexed chunks, extracts any note references (wikilinks or markdown links), and aggregates those ` +
-	`referenced notes as separate sections. Call this before making personalized recommendations or ` +
-	`when the user's background is relevant.`
+const profileToolDescription = `Returns the MCP owner's personal profile — identity, hobbies, skills, preferences, and background. ` +
+	`Call this FIRST when the user asks about themselves (e.g. "what are my hobbies?", "tell me about myself", ` +
+	`"what do I like?", "what's my background?") or when personalization benefits from knowing the owner. ` +
+	`Reconstructs the "About Me" note and aggregates any notes it references.`
 
 const profileToolExample = `{}`
 
@@ -53,7 +52,7 @@ type ProfileResult struct {
 	SkippedRefs []string         `json:"skipped_refs,omitempty"`
 }
 
-// ProfileSection represents a note referenced by the "AGENTS About Me" note.
+// ProfileSection represents a note referenced by the "About Me" note.
 type ProfileSection struct {
 	Title   string `json:"title"`
 	Content string `json:"content"`
@@ -61,7 +60,7 @@ type ProfileSection struct {
 }
 
 // RegisterProfileTool registers the profile_about_me tool, which aggregates the owner's
-// "AGENTS About Me" note and any notes it references into a single structured response.
+// "About Me" note and any notes it references into a single structured response.
 func RegisterProfileTool(s *server.MCPServer, store profileToolStore) {
 	s.AddTool(core.NewReadOnlyTool("profile_about_me",
 		core.ToolDescription(profileToolDescription, profileToolExample),
@@ -74,15 +73,15 @@ func RegisterProfileTool(s *server.MCPServer, store profileToolStore) {
 	})
 }
 
-// buildProfile searches for an "AGENTS About Me" note, reconstructs its full content, extracts
+// buildProfile searches for an "About Me" note, reconstructs its full content, extracts
 // note references, and aggregates each referenced note as a section.
 func buildProfile(store profileToolStore) (*ProfileResult, error) {
-	title, content, source, err := fetchNote(store, "AGENTS About Me")
+	title, content, source, err := fetchNote(store, "About Me")
 	if err != nil {
 		return nil, err
 	}
 	if title == "" {
-		return nil, fmt.Errorf("no 'AGENTS About Me' note found in connected data sources")
+		return nil, fmt.Errorf("no 'About Me' note found in connected data sources")
 	}
 
 	refs := extractNoteRefs(content)

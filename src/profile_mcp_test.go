@@ -45,19 +45,19 @@ func chunkMeta(t *testing.T, idx int) json.RawMessage {
 	return b
 }
 
-// Verifies the profile tool returns the "AGENTS About Me" note with a referenced section.
+// Verifies the profile tool returns the "About Me" note with a referenced section.
 func TestProfileTool_success(t *testing.T) {
 	store := &mockProfileStore{
 		results: map[string][]SearchResult{
-			// Title search for "AGENTS About Me"
-			"AGENTS About Me": {
-				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+			// Title search for "About Me"
+			"About Me": {
+				{Source: "notebook", ContentType: "note_title", Title: "About Me", Content: "About Me"},
 			},
 			// Chunk search for the note body
-			"AGENTS About Me:note_content": {
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "First chunk.", Metadata: chunkMeta(t, 0)},
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "Third chunk.", Metadata: chunkMeta(t, 2)},
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "Second chunk. See also [[Work History]].", Metadata: chunkMeta(t, 1)},
+			"About Me:note_content": {
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "First chunk.", Metadata: chunkMeta(t, 0)},
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "Third chunk.", Metadata: chunkMeta(t, 2)},
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "Second chunk. See also [[Work History]].", Metadata: chunkMeta(t, 1)},
 			},
 			// Title search for referenced note
 			"Work History": {
@@ -74,8 +74,8 @@ func TestProfileTool_success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Title != "AGENTS About Me" {
-		t.Errorf("expected title 'AGENTS About Me', got %q", result.Title)
+	if result.Title != "About Me" {
+		t.Errorf("expected title 'About Me', got %q", result.Title)
 	}
 	if result.Source != "notebook" {
 		t.Errorf("expected source 'notebook', got %q", result.Source)
@@ -109,15 +109,15 @@ func TestProfileTool_success(t *testing.T) {
 	}
 }
 
-// Verifies the profile tool returns an error when no "AGENTS About Me" note exists.
+// Verifies the profile tool returns an error when no "About Me" note exists.
 func TestProfileTool_noNoteFound(t *testing.T) {
 	store := &mockProfileStore{results: map[string][]SearchResult{}}
 	_, err := buildProfile(store)
 	if err == nil {
 		t.Fatal("expected error when no note found")
 	}
-	if !strings.Contains(err.Error(), "AGENTS About Me") {
-		t.Errorf("expected error to mention 'AGENTS About Me', got %q", err.Error())
+	if !strings.Contains(err.Error(), "About Me") {
+		t.Errorf("expected error to mention 'About Me', got %q", err.Error())
 	}
 }
 
@@ -137,11 +137,11 @@ func TestProfileTool_storeError(t *testing.T) {
 func TestProfileTool_missingReferencedNote(t *testing.T) {
 	store := &mockProfileStore{
 		results: map[string][]SearchResult{
-			"AGENTS About Me": {
-				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+			"About Me": {
+				{Source: "notebook", ContentType: "note_title", Title: "About Me", Content: "About Me"},
 			},
-			"AGENTS About Me:note_content": {
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "See [[Missing Note]].", Metadata: chunkMeta(t, 0)},
+			"About Me:note_content": {
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "See [[Missing Note]].", Metadata: chunkMeta(t, 0)},
 			},
 			// "Missing Note" is not seeded.
 		},
@@ -163,11 +163,11 @@ func TestProfileTool_missingReferencedNote(t *testing.T) {
 func TestProfileTool_erroredReferencedNote(t *testing.T) {
 	store := &mockProfileStore{
 		results: map[string][]SearchResult{
-			"AGENTS About Me": {
-				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+			"About Me": {
+				{Source: "notebook", ContentType: "note_title", Title: "About Me", Content: "About Me"},
 			},
-			"AGENTS About Me:note_content": {
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "See [[Error Note]].", Metadata: chunkMeta(t, 0)},
+			"About Me:note_content": {
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "See [[Error Note]].", Metadata: chunkMeta(t, 0)},
 			},
 		},
 		errors: map[string]error{
@@ -191,11 +191,11 @@ func TestProfileTool_erroredReferencedNote(t *testing.T) {
 func TestProfileTool_deduplicateSections(t *testing.T) {
 	store := &mockProfileStore{
 		results: map[string][]SearchResult{
-			"AGENTS About Me": {
-				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+			"About Me": {
+				{Source: "notebook", ContentType: "note_title", Title: "About Me", Content: "About Me"},
 			},
-			"AGENTS About Me:note_content": {
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "See [[Skills]] and [[skills]].", Metadata: chunkMeta(t, 0)},
+			"About Me:note_content": {
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "See [[Skills]] and [[skills]].", Metadata: chunkMeta(t, 0)},
 			},
 			"Skills": {
 				{Source: "notebook", ContentType: "note_title", Title: "Skills", Content: "Skills"},
@@ -225,11 +225,11 @@ func TestProfileTool_deduplicateSections(t *testing.T) {
 func TestProfileTool_markdownLinkRefs(t *testing.T) {
 	store := &mockProfileStore{
 		results: map[string][]SearchResult{
-			"AGENTS About Me": {
-				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+			"About Me": {
+				{Source: "notebook", ContentType: "note_title", Title: "About Me", Content: "About Me"},
 			},
-			"AGENTS About Me:note_content": {
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "See [my work](Work History.md).", Metadata: chunkMeta(t, 0)},
+			"About Me:note_content": {
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "See [my work](Work History.md).", Metadata: chunkMeta(t, 0)},
 			},
 			"Work History": {
 				{Source: "notebook", ContentType: "note_title", Title: "Work History", Content: "Work History"},
@@ -256,11 +256,11 @@ func TestProfileTool_markdownLinkRefs(t *testing.T) {
 func TestProfileTool_skipsURLLinks(t *testing.T) {
 	store := &mockProfileStore{
 		results: map[string][]SearchResult{
-			"AGENTS About Me": {
-				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+			"About Me": {
+				{Source: "notebook", ContentType: "note_title", Title: "About Me", Content: "About Me"},
 			},
-			"AGENTS About Me:note_content": {
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "Visit [my site](https://example.com).", Metadata: chunkMeta(t, 0)},
+			"About Me:note_content": {
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "Visit [my site](https://example.com).", Metadata: chunkMeta(t, 0)},
 			},
 		},
 	}
@@ -278,11 +278,11 @@ func TestProfileTool_skipsURLLinks(t *testing.T) {
 func TestProfileTool_mcpRegistration(t *testing.T) {
 	store := &mockProfileStore{
 		results: map[string][]SearchResult{
-			"AGENTS About Me": {
-				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+			"About Me": {
+				{Source: "notebook", ContentType: "note_title", Title: "About Me", Content: "About Me"},
 			},
-			"AGENTS About Me:note_content": {
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "Hello world.", Metadata: chunkMeta(t, 0)},
+			"About Me:note_content": {
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "Hello world.", Metadata: chunkMeta(t, 0)},
 			},
 		},
 	}
@@ -294,21 +294,21 @@ func TestProfileTool_mcpRegistration(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &result); err != nil {
 		t.Fatalf("unmarshal result: %v\nraw: %s", err, text)
 	}
-	if result.Title != "AGENTS About Me" {
-		t.Errorf("expected title 'AGENTS About Me', got %q", result.Title)
+	if result.Title != "About Me" {
+		t.Errorf("expected title 'About Me', got %q", result.Title)
 	}
 	if !strings.Contains(result.Content, "Hello world.") {
 		t.Errorf("expected content to contain 'Hello world.', got %q", result.Content)
 	}
 }
 
-// Verifies the profile tool returns an MCP error result when no "AGENTS About Me" note is found.
+// Verifies the profile tool returns an MCP error result when no "About Me" note is found.
 func TestProfileTool_mcpRegistration_noNote(t *testing.T) {
 	store := &mockProfileStore{results: map[string][]SearchResult{}}
 	s := newTestMCPServerWithProfile(t, store)
 	text := callGlobalTool(t, s, "profile_about_me", map[string]interface{}{})
-	if !strings.Contains(text, "AGENTS About Me") {
-		t.Errorf("expected MCP error to mention 'AGENTS About Me', got %q", text)
+	if !strings.Contains(text, "About Me") {
+		t.Errorf("expected MCP error to mention 'About Me', got %q", text)
 	}
 }
 
@@ -376,11 +376,11 @@ func TestStemLinkPath(t *testing.T) {
 func TestProfileTool_selfReferenceDedup(t *testing.T) {
 	store := &mockProfileStore{
 		results: map[string][]SearchResult{
-			"AGENTS About Me": {
-				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+			"About Me": {
+				{Source: "notebook", ContentType: "note_title", Title: "About Me", Content: "About Me"},
 			},
-			"AGENTS About Me:note_content": {
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "See also [[AGENTS About Me]].", Metadata: chunkMeta(t, 0)},
+			"About Me:note_content": {
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "See also [[About Me]].", Metadata: chunkMeta(t, 0)},
 			},
 		},
 	}
@@ -398,22 +398,22 @@ func TestProfileTool_selfReferenceDedup(t *testing.T) {
 func TestFetchNote_exactTitleMatchBreaks(t *testing.T) {
 	store := &mockProfileStore{
 		results: map[string][]SearchResult{
-			"AGENTS About Me": {
-				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me and More", Content: "AGENTS About Me and More"},
-				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+			"About Me": {
+				{Source: "notebook", ContentType: "note_title", Title: "About Me and More", Content: "About Me and More"},
+				{Source: "notebook", ContentType: "note_title", Title: "About Me", Content: "About Me"},
 			},
-			"AGENTS About Me:note_content": {
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "Exact match content.", Metadata: chunkMeta(t, 0)},
+			"About Me:note_content": {
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "Exact match content.", Metadata: chunkMeta(t, 0)},
 			},
 		},
 	}
 
-	title, _, _, err := fetchNote(store, "AGENTS About Me")
+	title, _, _, err := fetchNote(store, "About Me")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if title != "AGENTS About Me" {
-		t.Errorf("expected exact title 'AGENTS About Me', got %q", title)
+	if title != "About Me" {
+		t.Errorf("expected exact title 'About Me', got %q", title)
 	}
 }
 
@@ -425,14 +425,14 @@ func TestFetchNote_chunkSearchError(t *testing.T) {
 			callCount++
 			if callCount == 1 {
 				return []SearchResult{
-					{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+					{Source: "notebook", ContentType: "note_title", Title: "About Me", Content: "About Me"},
 				}, nil
 			}
 			return nil, errors.New("chunk search failed")
 		},
 	}
 
-	_, _, _, err := fetchNote(store, "AGENTS About Me")
+	_, _, _, err := fetchNote(store, "About Me")
 	if err == nil {
 		t.Fatal("expected error from chunk search failure")
 	}
@@ -445,17 +445,17 @@ func TestFetchNote_chunkSearchError(t *testing.T) {
 func TestFetchNote_mismatchedChunkTitlesFiltered(t *testing.T) {
 	store := &mockProfileStore{
 		results: map[string][]SearchResult{
-			"AGENTS About Me": {
-				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+			"About Me": {
+				{Source: "notebook", ContentType: "note_title", Title: "About Me", Content: "About Me"},
 			},
-			"AGENTS About Me:note_content": {
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "Good chunk.", Metadata: chunkMeta(t, 0)},
+			"About Me:note_content": {
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "Good chunk.", Metadata: chunkMeta(t, 0)},
 				{Source: "notebook", ContentType: "note_content", Title: "Other Note", Content: "Noise chunk.", Metadata: chunkMeta(t, 1)},
 			},
 		},
 	}
 
-	_, content, _, err := fetchNote(store, "AGENTS About Me")
+	_, content, _, err := fetchNote(store, "About Me")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -481,23 +481,23 @@ func (m *mockProfileStoreFunc) Search(query string, limit int, sf, tf string) ([
 func TestFetchNote_skipsUnknownContentType(t *testing.T) {
 	store := &mockProfileStore{
 		results: map[string][]SearchResult{
-			"AGENTS About Me": {
+			"About Me": {
 				// chat_content is not in titleToContentType; should be skipped.
-				{Source: "whatsapp", ContentType: "chat_content", Title: "AGENTS About Me", Content: "noise"},
-				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+				{Source: "whatsapp", ContentType: "chat_content", Title: "About Me", Content: "noise"},
+				{Source: "notebook", ContentType: "note_title", Title: "About Me", Content: "About Me"},
 			},
-			"AGENTS About Me:note_content": {
-				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "Profile text.", Metadata: chunkMeta(t, 0)},
+			"About Me:note_content": {
+				{Source: "notebook", ContentType: "note_content", Title: "About Me", Content: "Profile text.", Metadata: chunkMeta(t, 0)},
 			},
 		},
 	}
 
-	title, content, _, err := fetchNote(store, "AGENTS About Me")
+	title, content, _, err := fetchNote(store, "About Me")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if title != "AGENTS About Me" {
-		t.Errorf("expected title 'AGENTS About Me', got %q", title)
+	if title != "About Me" {
+		t.Errorf("expected title 'About Me', got %q", title)
 	}
 	if !strings.Contains(content, "Profile text.") {
 		t.Errorf("expected notebook content, got %q", content)
