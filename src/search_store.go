@@ -397,7 +397,21 @@ func sanitizeFTSQuery(query string) string {
 	return strings.Join(parts, " OR ")
 }
 
-// loadResults hydrates ranked entry IDs, applies hierarchy weighting, and returns ordered search results.
+// recencyMultiplier returns a score boost factor based on how recently an entry was timestamped.
+// Applies 1 + 3/(1 + ageDays) so today → 4x, one week ago → ~1.4x, one year ago → ~1.01x.
+// Returns 1.0 when no timestamp is available so entries without timestamps are unaffected.
+func recencyMultiplier(ts *time.Time) float64 {
+	if ts == nil {
+		return 1.0
+	}
+	ageDays := time.Since(*ts).Hours() / 24
+	if ageDays < 0 {
+		ageDays = 0
+	}
+	return 1.0 + 3.0/(1.0+ageDays)
+}
+
+// loadResults hydrates ranked entry IDs, applies hierarchy weighting and recency boost, and returns ordered search results.
 func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) {
 	if len(ranked) == 0 {
 		return []SearchResult{}, nil
@@ -413,7 +427,7 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 	}
 
 	rows, err := s.db.Query(
-		"SELECT id, source, source_id, content_type, title, content, metadata FROM search_entries WHERE id IN ("+
+		"SELECT id, source, source_id, content_type, title, content, metadata, timestamp FROM search_entries WHERE id IN ("+
 			strings.Join(placeholders, ",")+
 			")", ids...)
 	if err != nil { // nocov
@@ -425,13 +439,20 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 	for rows.Next() {
 		var id int64
 		var source, sourceID, contentType, title, content string
-		var metadata sql.NullString
-		if rows.Scan(&id, &source, &sourceID, &contentType, &title, &content, &metadata) != nil { // nocov
+		var metadata, tsStr sql.NullString
+		if rows.Scan(&id, &source, &sourceID, &contentType, &title, &content, &metadata, &tsStr) != nil { // nocov
 			continue
 		}
 		weight := hierarchyWeights[contentType]
 		if weight == 0 {
 			weight = 1.0
+		}
+
+		var ts *time.Time
+		if tsStr.Valid && tsStr.String != "" {
+			if t, err := time.Parse(time.RFC3339, tsStr.String); err == nil {
+				ts = &t
+			}
 		}
 
 		var meta json.RawMessage
@@ -444,7 +465,7 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 			ContentType:  contentType,
 			Title:        title,
 			Content:      content,
-			Score:        -scoreMap[id] * weight,
+			Score:        -scoreMap[id] * weight * recencyMultiplier(ts),
 			Metadata:     meta,
 			MetadataHint: searchMetadataHint(source, contentType),
 		}

@@ -738,6 +738,60 @@ func TestCreateSearchFTSTriggers_updateError(t *testing.T) {
 	}
 }
 
+// ---------- Recency boost ----------
+
+// Verifies recencyMultiplier returns 1.0 for nil, high value for very recent, and near-1.0 for old timestamps.
+func TestRecencyMultiplier(t *testing.T) {
+	now := time.Now()
+
+	if got := recencyMultiplier(nil); got != 1.0 {
+		t.Errorf("nil ts: got %.4f, want 1.0", got)
+	}
+
+	recent := now.Add(-time.Minute)
+	if got := recencyMultiplier(&recent); got <= 3.9 {
+		t.Errorf("1 minute ago: got %.4f, want > 3.9", got)
+	}
+
+	oneYearAgo := now.Add(-365 * 24 * time.Hour)
+	if got := recencyMultiplier(&oneYearAgo); got >= 1.1 {
+		t.Errorf("1 year ago: got %.4f, want < 1.1", got)
+	}
+
+	future := now.Add(24 * time.Hour)
+	if got := recencyMultiplier(&future); got < 3.9 {
+		t.Errorf("future ts (clamped): got %.4f, want >= 3.9", got)
+	}
+}
+
+// Verifies a recently-timestamped entry outranks an older entry with identical BM25 relevance.
+func TestSearchStore_RecencyBoost(t *testing.T) {
+	store := newTestSearchStore(t)
+
+	now := time.Now()
+	old := now.Add(-365 * 24 * time.Hour)
+
+	entries := []SearchEntry{
+		{Source: "test", SourceID: "old-entry", ContentType: "note_content", Title: "Old Message", Content: "mac and cheese", Timestamp: &old},
+		{Source: "test", SourceID: "new-entry", ContentType: "note_content", Title: "New Message", Content: "mac and cheese", Timestamp: &now},
+	}
+	store.IndexEntries(entries)
+
+	results, err := store.Search("mac cheese", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) < 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if results[0].Title != "New Message" {
+		t.Errorf("expected recent entry to rank first, got %q (score=%.4f vs %.4f)", results[0].Title, results[0].Score, results[1].Score)
+	}
+	if results[0].Score <= results[1].Score {
+		t.Errorf("expected recent entry score %.4f > old entry score %.4f", results[0].Score, results[1].Score)
+	}
+}
+
 // ---------- loadResults unknown content type ----------
 
 // Verifies unknown content types fall back to neutral weighting instead of zeroing scores.
