@@ -263,6 +263,7 @@ func commandTree() []Command {
 
 // dispatchCLI resolves top-level args into a command run, printing usage to stderr and exiting non-zero when input is invalid.
 func dispatchCLI(args []string) {
+	initLogger()
 	if len(args) == 0 {
 		printUsage()
 		os.Exit(1)

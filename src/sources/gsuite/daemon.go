@@ -3,6 +3,7 @@ package gsuite
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,24 +29,24 @@ func (g *Source) StartCore(ctx context.Context) error { // nocov
 		err := g.syncAllApps(pollCtx)
 		switch classifyGSuiteError(err) {
 		case gsuiteErrInvalidGrant:
-			fmt.Fprintf(os.Stderr, "Warning: Google auth reset required (invalid_grant); clearing local GSuite state and disabling the source\n")
+			slog.Warn("Google auth reset required (invalid_grant); clearing local GSuite state and disabling the source")
 			if g.db != nil {
 				g.db.Close()
 				g.db = nil
 			}
 			if resetErr := g.Reset(g.dataDir); resetErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to reset GSuite after invalid_grant: %v\n", resetErr)
+				slog.Warn("failed to reset GSuite after invalid_grant", "err", resetErr)
 			}
 			if disableErr := core.SetSourceDisabled(g.dataDir, "gsuite"); disableErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to disable GSuite after invalid_grant: %v\n", disableErr)
+				slog.Warn("failed to disable GSuite after invalid_grant", "err", disableErr)
 			}
 			cancel()
 			return nil
 		case gsuiteErrUnauthorized:
-			fmt.Fprintf(os.Stderr, "Warning: Google Suite sync received HTTP 401; keeping the source enabled and retrying later\n")
+			slog.Warn("Google Suite sync received HTTP 401; keeping the source enabled and retrying later")
 			return nil
 		case gsuiteErrForbidden:
-			fmt.Fprintf(os.Stderr, "Warning: Google Suite sync received HTTP 403; keeping the source enabled and retrying later\n")
+			slog.Warn("Google Suite sync received HTTP 403; keeping the source enabled and retrying later")
 			return nil
 		default:
 			return err
@@ -98,13 +99,13 @@ func (g *Source) syncAllApps(ctx context.Context) error { // nocov
 			case gsuiteErrInvalidGrant:
 				return fmt.Errorf("%s sync auth error: %w", app.displayName, err)
 			case gsuiteErrUnauthorized:
-				fmt.Fprintf(os.Stderr, "Warning: %s sync received HTTP 401: %v\n", app.displayName, err)
+				slog.Warn("app sync received HTTP 401", "app", app.displayName, "err", err)
 				continue
 			case gsuiteErrForbidden:
-				fmt.Fprintf(os.Stderr, "Warning: %s sync received HTTP 403: %v\n", app.displayName, err)
+				slog.Warn("app sync received HTTP 403", "app", app.displayName, "err", err)
 				continue
 			default:
-				fmt.Fprintf(os.Stderr, "Warning: %s sync error: %v\n", app.displayName, err)
+				slog.Warn("app sync error", "app", app.displayName, "err", err)
 				continue
 			}
 		}
@@ -114,7 +115,7 @@ func (g *Source) syncAllApps(ctx context.Context) error { // nocov
 	// Persist refreshed token
 	if fresh, err := ts.Token(); err == nil {
 		if err2 := g.saveToken(fresh); err2 != nil { // nocov
-			fmt.Printf("Warning: Failed to persist refreshed token: %v\n", err2)
+			slog.Warn("failed to persist refreshed token", "err", err2)
 		}
 	} else { // nocov
 		return fmt.Errorf("failed to refresh token: %w", err)

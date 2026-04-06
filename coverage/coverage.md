@@ -16,14 +16,29 @@
 | `helpers.go` | 73 | 73 | 100.0% |
 | `mcp.go` | 120 | 120 | 100.0% |
 | `scanner.go` | 99 | 99 | 100.0% |
-| `search_store.go` | 157 | 157 | 100.0% |
+| [`search_store.go`](#search_storego) | 180 | 195 | 92.3% |
 | `service.go` | 401 | 401 | 100.0% |
 | `source.go` | 189 | 189 | 100.0% |
 | `store.go` | 142 | 142 | 100.0% |
-| **Total** | **2664** | **2665** | **100.0%** |
+| **Total** | **2687** | **2703** | **99.4%** |
 
 ## Uncovered Blocks
 
 ### [`app_gmail.go`](../src/app_gmail.go)
 
 - Lines 836–838 (1 stmt)
+
+### [`search_store.go`](../src/search_store.go)
+
+- Lines 216–218 (1 stmt)
+- Lines 285–287 (1 stmt)
+- Lines 292–294 (1 stmt)
+- Lines 295–296 (1 stmt)
+- Lines 296–298 (1 stmt)
+- Lines 299–299 (1 stmt)
+- Lines 321–324 (2 stmts)
+- Lines 343–345 (1 stmt)
+- Lines 388–390 (2 stmts)
+- Lines 394–396 (1 stmt)
+- Lines 480–482 (2 stmts)
+- Lines 511–513 (1 stmt)

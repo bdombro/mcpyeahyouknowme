@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,7 +32,7 @@ func runStart() {
 	plist := requireDaemonInstalled()
 	exec.Command("launchctl", "unload", plist).Run()
 	if err := exec.Command("launchctl", "load", plist).Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error starting daemon: %v\n", err)
+		slog.Error("error starting daemon", "err", err)
 		os.Exit(1)
 	}
 	fmt.Println("Started core daemon")
@@ -41,7 +42,7 @@ func runStart() {
 func runStop() {
 	plist := requireDaemonInstalled()
 	if err := exec.Command("launchctl", "unload", plist).Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error stopping daemon: %v\n", err)
+		slog.Error("error stopping daemon", "err", err)
 		os.Exit(1)
 	}
 	fmt.Println("Stopped core daemon")
@@ -50,7 +51,7 @@ func runStop() {
 // runRestart reloads the LaunchAgent plist so macOS restarts the core daemon process.
 func runRestart() {
 	if err := restartInstalledDaemon(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error restarting daemon: %v\n", err)
+		slog.Error("error restarting daemon", "err", err)
 		os.Exit(1)
 	}
 	fmt.Println("Restarted core daemon")
@@ -98,7 +99,7 @@ func runCompletions(shell string) {
 	case "zsh":
 		printZshCompletions()
 	default:
-		fmt.Fprintf(os.Stderr, "Unsupported shell: %s (supported: bash, zsh)\n", shell)
+		slog.Error("unsupported shell for completions", "shell", shell, "supported", "bash, zsh")
 		os.Exit(1)
 	}
 }

@@ -172,7 +172,7 @@ func TestWriteStatus_json(t *testing.T) {
 	infoIsNetworkAvailable = func() bool { return true }
 	infoLaunchctlOutput = func(context.Context) ([]byte, error) { return []byte("123"), nil }
 	infoDaemonRSSBytes = func(string) int64 { return 2 * 1024 * 1024 }
-	infoSearchIndexStats = func(string) SearchIndexStats { return SearchIndexStats{Entries: 4} }
+	infoSearchIndexStats = func(string) SearchIndexStats { return SearchIndexStats{Entries: 4, FTSHealthy: true} }
 	infoFileGroupSizeBytes = func(string) int64 { return 3 * 1024 * 1024 }
 	infoSourceDefs = []infoSourceDef{
 		{
@@ -434,7 +434,7 @@ func TestBuildInfoSnapshot_runningDaemon(t *testing.T) {
 	infoIsNetworkAvailable = func() bool { return true }
 	infoLaunchctlOutput = func(context.Context) ([]byte, error) { return []byte("123"), nil }
 	infoDaemonRSSBytes = func(string) int64 { return 2 * 1024 * 1024 }
-	infoSearchIndexStats = func(string) SearchIndexStats { return SearchIndexStats{Entries: 6} }
+	infoSearchIndexStats = func(string) SearchIndexStats { return SearchIndexStats{Entries: 6, FTSHealthy: true} }
 	infoFileGroupSizeBytes = func(string) int64 { return 4 * 1024 * 1024 }
 	infoSourceDefs = []infoSourceDef{
 		{
@@ -562,7 +562,7 @@ func TestBuildInfoSearchIndexSnapshot_indexed(t *testing.T) {
 	restore := restoreStatusTestGlobals(t)
 	defer restore()
 
-	infoSearchIndexStats = func(string) SearchIndexStats { return SearchIndexStats{Entries: 5} }
+	infoSearchIndexStats = func(string) SearchIndexStats { return SearchIndexStats{Entries: 5, FTSHealthy: true} }
 	infoFileGroupSizeBytes = func(string) int64 { return 2 * 1024 * 1024 }
 
 	got := buildInfoSearchIndexSnapshot(t.TempDir(), false)

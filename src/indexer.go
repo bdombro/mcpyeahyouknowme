@@ -4,8 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
-	"os"
+	"log/slog"
 	"time"
 
 	"mcpyeahyouknowme/core"
@@ -47,12 +46,12 @@ func indexSources(ctx context.Context, store sourceIndexer, sources []activeSour
 			return false
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to get search entries from %s: %v\n", active.src.Name(), err)
+			slog.Warn("failed to get search entries from source", "source", active.src.Name(), "err", err)
 			continue
 		}
 		if fullPass {
 			if err := store.PruneSourceKeys(active.src.Name(), keys); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to prune %s entries: %v\n", active.src.Name(), err)
+				slog.Warn("failed to prune source entries", "source", active.src.Name(), "err", err)
 				continue
 			}
 		}

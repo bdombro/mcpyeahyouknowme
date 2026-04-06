@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -13,10 +14,17 @@ import (
 type mockProfileStore struct {
 	results map[string][]SearchResult
 	err     error
+	errors  map[string]error
 }
 
 // Search returns seeded results for the given query, or an error if configured.
+// Per-query errors in the errors map take priority over the global err field.
 func (m *mockProfileStore) Search(query string, _ int, _, typeFilter string) ([]SearchResult, error) {
+	if m.errors != nil {
+		if e, ok := m.errors[query]; ok {
+			return nil, e
+		}
+	}
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -125,7 +133,7 @@ func TestProfileTool_storeError(t *testing.T) {
 	}
 }
 
-// Verifies the profile tool silently skips referenced notes that cannot be found.
+// Verifies the profile tool adds missing referenced notes to SkippedRefs instead of silently dropping them.
 func TestProfileTool_missingReferencedNote(t *testing.T) {
 	store := &mockProfileStore{
 		results: map[string][]SearchResult{
@@ -145,6 +153,37 @@ func TestProfileTool_missingReferencedNote(t *testing.T) {
 	}
 	if len(result.Sections) != 0 {
 		t.Errorf("expected no sections when referenced note is missing, got %d", len(result.Sections))
+	}
+	if len(result.SkippedRefs) != 1 || result.SkippedRefs[0] != "Missing Note" {
+		t.Errorf("expected SkippedRefs=[\"Missing Note\"], got %v", result.SkippedRefs)
+	}
+}
+
+// Verifies the profile tool adds errored referenced notes to SkippedRefs when fetchNote returns an error.
+func TestProfileTool_erroredReferencedNote(t *testing.T) {
+	store := &mockProfileStore{
+		results: map[string][]SearchResult{
+			"AGENTS About Me": {
+				{Source: "notebook", ContentType: "note_title", Title: "AGENTS About Me", Content: "AGENTS About Me"},
+			},
+			"AGENTS About Me:note_content": {
+				{Source: "notebook", ContentType: "note_content", Title: "AGENTS About Me", Content: "See [[Error Note]].", Metadata: chunkMeta(t, 0)},
+			},
+		},
+		errors: map[string]error{
+			"Error Note": fmt.Errorf("search index unavailable"),
+		},
+	}
+
+	result, err := buildProfile(store)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Sections) != 0 {
+		t.Errorf("expected no sections when referenced note errors, got %d", len(result.Sections))
+	}
+	if len(result.SkippedRefs) != 1 || result.SkippedRefs[0] != "Error Note" {
+		t.Errorf("expected SkippedRefs=[\"Error Note\"], got %v", result.SkippedRefs)
 	}
 }
 

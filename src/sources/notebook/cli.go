@@ -4,6 +4,7 @@ package notebook
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,11 +38,11 @@ func RunAdd(dataDir string, args []string) {
 	raw := args[0]
 	abs, err := filepath.Abs(raw)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: could not resolve path %q: %v\n", raw, err)
+		slog.Error("could not resolve path", "path", raw, "err", err)
 		os.Exit(1)
 	}
 	if info, err := os.Stat(abs); err != nil || !info.IsDir() {
-		fmt.Fprintf(os.Stderr, "Error: %q is not an accessible directory\n", abs)
+		slog.Error("path is not an accessible directory", "path", abs)
 		os.Exit(1)
 	}
 
@@ -60,7 +61,7 @@ func RunAdd(dataDir string, args []string) {
 		sc.Reset = false
 		sc.Auth = data
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not save config: %v\n", err)
+		slog.Warn("could not save config", "err", err)
 	}
 	fmt.Printf("Added notebook directory: %s\n", abs)
 	signalDaemonReindex()
@@ -87,7 +88,7 @@ func RunRemove(dataDir string, args []string) {
 		}
 	}
 	if !found {
-		fmt.Fprintf(os.Stderr, "Directory not configured: %s\n", abs)
+		slog.Error("directory not configured", "path", abs)
 		os.Exit(1)
 	}
 	cfg.Dirs = remaining
@@ -106,7 +107,7 @@ func RunRemove(dataDir string, args []string) {
 		}
 		sc.Auth = data
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not save config: %v\n", err)
+		slog.Warn("could not save config", "err", err)
 	}
 	fmt.Printf("Removed notebook directory: %s\n", abs)
 	signalDaemonReindex()
@@ -142,7 +143,7 @@ func RunReset(dataDir string) {
 
 	src := NewSource(dataDir)
 	if err := src.Reset(dataDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning during reset: %v\n", err)
+		slog.Warn("warning during reset", "err", err)
 	}
 	src.Close()
 
@@ -150,10 +151,10 @@ func RunReset(dataDir string) {
 		sc.Enabled = false
 		sc.Auth = nil
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
+		slog.Warn("could not update config.json", "err", err)
 	}
 	if err := core.ClearSearchSource(dataDir, "notebook"); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not clear search index: %v\n", err)
+		slog.Warn("could not clear search index", "err", err)
 	}
 	fmt.Println("Notebook configuration reset.")
 }

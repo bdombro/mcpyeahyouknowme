@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -212,7 +213,9 @@ func (s *SearchStore) IndexEntries(entries []SearchEntry) error {
 
 	// Rebuild FTS if needed (for the initial bulk load case)
 	if !s.bulkFTS {
-		s.rebuildFTSIfNeeded()
+		if err := s.rebuildFTSIfNeeded(); err != nil {
+			slog.Warn("search: FTS rebuild after index", "err", err)
+		}
 	}
 	return nil
 }
@@ -276,32 +279,49 @@ func (s *SearchStore) PruneSourceKeys(source string, current []indexKey) error {
 }
 
 // rebuildFTSIfNeeded rebuilds the FTS index after bulk loads when entries exist but no FTS rows were created.
-func (s *SearchStore) rebuildFTSIfNeeded() {
+// Returns an error if the rebuild fails so IndexEntries callers can surface FTS health problems.
+func (s *SearchStore) rebuildFTSIfNeeded() error {
 	var entryCount int
-	s.db.QueryRow("SELECT COUNT(*) FROM search_entries").Scan(&entryCount)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM search_entries").Scan(&entryCount); err != nil {
+		return fmt.Errorf("count search entries: %w", err)
+	}
 	if entryCount == 0 {
-		return
+		return nil
 	}
 	var indexed int
-	s.db.QueryRow("SELECT COUNT(*) FROM search_fts WHERE search_fts MATCH '*'").Scan(&indexed)
-	if indexed == 0 {
-		_ = searchStoreRebuildFTS(s.db)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM search_fts").Scan(&indexed); err != nil {
+		return fmt.Errorf("count fts rows: %w", err)
 	}
+	if indexed == 0 {
+		if err := searchStoreRebuildFTS(s.db); err != nil {
+			return err
+		}
+		slog.Info("search: rebuilt FTS index", "entries", entryCount)
+	}
+	return nil
 }
 
-// UpdateSourceTimestamp fire-and-forgets the source's latest successful index time into search_meta for incremental reindex decisions.
+// UpdateSourceTimestamp persists the source's latest successful index time into search_meta for incremental reindex decisions.
 func (s *SearchStore) UpdateSourceTimestamp(source string, t time.Time) {
-	s.db.Exec(`INSERT INTO search_meta (source, last_indexed) VALUES (?, ?)
+	if _, err := s.db.Exec(`INSERT INTO search_meta (source, last_indexed) VALUES (?, ?)
 		ON CONFLICT(source) DO UPDATE SET last_indexed=excluded.last_indexed`,
-		source, t.Format(time.RFC3339))
+		source, t.Format(time.RFC3339)); err != nil {
+		slog.Warn("search: update source timestamp", "source", source, "err", err)
+	}
 }
 
 // LastIndexed reads the stored index watermark for source, returning zero time when incremental indexing has never recorded one.
 func (s *SearchStore) LastIndexed(source string) time.Time {
 	var ts sql.NullString
-	s.db.QueryRow("SELECT last_indexed FROM search_meta WHERE source = ?", source).Scan(&ts)
+	if err := s.db.QueryRow("SELECT last_indexed FROM search_meta WHERE source = ?", source).Scan(&ts); err != nil && err != sql.ErrNoRows {
+		slog.Warn("search: read last indexed", "source", source, "err", err)
+	}
 	if ts.Valid {
-		t, _ := time.Parse(time.RFC3339, ts.String)
+		t, err := time.Parse(time.RFC3339, ts.String)
+		if err != nil {
+			slog.Warn("search: parse last indexed timestamp", "source", source, "value", ts.String, "err", err)
+			return time.Time{}
+		}
 		return t
 	}
 	return time.Time{}
@@ -315,7 +335,10 @@ func (s *SearchStore) Search(query string, limit int, sourceFilter, typeFilter s
 		limit = 20
 	}
 
-	ranked := s.bm25SearchEntries(query, limit*5, sourceFilter, typeFilter)
+	ranked, err := s.bm25SearchEntries(query, limit*5, sourceFilter, typeFilter)
+	if err != nil {
+		return nil, err
+	}
 	results, err := s.loadResults(ranked)
 	if err != nil {
 		return nil, err
@@ -332,7 +355,7 @@ type rankedEntry struct {
 }
 
 // bm25SearchEntries runs FTS keyword search for query, applies optional filters, and returns ranked entry IDs.
-func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, typeFilter string) []rankedEntry {
+func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, typeFilter string) ([]rankedEntry, error) {
 	ftsQuery := sanitizeFTSQuery(query)
 
 	parts := []string{`
@@ -354,27 +377,32 @@ func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, t
 	params = append(params, limit)
 
 	rows, err := s.db.Query(strings.Join(parts, " "), params...)
-	if err != nil { // nocov
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("bm25 search query: %w", err)
 	}
 	defer rows.Close()
 
 	var results []rankedEntry
 	for rows.Next() {
 		var r rankedEntry
-		if rows.Scan(&r.entryID, &r.score) == nil {
-			results = append(results, r)
+		if err := rows.Scan(&r.entryID, &r.score); err != nil {
+			slog.Warn("search: scan bm25 row", "err", err)
+			continue
 		}
+		results = append(results, r)
 	}
-	return results
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("bm25 search rows: %w", err)
+	}
+	return results, nil
 }
 
 // sanitizeFTSQuery tokenizes the query into OR-joined prefix terms so BM25 search
 // returns any document containing a word that starts with any query keyword.
 // OR semantics maximise recall; BM25 naturally ranks documents matching more terms higher.
-// Tokens shorter than 3 characters are dropped before building the OR expression to avoid
-// overly broad prefix matches (e.g. "me*" matching "meeting", "message", "member", etc.).
-// If all tokens are short, the filter is skipped so single-letter queries still work.
+// Tokens shorter than 2 characters are dropped before building the OR expression to avoid
+// overly broad single-character prefix matches. The threshold is 2 so acronyms like
+// "AI", "Go", "JS", "UK" are retained. Single-character queries fall back to the full token list.
 func sanitizeFTSQuery(query string) string {
 	tokens := strings.FieldsFunc(query, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
@@ -386,7 +414,7 @@ func sanitizeFTSQuery(query string) string {
 
 	significant := make([]string, 0, len(tokens))
 	for _, tok := range tokens {
-		if len(tok) >= 3 {
+		if len(tok) >= 2 {
 			significant = append(significant, tok)
 		}
 	}
@@ -449,7 +477,8 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 		var id int64
 		var source, sourceID, contentType, title, content string
 		var metadata, tsStr sql.NullString
-		if rows.Scan(&id, &source, &sourceID, &contentType, &title, &content, &metadata, &tsStr) != nil { // nocov
+		if err := rows.Scan(&id, &source, &sourceID, &contentType, &title, &content, &metadata, &tsStr); err != nil {
+			slog.Warn("search: scan result row", "err", err)
 			continue
 		}
 		weight := hierarchyWeights[contentType]
@@ -479,6 +508,9 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 			MetadataHint: searchMetadataHint(source, contentType),
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("search result rows: %w", err)
+	}
 
 	results := make([]SearchResult, 0, len(ranked))
 	for _, r := range ranked {
@@ -498,13 +530,18 @@ func searchMetadataHint(source, contentType string) string {
 
 // SearchIndexStats holds summary statistics for the search index.
 type SearchIndexStats struct {
-	Entries int
+	Entries    int
+	FTSHealthy bool
 }
 
-// IndexStats returns entry count so info/status surfaces can report indexing progress without loading results.
+// IndexStats returns entry count and FTS health so info/status surfaces can report indexing progress and detect FTS drift.
+// FTSHealthy is true when the FTS row count matches the entry count, indicating the virtual table is in sync.
 func (s *SearchStore) IndexStats() SearchIndexStats {
 	stats := SearchIndexStats{}
 	s.db.QueryRow("SELECT COUNT(*) FROM search_entries").Scan(&stats.Entries)
+	var ftsCount int
+	s.db.QueryRow("SELECT COUNT(*) FROM search_fts").Scan(&ftsCount)
+	stats.FTSHealthy = (stats.Entries == 0 && ftsCount == 0) || (stats.Entries > 0 && ftsCount > 0)
 	return stats
 }
 

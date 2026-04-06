@@ -34,7 +34,7 @@ func RegisterSearchTool(s *server.MCPServer, store searchToolStore) {
 		core.ToolDescription(searchToolDescription, searchToolExample),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Keywords extracted from the question. Include synonyms for better recall (e.g. 'invoice bill payment').")),
 		mcp.WithString("source", mcp.Description("Filter to a specific source (e.g. 'whatsapp')")),
-		mcp.WithString("content_type", mcp.Description("Filter by content type: 'chat_name', 'participant', or 'message'")),
+		mcp.WithString("content_type", mcp.Description("Filter by content type (e.g. 'chat_name', 'chat_content', 'document_title', 'email_thread_subject', 'note_content', 'browser_visit')")),
 		mcp.WithNumber("limit", mcp.Description("Maximum results to return (default 20)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()

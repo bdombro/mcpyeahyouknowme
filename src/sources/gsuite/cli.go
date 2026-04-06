@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -97,13 +98,13 @@ func RunLogin(dataDir string) {
 		token, err := config.Exchange(context.Background(), code,
 			oauth2.SetAuthURLParam("code_verifier", codeVerifier))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Failed to exchange code for token: %s\n", describeOAuthExchangeError(err))
+			slog.Error("failed to exchange code for token", "err", describeOAuthExchangeError(err))
 			srv.Shutdown(context.Background())
 			os.Exit(1)
 		}
 
 		if err := src.saveToken(token); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Failed to save token: %v\n", err)
+			slog.Error("failed to save token", "err", err)
 			srv.Shutdown(context.Background())
 			os.Exit(1)
 		}
@@ -127,7 +128,7 @@ func RunLogin(dataDir string) {
 			sc.Reset = false
 			sc.Auth = authData
 		}); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
+			slog.Warn("could not update config.json", "err", err)
 		}
 
 		fmt.Println()
@@ -139,12 +140,12 @@ func RunLogin(dataDir string) {
 		fmt.Println("  • Toggle apps:    mcpyeahyouknowme gsuite apps")
 
 	case err := <-errChan:
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		slog.Error("authentication error", "err", err)
 		srv.Shutdown(context.Background())
 		os.Exit(1)
 
 	case <-time.After(3 * time.Minute):
-		fmt.Fprintln(os.Stderr, "Error: Timeout waiting for authentication")
+		slog.Error("timeout waiting for authentication")
 		srv.Shutdown(context.Background())
 		os.Exit(1)
 	}
@@ -248,7 +249,7 @@ func RunApps(dataDir string) {
 			}
 		}
 		if err := src.saveAppsConfig(src.apps); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not save config: %v\n", err)
+			slog.Warn("could not save config", "err", err)
 		}
 	}
 }
@@ -268,13 +269,13 @@ func RunReset(dataDir string) {
 
 	src := NewSource(dataDir)
 	if err := src.Reset(dataDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning during reset: %v\n", err)
+		slog.Warn("warning during reset", "err", err)
 	}
 	if err := core.SetSourceDisabled(dataDir, "gsuite"); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
+		slog.Warn("could not update config.json", "err", err)
 	}
 	if err := core.ClearSearchSource(dataDir, "gsuite"); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not clear search index: %v\n", err)
+		slog.Warn("could not clear search index", "err", err)
 	}
 
 	fmt.Println("Google Suite data reset complete")

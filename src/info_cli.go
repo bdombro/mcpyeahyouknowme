@@ -45,9 +45,10 @@ type infoDataSnapshot struct {
 }
 
 type infoSearchIndexSnapshot struct {
-	Entries int    `json:"entries"`
-	DBSize  string `json:"db_size,omitempty"`
-	Status  string `json:"status,omitempty"`
+	Entries    int    `json:"entries"`
+	FTSHealthy bool   `json:"fts_healthy"`
+	DBSize     string `json:"db_size,omitempty"`
+	Status     string `json:"status,omitempty"`
 }
 
 type infoSourceSnapshot struct {
@@ -312,11 +313,15 @@ func buildInfoDataSnapshot(dataDir string) infoDataSnapshot {
 func buildInfoSearchIndexSnapshot(dataDir string, _ bool) infoSearchIndexSnapshot {
 	stats := infoSearchIndexStats(dataDir)
 	snapshot := infoSearchIndexSnapshot{
-		Entries: stats.Entries,
+		Entries:    stats.Entries,
+		FTSHealthy: stats.FTSHealthy,
 	}
 	if stats.Entries == 0 {
 		snapshot.Status = "not indexed"
 		return snapshot
+	}
+	if !stats.FTSHealthy {
+		snapshot.Status = "FTS out of sync"
 	}
 	if sizeBytes := infoFileGroupSizeBytes(filepath.Join(dataDir, "search.db")); sizeBytes > 0 {
 		snapshot.DBSize = core.FormatSizeMB(sizeBytes)

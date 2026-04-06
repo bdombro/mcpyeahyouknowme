@@ -3,6 +3,7 @@ package browser_history
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,14 +43,14 @@ func RunEnable(dataDir string, args []string) {
 	browser := normalizeBrowser(args[0])
 	if browser == "" {
 		// nocov
-		fmt.Fprintf(os.Stderr, "Error: unsupported browser %q (expected chrome or brave)\n", args[0])
+		slog.Error("unsupported browser", "browser", args[0], "supported", "chrome, brave")
 		os.Exit(1)
 	}
 
 	cfg := BrowserHistoryConfig{Browser: browser}
 	if err := saveBrowserHistoryConfig(dataDir, cfg); err != nil {
 		// nocov
-		fmt.Fprintf(os.Stderr, "Error: could not save browser_history config: %v\n", err)
+		slog.Error("could not save browser_history config", "err", err)
 		os.Exit(1)
 	}
 	if err := updateSourceConfig(dataDir, "browser_history", func(sc *core.SourceConfig) {
@@ -57,7 +58,7 @@ func RunEnable(dataDir string, args []string) {
 		sc.Reset = false
 	}); err != nil {
 		// nocov
-		fmt.Fprintf(os.Stderr, "Error: could not enable browser_history: %v\n", err)
+		slog.Error("could not enable browser_history", "err", err)
 		os.Exit(1)
 	}
 
@@ -85,17 +86,17 @@ func RunReset(dataDir string) {
 
 	src := newResetSource(dataDir)
 	if err := src.Reset(dataDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning during reset: %v\n", err)
+		slog.Warn("warning during reset", "err", err)
 	}
 
 	if err := updateSourceConfig(dataDir, "browser_history", func(sc *core.SourceConfig) {
 		sc.Enabled = false
 		sc.Auth = nil
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
+		slog.Warn("could not update config.json", "err", err)
 	}
 	if err := core.ClearSearchSource(dataDir, "browser_history"); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not clear search index: %v\n", err)
+		slog.Warn("could not clear search index", "err", err)
 	}
 	fmt.Println("browser_history reset.")
 }

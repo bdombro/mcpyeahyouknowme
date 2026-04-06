@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -51,7 +52,7 @@ func DefaultReset(dataDir string, files []string) error {
 	for _, f := range files {
 		path := filepath.Join(dataDir, f)
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "Warning: could not remove %s: %v\n", path, err)
+			slog.Warn("could not remove file", "path", path, "err", err)
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -66,10 +67,10 @@ func DefaultReset(dataDir string, files []string) error {
 func RunPollLoop(ctx context.Context, interval time.Duration, fn func(context.Context) error) error {
 	if IsNetworkAvailable() {
 		if err := fn(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Sync error: %v\n", err)
+			slog.Error("sync error", "err", err)
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, "Network unavailable, skipping initial sync\n")
+		slog.Info("network unavailable, skipping initial sync")
 	}
 
 	ticker := time.NewTicker(interval)
@@ -81,11 +82,11 @@ func RunPollLoop(ctx context.Context, interval time.Duration, fn func(context.Co
 			return nil
 		case <-ticker.C:
 			if !IsNetworkAvailable() {
-				fmt.Fprintf(os.Stderr, "Network unavailable, skipping sync\n")
+				slog.Info("network unavailable, skipping sync")
 				continue
 			}
 			if err := fn(ctx); err != nil {
-				fmt.Fprintf(os.Stderr, "Sync error: %v\n", err)
+				slog.Error("sync error", "err", err)
 			}
 		}
 	}

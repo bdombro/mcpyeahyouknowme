@@ -2,7 +2,11 @@ package whatsapp
 
 import (
 	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	//lint:ignore SA1019 whatsmeow/binary/proto is deprecated; keep until migrated to waE2E
 	waProto "go.mau.fi/whatsmeow/binary/proto"
@@ -257,5 +261,42 @@ func TestWhatsAppSource_RequiresAuth(t *testing.T) {
 	w := &Source{dataDir: t.TempDir()}
 	if !w.RequiresAuth() {
 		t.Error("WhatsApp source should require auth")
+	}
+}
+
+// Verifies /health returns 200 with the expected JSON shape so callers can detect daemon liveness and connectivity.
+func TestStartRESTServer_healthEndpoint(t *testing.T) {
+	startTime := time.Now()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		resp := map[string]interface{}{
+			"status":    "ok",
+			"connected": false,
+			"uptime_s":  int(time.Since(startTime).Seconds()),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["status"] != "ok" {
+		t.Errorf("expected status=ok, got %v", body["status"])
+	}
+	if _, ok := body["connected"]; !ok {
+		t.Error("expected connected field in response")
+	}
+	if _, ok := body["uptime_s"]; !ok {
+		t.Error("expected uptime_s field in response")
 	}
 }

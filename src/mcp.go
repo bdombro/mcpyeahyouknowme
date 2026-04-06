@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	"mcpyeahyouknowme/core"
@@ -44,24 +45,19 @@ func runMcp() {
 	for _, desc := range registry.All {
 		available, reason := registry.IsAvailable(desc.Name)
 		if !available {
-			fmt.Fprintf(os.Stderr, "Info: %s is unavailable - %s MCP tools will not be available.\n", desc.Name, desc.Name)
-			if reason != "" {
-				fmt.Fprintf(os.Stderr, "      %s.\n", reason)
-			}
-			fmt.Fprintf(os.Stderr, "      Rebuild with the required credentials to enable it.\n")
+			slog.Info("source unavailable, MCP tools skipped", "source", desc.Name, "reason", reason)
 			continue
 		}
 
 		sc := cfg.Sources[desc.Name]
 		enabled := sc.Enabled || (!desc.RunsCore && !desc.IndexGlobally)
 		if !enabled {
-			fmt.Fprintf(os.Stderr, "Info: %s is disabled - %s MCP tools will not be available.\n", desc.Name, desc.Name)
-			fmt.Fprintf(os.Stderr, "      Enable it by logging in again or updating config.json.\n")
+			slog.Info("source disabled, MCP tools skipped", "source", desc.Name)
 			continue
 		}
 		if desc.IsAuthenticated != nil && !desc.IsAuthenticated(dir) {
-			fmt.Fprintf(os.Stderr, "Info: %s is enabled but not authenticated - %s MCP tools will not be available.\n", desc.Name, desc.Name)
-			fmt.Fprintf(os.Stderr, "      Run 'mcpyeahyouknowme %s login' to authenticate %s.\n", desc.Name, desc.Name)
+			slog.Info("source not authenticated, MCP tools skipped", "source", desc.Name,
+				"hint", fmt.Sprintf("run 'mcpyeahyouknowme %s login' to authenticate", desc.Name))
 			continue
 		}
 		activeSources = append(activeSources, activeSource{desc: desc, src: desc.New(dir)})
@@ -74,7 +70,7 @@ func runMcp() {
 
 	searchStore, err := NewSearchStore(dir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: search index unavailable: %v\n", err)
+		slog.Warn("search index unavailable", "err", err)
 	}
 	if searchStore != nil {
 		defer searchStore.Close()
@@ -98,7 +94,7 @@ func runMcp() {
 	restoreStderr()
 
 	if err := server.ServeStdio(s); err != nil {
-		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
+		slog.Error("MCP server error", "err", err)
 		os.Exit(1)
 	}
 }

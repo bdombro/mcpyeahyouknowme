@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -120,7 +121,7 @@ func (c *indexCoordinator) Stop() {
 func trimLogFile(dataDir string) {
 	path := filepath.Join(dataDir, "core.log")
 	if err := trimLogFilePath(path, coreLogTrimThresholdBytes, coreLogKeepTailBytes); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not trim %s: %v\n", path, err)
+		slog.Warn("could not trim log file", "path", path, "err", err)
 	}
 }
 
@@ -178,13 +179,12 @@ func runCore() {
 	trimLogFile(dir)
 	cfg := loadConfig(dir)
 
-	fmt.Println("Starting mcpyeahyouknowme core daemon...")
-	fmt.Printf("Data directory: %s\n", dir)
+	slog.Info("starting mcpyeahyouknowme core daemon", "data_dir", dir)
 
 	running := map[string]context.CancelFunc{}
 	searchStore, err := NewSearchStore(dir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: search index unavailable: %v\n", err)
+		slog.Warn("search index unavailable", "err", err)
 	}
 
 	for name, sc := range cfg.Sources {
@@ -213,7 +213,7 @@ func runCore() {
 		}
 		if clearFirst {
 			if err := searchStore.Clear(); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to clear search index: %v\n", err)
+				slog.Warn("failed to clear search index", "err", err)
 				return
 			}
 		}
@@ -221,7 +221,7 @@ func runCore() {
 
 		bulkMode := false
 		if err := searchStore.BeginBulkIndex(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to enable bulk FTS indexing: %v\n", err)
+			slog.Warn("failed to enable bulk FTS indexing", "err", err)
 		} else {
 			bulkMode = true
 		}
@@ -229,7 +229,7 @@ func runCore() {
 		indexSources(ctx, searchStore, indexSourcesPool, fullPass)
 		if bulkMode {
 			if err := searchStore.EndBulkIndex(); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to finalize bulk FTS indexing: %v\n", err)
+				slog.Warn("failed to finalize bulk FTS indexing", "err", err)
 			}
 		}
 	})
@@ -326,40 +326,36 @@ func shouldRestartSource(prev, next core.SourceConfig) bool {
 func startSource(dir, name string, running map[string]context.CancelFunc) {
 	desc, ok := registry.Find(name)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "Warning: unknown source %q\n", name)
+		slog.Warn("unknown source", "source", name)
 		return
 	}
 	if available, reason := registry.IsAvailable(name); !available {
-		fmt.Fprintf(os.Stderr, "Info: %s is unavailable and will not be started.\n", name)
-		if reason != "" {
-			fmt.Fprintf(os.Stderr, "      %s.\n", reason)
-		}
+		slog.Info("source unavailable, skipping", "source", name, "reason", reason)
 		return
 	}
 	if !desc.RunsCore {
-		fmt.Printf("ℹ %s is enabled for MCP use but does not run a background core service\n", name)
+		slog.Info("source enabled for MCP but has no background service", "source", name)
 		return
 	}
 	src := desc.New(dir)
 	if src == nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not construct source %q\n", name)
+		slog.Warn("could not construct source", "source", name)
 		return
 	}
 	cs, ok := src.(core.CoreService)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "Warning: source %q is marked RunsCore but does not implement core.CoreService\n", name)
+		slog.Warn("source marked RunsCore but does not implement CoreService", "source", name)
 		return
 	}
 	if cs.RequiresAuth() && !registry.IsAuthenticated(name, dir) {
-		fmt.Printf("ℹ %s requires authentication - run 'mcpyeahyouknowme %s login' first\n",
-			src.Description(), src.Name())
+		slog.Info("source requires authentication", "source", name, "hint", fmt.Sprintf("run 'mcpyeahyouknowme %s login' first", name))
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	running[name] = cancel
 	go func() {
 		if err := cs.StartCore(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Core service %s error: %v\n", name, err)
+			slog.Error("core service error", "source", name, "err", err)
 		}
 		delete(running, name)
 	}()
@@ -371,16 +367,16 @@ func handleReset(dir, name string, cfg *core.Config, searchStore *SearchStore) {
 	if src != nil {
 		defer src.Close()
 		if err := src.Reset(dir); err != nil {
-			fmt.Fprintf(os.Stderr, "Reset error for %s: %v\n", name, err)
+			slog.Error("reset error", "source", name, "err", err)
 		}
 	}
 	if searchStore != nil {
 		if err := searchStore.DeleteBySource(name); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not clear %s from search index: %v\n", name, err)
+			slog.Warn("could not clear source from search index", "source", name, "err", err)
 		}
 	}
 	if err := core.SetSourceDisabled(dir, name); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not disable %s after reset: %v\n", name, err)
+		slog.Warn("could not disable source after reset", "source", name, "err", err)
 	}
 	cfg.Sources[name] = core.SourceConfig{}
 }

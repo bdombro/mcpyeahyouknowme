@@ -321,8 +321,9 @@ func TestSanitizeFTSQuery(t *testing.T) {
 		{name: "quotes and punctuation", query: `"John", Thomas!?`, want: `"John"* OR "Thomas"*`},
 		{name: "empty", query: "", want: `""`},
 		{name: "single word", query: "Family", want: `"Family"*`},
-		{name: "short tokens filtered", query: "birthday dinner at me", want: `"birthday"* OR "dinner"*`},
-		{name: "all short tokens fall back", query: "a me", want: `"a"* OR "me"*`},
+		{name: "short tokens filtered", query: "birthday dinner at me", want: `"birthday"* OR "dinner"* OR "at"* OR "me"*`},
+		{name: "two char tokens kept", query: "AI Go JS", want: `"AI"* OR "Go"* OR "JS"*`},
+		{name: "all short tokens fall back", query: "a b", want: `"a"* OR "b"*`},
 	}
 
 	for _, tt := range tests {
@@ -875,7 +876,7 @@ func TestSearchStore_loadResults_unknownContentType(t *testing.T) {
 
 // ---------- IndexStats ----------
 
-// Verifies index stats report the entry count from the live store.
+// Verifies index stats report the entry count and FTS health from the live store.
 func TestSearchStore_IndexStats(t *testing.T) {
 	store := newTestSearchStore(t)
 	entries := seedSearchEntries()
@@ -884,6 +885,21 @@ func TestSearchStore_IndexStats(t *testing.T) {
 	stats := store.IndexStats()
 	if stats.Entries != len(entries) {
 		t.Errorf("Entries = %d, want %d", stats.Entries, len(entries))
+	}
+	if !stats.FTSHealthy {
+		t.Errorf("FTSHealthy = false after indexing, want true")
+	}
+}
+
+// Verifies FTSHealthy is true when both counts are zero (empty store is healthy).
+func TestSearchStore_IndexStats_emptyIsHealthy(t *testing.T) {
+	store := newTestSearchStore(t)
+	stats := store.IndexStats()
+	if stats.Entries != 0 {
+		t.Errorf("Entries = %d, want 0", stats.Entries)
+	}
+	if !stats.FTSHealthy {
+		t.Error("FTSHealthy = false for empty store, want true")
 	}
 }
 
@@ -922,6 +938,36 @@ func TestSearchStore_Clear_closedDB(t *testing.T) {
 	err := store.Clear()
 	if err == nil || !strings.Contains(err.Error(), "clear search index") {
 		t.Fatalf("Clear error = %v", err)
+	}
+}
+
+// Verifies Search returns an error (not empty results) when the underlying DB is closed.
+func TestSearchStore_Search_closedDBReturnsError(t *testing.T) {
+	store := newTestSearchStore(t)
+	store.IndexEntries(seedSearchEntries())
+	store.Close()
+
+	_, err := store.Search("Family", 10, "", "")
+	if err == nil {
+		t.Fatal("expected error from Search on closed DB, got nil")
+	}
+}
+
+// Verifies UpdateSourceTimestamp does not panic when the DB is closed (it logs and continues).
+func TestSearchStore_UpdateSourceTimestamp_closedDB(t *testing.T) {
+	store := newTestSearchStore(t)
+	store.Close()
+	// Should not panic; logs the error and returns.
+	store.UpdateSourceTimestamp("test", time.Now())
+}
+
+// Verifies LastIndexed returns zero time (not a panic) when the DB is closed.
+func TestSearchStore_LastIndexed_closedDB(t *testing.T) {
+	store := newTestSearchStore(t)
+	store.Close()
+	got := store.LastIndexed("test")
+	if !got.IsZero() {
+		t.Errorf("expected zero time from LastIndexed on closed DB, got %v", got)
 	}
 }
 

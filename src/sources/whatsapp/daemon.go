@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -429,7 +430,18 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 
 // startRESTServer launches the daemon-side write API on `port`, exposing send/download endpoints that proxy to the live WhatsApp client.
 func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port int, dataDir string) {
+	startTime := time.Now()
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		resp := map[string]interface{}{
+			"status":    "ok",
+			"connected": client.IsConnected(),
+			"uptime_s":  int(time.Since(startTime).Seconds()),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
 
 	mux.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -493,9 +505,9 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 
 	go func() {
 		addr := fmt.Sprintf("127.0.0.1:%d", port)
-		fmt.Printf("Starting REST API server on %s\n", addr)
+		slog.Info("starting REST API server", "addr", addr)
 		if err := http.ListenAndServe(addr, mux); err != nil {
-			fmt.Printf("REST server error: %v\n", err)
+			slog.Error("REST server error", "err", err)
 		}
 	}()
 }

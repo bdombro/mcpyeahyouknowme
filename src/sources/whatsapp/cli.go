@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -64,7 +65,7 @@ func RunLogin(dataDir string, args []string) {
 
 	container, err := sqlstore.New(context.Background(), "sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(on)&_pragma=busy_timeout(30000)", filepath.Join(dataDir, "whatsapp.db")), dbLog)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		slog.Error("error opening database", "err", err)
 		os.Exit(1)
 	}
 
@@ -73,7 +74,7 @@ func RunLogin(dataDir string, args []string) {
 		if err == sql.ErrNoRows {
 			deviceStore = container.NewDevice()
 		} else {
-			fmt.Fprintf(os.Stderr, "Error getting device: %v\n", err)
+			slog.Error("error getting device", "err", err)
 			os.Exit(1)
 		}
 	}
@@ -87,7 +88,7 @@ func RunLogin(dataDir string, args []string) {
 
 	messageStore, err := NewMessageStore(dataDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not open message store: %v\n", err)
+		slog.Warn("could not open message store", "err", err)
 	}
 
 	fullyConnected := make(chan struct{}, 1)
@@ -110,7 +111,7 @@ func RunLogin(dataDir string, args []string) {
 
 	qrChan, _ := client.GetQRChannel(context.Background())
 	if err := client.Connect(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting: %v\n", err)
+		slog.Error("error connecting to WhatsApp", "err", err)
 		os.Exit(1)
 	}
 
@@ -151,7 +152,7 @@ func RunLogin(dataDir string, args []string) {
 	client.Disconnect()
 
 	if err := core.SetSourceEnabled(dataDir, "whatsapp", true); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
+		slog.Warn("could not update config.json", "err", err)
 	}
 }
 
@@ -159,13 +160,13 @@ func RunLogin(dataDir string, args []string) {
 func RunReset(dataDir string) {
 	src := NewSource(dataDir)
 	if err := src.Reset(dataDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning during reset: %v\n", err)
+		slog.Warn("warning during reset", "err", err)
 	}
 	if err := core.SetSourceDisabled(dataDir, "whatsapp"); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not update config.json: %v\n", err)
+		slog.Warn("could not update config.json", "err", err)
 	}
 	if err := core.ClearSearchSource(dataDir, "whatsapp"); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not clear search index: %v\n", err)
+		slog.Warn("could not clear search index", "err", err)
 	}
 	fmt.Println("WhatsApp data reset complete.")
 }

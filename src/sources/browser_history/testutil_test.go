@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"os"
 	"testing"
 
@@ -132,12 +133,13 @@ func callTool(t *testing.T, s *server.MCPServer, name string, args map[string]in
 	return parsed.Result.Content[0].Text, parsed.Result.IsError
 }
 
-// Captures stdout and stderr for one function call so CLI tests can assert on user-facing messages.
+// Captures stdout and stderr (including slog output) for one function call so CLI tests can assert on user-facing messages.
 func captureOutput(t *testing.T, fn func()) (string, string) {
 	t.Helper()
 
 	oldStdout := os.Stdout
 	oldStderr := os.Stderr
+	oldSlog := slog.Default()
 	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
@@ -148,9 +150,11 @@ func captureOutput(t *testing.T, fn func()) (string, string) {
 	}
 	os.Stdout = stdoutW
 	os.Stderr = stderrW
+	slog.SetDefault(slog.New(slog.NewTextHandler(stderrW, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	defer func() {
 		os.Stdout = oldStdout
 		os.Stderr = oldStderr
+		slog.SetDefault(oldSlog)
 	}()
 
 	fn()

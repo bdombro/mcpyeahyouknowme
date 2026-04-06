@@ -154,10 +154,10 @@ func TestRunReset_warningPaths(t *testing.T) {
 			RunReset(dataDir)
 		})
 	})
-	if !strings.Contains(stderr, "Warning during reset: reset failed") {
+	if !strings.Contains(stderr, "warning during reset") || !strings.Contains(stderr, "reset failed") {
 		t.Fatalf("expected reset warning, got %q", stderr)
 	}
-	if !strings.Contains(stderr, "could not update config.json: update failed") {
+	if !strings.Contains(stderr, "could not update config.json") || !strings.Contains(stderr, "update failed") {
 		t.Fatalf("expected config warning, got %q", stderr)
 	}
 }

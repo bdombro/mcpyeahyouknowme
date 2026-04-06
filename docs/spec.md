@@ -384,6 +384,14 @@ Download media from a previously received message.
 
 Note: Request body uses JSON with `message_id` and `chat_jid` fields (not query parameters).
 
+### GET /health
+
+Returns daemon liveness and WhatsApp connection status.
+
+**Response:** `{ "status": "ok", "connected": bool, "uptime_s": int }`
+
+`connected` is `true` when the WhatsApp client has an active connection; `uptime_s` is seconds since the REST server started.
+
 ---
 
 ## MCP Tools
@@ -438,7 +446,7 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 | `notebook_list` | List indexed notebook files across configured directories. |
 | `notebook_read` | Read a markdown or text file from a configured notebook directory. |
 | `notebook_read_pdf` | Extract and return text from a PDF in a configured notebook directory. |
-| `profile_about_me` | Searches all connected sources for an "About Me" note, reconstructs its content from indexed chunks, and aggregates referenced notes as separate sections. Call before making personalized recommendations. |
+| `profile_about_me` | Searches all connected sources for an "About Me" note, reconstructs its content from indexed chunks, and aggregates referenced notes as separate sections. Call before making personalized recommendations. Response includes `skipped_refs` (list of reference names that could not be fetched). |
 | `search` | Global keyword search across connected sources (BM25/FTS5); requires `query`, with optional `source`, `content_type`, and `limit`. Index populated by daemon. |
 | `whatsapp_download_media` | Download media for a message via core daemon. |
 | `whatsapp_get_chat` | Get one chat by JID; optional last message. |
@@ -664,7 +672,7 @@ The `search` tool uses BM25 keyword search (SQLite FTS5) across a unified search
 
 **Search algorithm:**
 
-1. **BM25 with OR + prefix matching** — FTS5 full-text search on the `search_fts` virtual table. The natural-language query is tokenized into individually quoted prefix terms joined with `OR` (e.g. `"birthday"* OR "dinner"* OR "2024"*`). OR semantics return any document matching at least one keyword; BM25 naturally ranks documents matching more terms higher. Tokens shorter than 3 characters are dropped before building the OR expression to avoid broad prefix noise (e.g. `"me"*` matching "meeting", "member", "message"). When all tokens are short the filter is bypassed. Prefix matching (`*`) catches word-form variants so "run" matches "running", "runner", etc.
+1. **BM25 with OR + prefix matching** — FTS5 full-text search on the `search_fts` virtual table. The natural-language query is tokenized into individually quoted prefix terms joined with `OR` (e.g. `"birthday"* OR "dinner"* OR "2024"*`). OR semantics return any document matching at least one keyword; BM25 naturally ranks documents matching more terms higher. Single-character tokens are dropped before building the OR expression to avoid overly broad prefix noise; 2-character tokens (e.g. "AI", "Go", "JS") are retained. When all tokens are single-character the filter is bypassed. Prefix matching (`*`) catches word-form variants so "run" matches "running", "runner", etc.
 2. **Hierarchy weighting** — multiply BM25 score by content type: `chat_name` (3x), `participant` (2x), `chat_content` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x), `email_thread_subject` (2.5x), `email_thread_participants` (2x), `email_thread_content` (1x), `calendar_event` (2x), `calendar_event_description` (1x), `task` (1.5x), `contact` (2x), `presentation_title` (2x), `presentation_owner` (2x), `presentation_content` (1x), `note_title` (2x), `note_content` (1x), `pdf_title` (2x), `pdf_content` (1x), `image` (1.5x), `browser_visit` (1.8x)
 3. **Recency boost** — multiply the weighted BM25 score by `1 + 3*exp(-t/2.5) + 0.5*exp(-t/90) + 1.5*exp(-t/700)` where `t` is the entry's age in days. This tri-exponential gives today → ~6x, one week → ~3x, one month → ~2.8x, one year → ~1.9x, ten years → ~1x. The short component (τ=2.5 days) separates very fresh content from last week; the medium component (τ=90 days) fades within a quarter; the slow component (τ=700 days) keeps year-old content meaningfully above decade-old content. Entries without a stored timestamp receive a 1.0 multiplier (no boost).
 4. **Candidate pool and limit** — FTS5 returns up to `5 × limit` BM25 candidates (default limit 20 → 100 candidates). Each candidate is hydrated, scored as `|BM25| × hierarchy × recency`, sorted by final score descending, then truncated to `limit`. Truncation happens after recency so a weaker BM25 match can still appear in the top results when it is much newer.

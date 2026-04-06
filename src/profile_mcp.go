@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -45,10 +46,11 @@ type profileToolStore interface {
 
 // ProfileResult is returned by the profile_about_me tool.
 type ProfileResult struct {
-	Title    string           `json:"title"`
-	Content  string           `json:"content"`
-	Source   string           `json:"source"`
-	Sections []ProfileSection `json:"sections"`
+	Title       string           `json:"title"`
+	Content     string           `json:"content"`
+	Source      string           `json:"source"`
+	Sections    []ProfileSection `json:"sections"`
+	SkippedRefs []string         `json:"skipped_refs,omitempty"`
 }
 
 // ProfileSection represents a note referenced by the "AGENTS About Me" note.
@@ -99,7 +101,12 @@ func buildProfile(store profileToolStore) (*ProfileResult, error) {
 		seen[key] = true
 
 		refTitle, refContent, refSource, refErr := fetchNote(store, ref)
-		if refErr != nil || refTitle == "" {
+		if refErr != nil {
+			result.SkippedRefs = append(result.SkippedRefs, ref)
+			continue
+		}
+		if refTitle == "" {
+			result.SkippedRefs = append(result.SkippedRefs, ref)
 			continue
 		}
 		result.Sections = append(result.Sections, ProfileSection{
@@ -163,7 +170,9 @@ func fetchNote(store profileToolStore, query string) (title, content, source str
 			Chunk int `json:"chunk"`
 		}
 		if len(r.Metadata) > 0 {
-			json.Unmarshal(r.Metadata, &meta) //nolint:errcheck
+			if err := json.Unmarshal(r.Metadata, &meta); err != nil {
+				slog.Warn("profile: unmarshal chunk metadata", "err", err)
+			}
 		}
 		chunks = append(chunks, chunkEntry{idx: meta.Chunk, content: r.Content})
 	}

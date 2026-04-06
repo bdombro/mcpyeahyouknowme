@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -146,15 +147,13 @@ func TestStartSource_skipsUnavailableSources(t *testing.T) {
 	}}
 	t.Cleanup(func() { registry.All = original })
 
-	oldStderr := os.Stderr
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
-	os.Stderr = w
-	defer func() {
-		os.Stderr = oldStderr
-	}()
+	oldSlog := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(oldSlog)
 
 	running := map[string]context.CancelFunc{}
 	startSource(t.TempDir(), "stub", running)
@@ -420,17 +419,15 @@ func TestTrimLogFile_keepsNewestTail(t *testing.T) {
 	}
 }
 
-// Verifies trimLogFile reports trim failures to stderr so daemon startup surfaces filesystem issues instead of failing silently.
+// Verifies trimLogFile reports trim failures via slog so daemon startup surfaces filesystem issues instead of failing silently.
 func TestTrimLogFile_reportsWarning(t *testing.T) {
-	oldStderr := os.Stderr
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
-	os.Stderr = w
-	defer func() {
-		os.Stderr = oldStderr
-	}()
+	oldSlog := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(oldSlog)
 
 	trimLogFile(string([]byte{0}))
 
