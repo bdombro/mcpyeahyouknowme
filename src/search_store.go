@@ -398,7 +398,7 @@ func sanitizeFTSQuery(query string) string {
 }
 
 // recencyMultiplier returns a score boost factor based on how recently an entry was timestamped.
-// Applies 1 + 3/(1 + ageDays) so today → 4x, one week ago → ~1.4x, one year ago → ~1.01x.
+// Applies 1 + 5/(1 + ageDays) so today → 6x, one week ago → ~1.6x, one year ago → ~1.01x.
 // Returns 1.0 when no timestamp is available so entries without timestamps are unaffected.
 func recencyMultiplier(ts *time.Time) float64 {
 	if ts == nil {
@@ -408,7 +408,7 @@ func recencyMultiplier(ts *time.Time) float64 {
 	if ageDays < 0 {
 		ageDays = 0
 	}
-	return 1.0 + 3.0/(1.0+ageDays)
+	return 1.0 + 5.0/(1.0+ageDays)
 }
 
 // loadResults hydrates ranked entry IDs, applies hierarchy weighting and recency boost, and returns ordered search results.

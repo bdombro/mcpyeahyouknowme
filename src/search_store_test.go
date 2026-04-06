@@ -749,8 +749,8 @@ func TestRecencyMultiplier(t *testing.T) {
 	}
 
 	recent := now.Add(-time.Minute)
-	if got := recencyMultiplier(&recent); got <= 3.9 {
-		t.Errorf("1 minute ago: got %.4f, want > 3.9", got)
+	if got := recencyMultiplier(&recent); got <= 5.9 {
+		t.Errorf("1 minute ago: got %.4f, want > 5.9", got)
 	}
 
 	oneYearAgo := now.Add(-365 * 24 * time.Hour)
@@ -759,8 +759,8 @@ func TestRecencyMultiplier(t *testing.T) {
 	}
 
 	future := now.Add(24 * time.Hour)
-	if got := recencyMultiplier(&future); got < 3.9 {
-		t.Errorf("future ts (clamped): got %.4f, want >= 3.9", got)
+	if got := recencyMultiplier(&future); got < 5.9 {
+		t.Errorf("future ts (clamped): got %.4f, want >= 5.9", got)
 	}
 }
 
