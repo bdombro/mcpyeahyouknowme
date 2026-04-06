@@ -740,7 +740,8 @@ func TestCreateSearchFTSTriggers_updateError(t *testing.T) {
 
 // ---------- Recency boost ----------
 
-// Verifies recencyMultiplier returns 1.0 for nil, high value for very recent, and near-1.0 for old timestamps.
+// Verifies recencyMultiplier returns 1.0 for nil, ~8x for very recent, ~4x for one year ago,
+// ~1x for ten years ago, and is clamped so future timestamps behave like "now".
 func TestRecencyMultiplier(t *testing.T) {
 	now := time.Now()
 
@@ -749,18 +750,23 @@ func TestRecencyMultiplier(t *testing.T) {
 	}
 
 	recent := now.Add(-time.Minute)
-	if got := recencyMultiplier(&recent); got <= 5.9 {
-		t.Errorf("1 minute ago: got %.4f, want > 5.9", got)
+	if got := recencyMultiplier(&recent); got <= 7.9 {
+		t.Errorf("1 minute ago: got %.4f, want > 7.9 (near 8x)", got)
 	}
 
 	oneYearAgo := now.Add(-365 * 24 * time.Hour)
-	if got := recencyMultiplier(&oneYearAgo); got >= 1.1 {
-		t.Errorf("1 year ago: got %.4f, want < 1.1", got)
+	if got := recencyMultiplier(&oneYearAgo); got < 3.5 || got > 4.5 {
+		t.Errorf("1 year ago: got %.4f, want ~4x (3.5–4.5)", got)
+	}
+
+	tenYearsAgo := now.Add(-10 * 365 * 24 * time.Hour)
+	if got := recencyMultiplier(&tenYearsAgo); got >= 1.2 {
+		t.Errorf("10 years ago: got %.4f, want < 1.2 (~1x)", got)
 	}
 
 	future := now.Add(24 * time.Hour)
-	if got := recencyMultiplier(&future); got < 5.9 {
-		t.Errorf("future ts (clamped): got %.4f, want >= 5.9", got)
+	if got := recencyMultiplier(&future); got < 7.9 {
+		t.Errorf("future ts (clamped to 0 days): got %.4f, want >= 7.9 (near 8x)", got)
 	}
 }
 
