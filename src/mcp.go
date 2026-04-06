@@ -96,6 +96,7 @@ func runMcp() {
 
 	if searchStore != nil {
 		RegisterSearchTool(s, searchStore)
+		RegisterProfileTool(s, searchStore)
 	}
 
 	restoreStderr()

@@ -72,6 +72,11 @@ type countingEmbedder struct {
 	textsCalls int
 }
 
+type batchRecordingEmbedder struct {
+	base       EmbedderInterface
+	batchSizes []int
+}
+
 type cancelingEmbedder struct {
 	base      EmbedderInterface
 	onTexts   func()
@@ -93,6 +98,22 @@ func (c *countingEmbedder) EmbedQuery(query string) ([]float32, error) {
 // Releases the wrapped embedder so test doubles preserve production cleanup semantics.
 func (c *countingEmbedder) Close() {
 	c.base.Close()
+}
+
+// Records each batch size so tests can verify adaptive embedding logic changes size between chunks.
+func (b *batchRecordingEmbedder) EmbedTexts(texts []string, batchSize int) ([][]float32, error) {
+	b.batchSizes = append(b.batchSizes, batchSize)
+	return b.base.EmbedTexts(texts, batchSize)
+}
+
+// Delegates query embeddings to the wrapped base embedder because only passage batch sizing matters in these tests.
+func (b *batchRecordingEmbedder) EmbedQuery(query string) ([]float32, error) {
+	return b.base.EmbedQuery(query)
+}
+
+// Releases the wrapped embedder so batch-recording tests preserve production cleanup semantics.
+func (b *batchRecordingEmbedder) Close() {
+	b.base.Close()
 }
 
 // Cancels the test context after the first batch so computeEmbeddings can cover its restart-friendly cancellation path.
@@ -173,6 +194,38 @@ func newTestSearchStore(t *testing.T, embedder EmbedderInterface) *SearchStore {
 		t.Fatalf("create search store: %v", err)
 	}
 	return store
+}
+
+// Opens a minimal schema for direct FTS trigger-helper tests without going through the full search-store setup.
+func newFTSTriggerTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("open trigger test db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	if _, err := db.Exec(`
+		CREATE TABLE search_entries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			source TEXT,
+			source_id TEXT,
+			content_type TEXT,
+			title TEXT,
+			content TEXT,
+			metadata TEXT,
+			timestamp DATETIME
+		);
+		CREATE VIRTUAL TABLE search_fts USING fts5(
+			title, content,
+			content='search_entries',
+			content_rowid='id'
+		);
+	`); err != nil {
+		t.Fatalf("create trigger test schema: %v", err)
+	}
+
+	return db
 }
 
 // Computes pending embeddings explicitly so tests mirror the daemon and reindex flows.
@@ -959,6 +1012,154 @@ func TestSearchStore_IndexEntries_emptySlice(t *testing.T) {
 	}
 }
 
+// Verifies bulk indexing defers FTS row maintenance until one final rebuild, then restores live trigger updates.
+func TestSearchStore_BulkIndex_rebuildsFTSAtEnd(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	entries := seedSearchEntries()
+	if err := store.BeginBulkIndex(); err != nil {
+		t.Fatalf("BeginBulkIndex: %v", err)
+	}
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
+	beforeResults, err := store.Search("Family", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search before EndBulkIndex: %v", err)
+	}
+	if len(beforeResults) != 0 {
+		t.Fatalf("expected deferred FTS writes during bulk load, got %d search hits", len(beforeResults))
+	}
+
+	if err := store.EndBulkIndex(); err != nil {
+		t.Fatalf("EndBulkIndex: %v", err)
+	}
+
+	afterResults, err := store.Search("Family", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search after EndBulkIndex: %v", err)
+	}
+	if len(afterResults) == 0 {
+		t.Fatal("expected rebuilt FTS index to return Family results")
+	}
+
+	extra := SearchEntry{Source: "test", SourceID: "after-bulk", ContentType: "message", Title: "after", Content: "bulk"}
+	if err := store.IndexEntries([]SearchEntry{extra}); err != nil {
+		t.Fatalf("IndexEntries after bulk mode: %v", err)
+	}
+
+	finalResults, err := store.Search("after", 10, "", "")
+	if err != nil {
+		t.Fatalf("Search after restored triggers: %v", err)
+	}
+	if len(finalResults) != 1 || finalResults[0].Title != "after" {
+		t.Fatalf("expected restored triggers to index post-bulk writes, got %+v", finalResults)
+	}
+}
+
+// Verifies repeated BeginBulkIndex calls are harmless once FTS maintenance is already suspended.
+func TestSearchStore_BeginBulkIndex_noopWhenAlreadyActive(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	if err := store.BeginBulkIndex(); err != nil {
+		t.Fatalf("first BeginBulkIndex: %v", err)
+	}
+	if err := store.BeginBulkIndex(); err != nil {
+		t.Fatalf("second BeginBulkIndex: %v", err)
+	}
+}
+
+// Verifies EndBulkIndex is a no-op when bulk FTS mode was never enabled.
+func TestSearchStore_EndBulkIndex_noopWhenInactive(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	if err := store.EndBulkIndex(); err != nil {
+		t.Fatalf("EndBulkIndex inactive: %v", err)
+	}
+}
+
+// Verifies bulk-index trigger helpers report actionable errors when the search DB handle is unavailable.
+func TestSearchStore_BulkIndex_closedDBErrors(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := store.BeginBulkIndex(); err == nil {
+		t.Fatal("expected BeginBulkIndex to fail on closed DB")
+	}
+
+	store = newTestSearchStore(t, nil)
+	store.bulkFTS = true
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := store.EndBulkIndex(); err == nil {
+		t.Fatal("expected EndBulkIndex to fail on closed DB")
+	}
+}
+
+// Verifies EndBulkIndex surfaces rebuild failures after trigger restoration so callers can stop on a broken FTS pass.
+func TestSearchStore_EndBulkIndex_rebuildError(t *testing.T) {
+	store := newTestSearchStore(t, nil)
+	store.bulkFTS = true
+
+	originalRebuild := searchStoreRebuildFTS
+	defer func() {
+		searchStoreRebuildFTS = originalRebuild
+	}()
+	searchStoreRebuildFTS = func(_ *sql.DB) error {
+		return errors.New("boom")
+	}
+
+	if err := store.EndBulkIndex(); err == nil {
+		t.Fatal("expected EndBulkIndex to surface rebuild error")
+	}
+}
+
+// Verifies createSearchFTSTriggers reports the delete-trigger failure path when the second exec fails.
+func TestCreateSearchFTSTriggers_deleteError(t *testing.T) {
+	db := newFTSTriggerTestDB(t)
+	originalExec := searchStoreExecSQL
+	defer func() {
+		searchStoreExecSQL = originalExec
+	}()
+
+	calls := 0
+	searchStoreExecSQL = func(db *sql.DB, statement string) error {
+		calls++
+		if calls == 2 {
+			return errors.New("boom")
+		}
+		return originalExec(db, statement)
+	}
+
+	err := createSearchFTSTriggers(db)
+	if err == nil || !strings.Contains(err.Error(), "search_fts_delete") {
+		t.Fatalf("expected search_fts_delete failure, got %v", err)
+	}
+}
+
+// Verifies createSearchFTSTriggers reports the update-trigger failure path when the third exec fails.
+func TestCreateSearchFTSTriggers_updateError(t *testing.T) {
+	db := newFTSTriggerTestDB(t)
+	originalExec := searchStoreExecSQL
+	defer func() {
+		searchStoreExecSQL = originalExec
+	}()
+
+	calls := 0
+	searchStoreExecSQL = func(db *sql.DB, statement string) error {
+		calls++
+		if calls == 3 {
+			return errors.New("boom")
+		}
+		return originalExec(db, statement)
+	}
+
+	err := createSearchFTSTriggers(db)
+	if err == nil || !strings.Contains(err.Error(), "search_fts_update") {
+		t.Fatalf("expected search_fts_update failure, got %v", err)
+	}
+}
+
 // ---------- computeEmbeddings edge cases ----------
 
 // Verifies whitespace-only entries are skipped when computing embeddings for missing rows.
@@ -1155,6 +1356,80 @@ func TestSearchStore_computeEmbeddings_contextCanceledBetweenBatches(t *testing.
 	}
 }
 
+// Verifies computeEmbeddings re-samples memory each chunk and only downshifts the active batch size mid-run.
+func TestSearchStore_computeEmbeddings_downshiftsBatchSizePerChunk(t *testing.T) {
+	originalBatchSizer := searchStoreAdaptiveBatchSize
+	defer func() {
+		searchStoreAdaptiveBatchSize = originalBatchSizer
+	}()
+
+	sampled := []int{64, 16, 128}
+	calls := 0
+	searchStoreAdaptiveBatchSize = func() int {
+		if calls >= len(sampled) {
+			return sampled[len(sampled)-1]
+		}
+		size := sampled[calls]
+		calls++
+		return size
+	}
+
+	emb := &batchRecordingEmbedder{base: &mockEmbedder{dim: 8}}
+	store := newTestSearchStore(t, emb)
+
+	entries := make([]SearchEntry, embeddingChunkSize+5)
+	for i := range entries {
+		entries[i] = SearchEntry{
+			Source: "test", SourceID: fmt.Sprintf("downshift%d", i),
+			ContentType: "message", Title: fmt.Sprintf("doc %d", i),
+			Content: fmt.Sprintf("content number %d for batch downshift test", i),
+		}
+	}
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
+	if err := store.computeEmbeddings(context.Background()); err != nil {
+		t.Fatalf("computeEmbeddings: %v", err)
+	}
+
+	if len(emb.batchSizes) != 2 {
+		t.Fatalf("expected 2 embedding batches, got %d", len(emb.batchSizes))
+	}
+	if emb.batchSizes[0] != 64 || emb.batchSizes[1] != 16 {
+		t.Fatalf("expected batch sizes [64 16], got %v", emb.batchSizes)
+	}
+}
+
+// Verifies batch-size sampling initializes, refuses to upshift mid-run, and clamps invalid samples to 1.
+func TestNextEmbeddingBatchSize(t *testing.T) {
+	originalBatchSizer := searchStoreAdaptiveBatchSize
+	defer func() {
+		searchStoreAdaptiveBatchSize = originalBatchSizer
+	}()
+
+	tests := []struct {
+		name    string
+		current int
+		sampled int
+		want    int
+	}{
+		{name: "initializes from first sample", current: 0, sampled: 64, want: 64},
+		{name: "downshifts when memory drops", current: 64, sampled: 16, want: 16},
+		{name: "does not upshift mid run", current: 16, sampled: 128, want: 16},
+		{name: "clamps invalid sample", current: 16, sampled: 0, want: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			searchStoreAdaptiveBatchSize = func() int { return tt.sampled }
+			if got := nextEmbeddingBatchSize(tt.current); got != tt.want {
+				t.Fatalf("nextEmbeddingBatchSize(%d) = %d, want %d", tt.current, got, tt.want)
+			}
+		})
+	}
+}
+
 // Verifies computeEmbeddings returns immediately when the context is already canceled before any batch work starts.
 func TestSearchStore_computeEmbeddings_preCanceledContext(t *testing.T) {
 	store := newTestSearchStore(t, &mockEmbedder{dim: 8})
@@ -1178,12 +1453,44 @@ func TestSearchStore_embedChunk_returnsZeroWhenDone(t *testing.T) {
 	store.IndexEntries(seedSearchEntries())
 	computePendingEmbeddingsForTest(t, store)
 
-	n, err := store.embedChunk(16, embeddingChunkSize)
+	_, n, err := store.embedChunk(0, 16, embeddingChunkSize)
 	if err != nil {
 		t.Fatalf("embedChunk: %v", err)
 	}
 	if n != 0 {
 		t.Errorf("expected 0 (all already embedded), got %d", n)
+	}
+}
+
+// Verifies embedChunk advances past whitespace-only rows without rescanning them forever before embedding later rows.
+func TestSearchStore_embedChunk_skipsWhitespacePageAndAdvancesCursor(t *testing.T) {
+	store := newTestSearchStore(t, &mockEmbedder{dim: 8})
+	entries := []SearchEntry{
+		{Source: "test", SourceID: "blank-1", ContentType: "message", Title: "", Content: "   "},
+		{Source: "test", SourceID: "blank-2", ContentType: "message", Title: "", Content: "\n\t"},
+		{Source: "test", SourceID: "real-1", ContentType: "message", Title: "real", Content: "content"},
+	}
+	if err := store.IndexEntries(entries); err != nil {
+		t.Fatalf("IndexEntries: %v", err)
+	}
+
+	nextID, n, err := store.embedChunk(0, 16, 2)
+	if err != nil {
+		t.Fatalf("embedChunk: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 embedded row after skipping whitespace page, got %d", n)
+	}
+
+	var embeddedCount int
+	if err := store.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&embeddedCount); err != nil {
+		t.Fatalf("count embeddings: %v", err)
+	}
+	if embeddedCount != 1 {
+		t.Fatalf("expected 1 stored embedding, got %d", embeddedCount)
+	}
+	if nextID <= 2 {
+		t.Fatalf("expected cursor to advance past blank rows, got %d", nextID)
 	}
 }
 

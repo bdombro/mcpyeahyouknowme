@@ -134,7 +134,7 @@ func RunLogin(dataDir string) {
 		fmt.Println("✓ Configuration saved")
 		fmt.Println()
 		fmt.Println("You can now:")
-		fmt.Println("  • See the status: mcpyeahyouknowme info")
+		fmt.Println("  • See the status: mcpyeahyouknowme status")
 		fmt.Println("  • Use MCP server: mcpyeahyouknowme mcp")
 		fmt.Println("  • Toggle apps:    mcpyeahyouknowme gsuite apps")
 

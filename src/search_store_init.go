@@ -34,6 +34,24 @@ func NewSearchStore(dir string, embedder EmbedderInterface) (*SearchStore, error
 	return &SearchStore{db: db, embedder: embedder}, nil
 }
 
+const (
+	searchFTSInsertTriggerSQL = `CREATE TRIGGER IF NOT EXISTS search_fts_insert AFTER INSERT ON search_entries BEGIN
+		INSERT INTO search_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
+	END`
+	searchFTSDeleteTriggerSQL = `CREATE TRIGGER IF NOT EXISTS search_fts_delete AFTER DELETE ON search_entries BEGIN
+		INSERT INTO search_fts(search_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
+	END`
+	searchFTSUpdateTriggerSQL = `CREATE TRIGGER IF NOT EXISTS search_fts_update AFTER UPDATE ON search_entries BEGIN
+		INSERT INTO search_fts(search_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
+		INSERT INTO search_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
+	END`
+)
+
+var searchStoreExecSQL = func(db *sql.DB, statement string) error {
+	_, err := db.Exec(statement)
+	return err
+}
+
 // NewSearchStoreFromDB creates a SearchStore from an existing *sql.DB (for tests).
 func NewSearchStoreFromDB(db *sql.DB, embedder EmbedderInterface) (*SearchStore, error) {
 	if err := initSearchSchema(db); err != nil {
@@ -69,26 +87,8 @@ func initSearchSchema(db *sql.DB) error {
 		return fmt.Errorf("create search_fts: %w", err)
 	}
 
-	_, err = db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_insert AFTER INSERT ON search_entries BEGIN
-		INSERT INTO search_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-	END`)
-	if err != nil {
-		return fmt.Errorf("create search_fts_insert trigger: %w", err)
-	}
-
-	_, err = db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_delete AFTER DELETE ON search_entries BEGIN
-		INSERT INTO search_fts(search_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
-	END`)
-	if err != nil {
-		return fmt.Errorf("create search_fts_delete trigger: %w", err)
-	}
-
-	_, err = db.Exec(`CREATE TRIGGER IF NOT EXISTS search_fts_update AFTER UPDATE ON search_entries BEGIN
-		INSERT INTO search_fts(search_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
-		INSERT INTO search_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-	END`)
-	if err != nil {
-		return fmt.Errorf("create search_fts_update trigger: %w", err)
+	if err := createSearchFTSTriggers(db); err != nil {
+		return err
 	}
 
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS search_embeddings (
@@ -107,5 +107,29 @@ func initSearchSchema(db *sql.DB) error {
 		return fmt.Errorf("create search_meta: %w", err)
 	}
 
+	return nil
+}
+
+// Restores the external-content FTS maintenance triggers after bulk indexing.
+func createSearchFTSTriggers(db *sql.DB) error {
+	if err := searchStoreExecSQL(db, searchFTSInsertTriggerSQL); err != nil {
+		return fmt.Errorf("create search_fts_insert trigger: %w", err)
+	}
+	if err := searchStoreExecSQL(db, searchFTSDeleteTriggerSQL); err != nil {
+		return fmt.Errorf("create search_fts_delete trigger: %w", err)
+	}
+	if err := searchStoreExecSQL(db, searchFTSUpdateTriggerSQL); err != nil {
+		return fmt.Errorf("create search_fts_update trigger: %w", err)
+	}
+	return nil
+}
+
+// Suspends row-by-row FTS maintenance so full rebuilds can bulk-load entries cheaply.
+func dropSearchFTSTriggers(db *sql.DB) error {
+	for _, name := range []string{"search_fts_insert", "search_fts_delete", "search_fts_update"} {
+		if err := searchStoreExecSQL(db, "DROP TRIGGER IF EXISTS "+name); err != nil {
+			return fmt.Errorf("drop %s: %w", name, err)
+		}
+	}
 	return nil
 }

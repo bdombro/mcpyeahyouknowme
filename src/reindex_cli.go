@@ -76,6 +76,11 @@ func runLocalReindex(_ []string) error {
 		}
 	}()
 
+	fmt.Fprintln(os.Stderr, "Preparing bulk search writes...")
+	if err := searchStore.BeginBulkIndex(); err != nil {
+		return fmt.Errorf("enable bulk FTS indexing: %w", err)
+	}
+
 	fmt.Fprintf(os.Stderr, "Indexing %d source(s)...\n", len(sources))
 	for _, active := range sources {
 		if !active.desc.IndexGlobally {
@@ -94,6 +99,11 @@ func runLocalReindex(_ []string) error {
 		}
 		searchStore.UpdateSourceTimestamp(active.src.Name(), time.Now())
 		fmt.Fprintf(os.Stderr, "  %s: done\n", active.src.Name())
+	}
+
+	fmt.Fprintln(os.Stderr, "Finalizing FTS rebuild...")
+	if err := searchStore.EndBulkIndex(); err != nil {
+		return fmt.Errorf("finalize bulk FTS indexing: %w", err)
 	}
 
 	fmt.Fprintln(os.Stderr, "  embeddings: computing pending vectors...")

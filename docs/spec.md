@@ -41,7 +41,7 @@ Authenticates with Google using OAuth 2.0 for the unified Google Suite source. O
 mcpyeahyouknowme core
 ```
 
-Runs all enabled data source core services and the search indexer. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on `127.0.0.1:8080` (loopback only). For Google Suite: syncs each enabled Google app every 5 minutes via the corresponding Google APIs. The daemon also re-reads config, starts or stops core-backed sources, and indexes all sources into `search.db` on startup and on each 5-minute loop, with adaptive embedding batch sizes based on available memory. Requires authentication for each enabled source.
+Runs all enabled data source core services and the search indexer. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on `127.0.0.1:8080` (loopback only). For Google Suite: syncs each enabled Google app every 5 minutes via the corresponding Google APIs. The daemon also re-reads config, starts or stops core-backed sources, and indexes all sources into `search.db` on startup and on each 5-minute loop. During full index passes it defers global-search FTS maintenance until the pass finishes, then rebuilds FTS once. Embedding batch size is app-managed and sampled between embedding chunks so it can downshift automatically when available memory drops or when the daemon's own RSS gets too large. Requires authentication for each enabled source.
 
 Re-authentication may be required after ~20 days for WhatsApp. Google OAuth access tokens refresh automatically as long as the refresh token remains valid, but repeated Google `401 Invalid Credentials` or token refresh `invalid_grant` errors should be treated as persistent credential/configuration problems rather than transient network blips.
 
@@ -75,7 +75,7 @@ For **Cursor**: save to `~/.cursor/mcp.json`
 mcpyeahyouknowme reindex
 ```
 
-Requests a full search index rebuild from scratch. Existing `search_entries`, `search_embeddings`, FTS rows, and `search_meta` timestamps are cleared before rebuilding from local source data. When the core daemon is running, this command signals the daemon to do the clear-and-rebuild in the background instead of doing the work in the CLI process. If a daemon-owned index pass is already running, the daemon cancels it at the next safe checkpoint (between source passes or embedding batches) and immediately restarts from the beginning with a cleared search index. Scheduled 5-minute indexing ticks do not interrupt an active pass. When no daemon is running, it falls back to a standalone synchronous rebuild with progress output.
+Requests a full search index rebuild from scratch. Existing `search_entries`, `search_embeddings`, FTS rows, and `search_meta` timestamps are cleared before rebuilding from local source data. Full rebuilds bulk-load `search_entries`, then rebuild the global FTS table once at the end instead of updating it row-by-row during the pass. When the core daemon is running, this command signals the daemon to do the clear-and-rebuild in the background instead of doing the work in the CLI process. If a daemon-owned index pass is already running, the daemon cancels it at the next safe checkpoint (between source passes or embedding batches) and immediately restarts from the beginning with a cleared search index. Scheduled 5-minute indexing ticks do not interrupt an active pass. When no daemon is running, it falls back to a standalone synchronous rebuild with progress output.
 
 ### Notebook Commands
 
@@ -111,7 +111,7 @@ The `notebook` source indexes `.md`, `.txt`, `.pdf`, and image files (`.jpg`, `.
 
 **Change tracking** — `notebook.db` stores `(path, mod_time, size)` per file. On each 5-minute daemon loop, only new or modified files are re-extracted; unchanged files are served from cache.
 
-**Markdown extraction** — Title comes from the first `# H1` heading, or the filename stem. Raw content is stored in `notebook.db` and returned by `notebook_read`. Before markdown text is added to the global search index, Obsidian wiki-link syntax (`[[target]]`, `[[target|alias]]`) and Markdown link/image syntax (`[text](url)`, `![alt](url)`) are reduced to their human-readable text so FTS and embeddings index readable note content instead of URL punctuation noise. Files larger than 4 KB are chunked into `~4 KB` pieces for embedding.
+**Markdown extraction** — Title comes from the first `# H1` heading, or the filename stem. Raw content is stored in `notebook.db` and returned by `notebook_read`. Markdown bytes are normalized to valid UTF-8 on ingest so malformed local files do not persist broken text into the search index. Before markdown text is added to the global search index, Obsidian wiki-link syntax (`[[target]]`, `[[target|alias]]`) and Markdown link/image syntax (`[text](url)`, `![alt](url)`) are reduced to their human-readable text so FTS and embeddings index readable note content instead of URL punctuation noise. Files larger than ~2000 characters are chunked into `~2000` character pieces on rune boundaries to match the BGE-small-en-v1.5 embedding model context window.
 
 **PDF extraction** — Uses `github.com/ledongthuc/pdf` for pure-Go text extraction. If extracted text contains fewer than 10 words (a scanned document), falls back to macOS Vision OCR (`OCRPDFPages`), which renders each page to a `CGImage` via CoreGraphics and runs `VNRecognizeTextRequest`. Title comes from the filename stem.
 
@@ -231,7 +231,9 @@ mcpyeahyouknowme restart
 ### Maintenance
 
 ```
-mcpyeahyouknowme info
+mcpyeahyouknowme status
+mcpyeahyouknowme status --json
+mcpyeahyouknowme status --live
 mcpyeahyouknowme reset
 mcpyeahyouknowme whatsapp reset
 mcpyeahyouknowme gsuite reset
@@ -241,7 +243,7 @@ mcpyeahyouknowme notebook reset
 
 | Command | Description |
 |---------|-------------|
-| `info` | Shows build metadata; core daemon install/running status including network state and optional RSS; global data directory status; a Search Index section with entry/indexed counts and DB size; and per-source sections sorted alphabetically, including unavailable reasons when a source is not built/configured. The core daemon prints the same report on startup. |
+| `status` | Shows build metadata; core daemon install/running status including network state and optional RSS; global data directory status; a Search Index section with entry/indexed counts and DB size; and per-source sections sorted alphabetically, including unavailable reasons when a source is not built/configured. Pass `--json` to return the same status snapshot as pretty-printed JSON instead of the human-readable report. Pass `--live` to redraw the human-readable report in place every 10 seconds until interrupted. `--live` cannot be combined with `--json`. The core daemon prints the same human-readable report on startup. |
 | `reset` | Prompts for confirmation, resets every registered source connection and its local data, clears the global search index, rewrites `config.json` to a fully disabled normalized state, and restarts the daemon when it is running so daemon-owned SQLite handles reopen against the clean on-disk state. It preserves the installed daemon, embedding models, tokenizer cache, logs, and binary. |
 | `whatsapp reset` | Removes WhatsApp auth/session data, clears local synced data, removes WhatsApp rows from the global search index, and leaves the source disabled in config until the user logs in again. |
 | `gsuite reset` | Prompts for confirmation, removes the Google Suite token and local synced data, removes Google Suite rows from the global search index, and leaves the source disabled in config until the user logs in again. |
@@ -412,6 +414,7 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 | `notebook_list` | List indexed notebook files across configured directories. |
 | `notebook_read` | Read a markdown or text file from a configured notebook directory. |
 | `notebook_read_pdf` | Extract and return text from a PDF in a configured notebook directory. |
+| `profile_about_me` | Searches all connected sources for an "About Me" note, reconstructs its content from indexed chunks, and aggregates referenced notes as separate sections. Call before making personalized recommendations. |
 | `search` | Global hybrid search across connected sources (BM25 + vectors); requires `query`, with optional `source`, `content_type`, and `limit`. Index populated by daemon. |
 | `whatsapp_download_media` | Download media for a message via core daemon. |
 | `whatsapp_get_chat` | Get one chat by JID; optional last message. |
@@ -426,7 +429,7 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 | `whatsapp_send_file` | Send a local file as media via core daemon. |
 | `whatsapp_send_message` | Send text via core daemon REST API. |
 
-**Availability:** most source tools are registered only when the source is both `enabled` in config and authenticated/configured. `google_places_*` tools are registered when the binary was built with a non-empty `GOOGLE_PLACE_API_KEY`. `brave_search_*` tools are registered when the binary was built with a non-empty `BRAVE_API_KEY`. `browser_history_*` tools read only from daemon-produced snapshots and do not trigger snapshot refreshes. `search` is registered when the search store opens successfully on MCP startup. The search index is populated by the core daemon (not by MCP); run `mcpyeahyouknowme reindex` to request an immediate manual indexing pass.
+**Availability:** most source tools are registered only when the source is both `enabled` in config and authenticated/configured. `google_places_*` tools are registered when the binary was built with a non-empty `GOOGLE_PLACE_API_KEY`. `brave_search_*` tools are registered when the binary was built with a non-empty `BRAVE_API_KEY`. `browser_history_*` tools read only from daemon-produced snapshots and do not trigger snapshot refreshes. `search` and `profile_about_me` are registered when the search store opens successfully on MCP startup. The search index is populated by the core daemon (not by MCP); run `mcpyeahyouknowme reindex` to request an immediate manual indexing pass.
 
 ### Global Search
 
@@ -605,7 +608,7 @@ Metadata shapes per WhatsApp content type:
 
 ### Global Hybrid Search
 
-The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 5-minute tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available; when the daemon is running it signals that process to start reindexing immediately, and when no daemon is running it falls back to a standalone rebuild. Each `DataSource` provides its indexable content via `SearchEntries()`, and the indexer writes entries for every source before starting a separate embedding pass. After each source upsert, the indexer prunes stale rows for that source so deleted notes, removed source records, or disabled content do not linger in hybrid search results. Per-source reset commands also delete that source's rows from `search.db`, and the global `reset` command restarts the daemon after clearing `search.db` so daemon-held SQLite handles cannot recreate stale on-disk indexes. Embedding batch size scales dynamically based on available system memory (4–32, baseline 16), and embeddings are computed afterward in chunks of 200 rows with per-chunk commits to limit resource usage without blocking later sources from entering the shared keyword index. To improve retrieval for multi-message conversations, WhatsApp is indexed as bounded per-chat transcript chunks instead of one row per message. To reduce index size and embedding cost, numeric-dominant body chunks from WhatsApp, Docs, Sheets, and Slides are skipped while titles, owners, subjects, and other short structured entries remain indexed. Content is normalized into a shared schema:
+The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 5-minute tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available; when the daemon is running it signals that process to start reindexing immediately, and when no daemon is running it falls back to a standalone rebuild. Each `DataSource` provides its indexable content via `SearchEntries()`, and the indexer writes entries for every source before starting a separate embedding pass. During each full pass, the indexer defers `search_fts` maintenance and rebuilds it once after the source upserts/prunes finish so large refreshes do not pay row-by-row FTS write costs. After each source upsert, the indexer prunes stale rows for that source so deleted notes, removed source records, or disabled content do not linger in hybrid search results. Per-source reset commands also delete that source's rows from `search.db`, and the global `reset` command restarts the daemon after clearing `search.db` so daemon-held SQLite handles cannot recreate stale on-disk indexes. Embedding batch size scales dynamically based on available system memory (8–128, baseline 16), is capped further by daemon RSS when the process grows too large, and is re-sampled between embedding chunks so the app can downshift under memory pressure without exposing a user-configurable cap. Embeddings are computed afterward in chunks of 1000 rows with per-chunk commits to limit resource usage without blocking later sources from entering the shared keyword index. To improve retrieval for multi-message conversations, WhatsApp is indexed as bounded per-chat transcript chunks instead of one row per message. To reduce index size and embedding cost, numeric-dominant body chunks from WhatsApp, Docs, Sheets, and Slides are skipped while titles, owners, subjects, and other short structured entries remain indexed. All content chunks are sized to ~2000 characters to match BGE-small-en-v1.5's 512-token context window, ensuring full vector coverage of every chunk. Gmail, WhatsApp, notebook, and Drive-derived content chunks now split on rune boundaries so multibyte text cannot store invalid UTF-8 in `search.db`. Text passed to the embedding model is coerced to valid UTF-8, has consecutive whitespace collapsed to a single space, and is truncated to the same 2000-character budget so malformed or oversized rows cannot panic the tokenizer. Content is normalized into a shared schema:
 
 | Content Type | Source | Indexed From |
 |-------------|--------|-------------|
@@ -614,10 +617,10 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 | `chat_content` | WhatsApp | Chronological chat transcript chunks with chat header, sender labels, and chunk metadata |
 | `document_title` | Google Docs | Document titles (prefixed with owner names when present) |
 | `document_owner` | Google Docs | Document owner names and emails |
-| `document_content` | Google Docs | Document text content (prefixed with owner names, chunked at 5000 chars, numeric-dominant chunks skipped) |
+| `document_content` | Google Docs | Document text content (prefixed with owner names, chunked at ~2000 chars, numeric-dominant chunks skipped) |
 | `spreadsheet_title` | Google Sheets | Spreadsheet titles (prefixed with owner names when present) |
 | `spreadsheet_owner` | Google Sheets | Spreadsheet owner names and emails |
-| `spreadsheet_content` | Google Sheets | Spreadsheet cell content (prefixed with owner names, chunked at 5000 chars, numeric-dominant chunks skipped) |
+| `spreadsheet_content` | Google Sheets | Spreadsheet cell content (prefixed with owner names, chunked at ~2000 chars, numeric-dominant chunks skipped) |
 | `email_thread_subject` | Gmail | Derived Gmail thread subject |
 | `email_thread_participants` | Gmail | Derived Gmail thread participant list |
 | `email_thread_content` | Gmail | Reconstructed Gmail thread transcript chunks built from `body_visible` |
@@ -627,7 +630,7 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 | `contact` | Google Contacts | Contact names, emails, phones, and organizations |
 | `presentation_title` | Google Slides | Presentation titles |
 | `presentation_owner` | Google Slides | Presentation owner names and emails |
-| `presentation_content` | Google Slides | Extracted slide text, chunked and owner-prefixed |
+| `presentation_content` | Google Slides | Extracted slide text, chunked at ~2000 chars and owner-prefixed |
 | `note_title` | Notebook | Markdown/text file titles |
 | `note_content` | Notebook | Markdown/text file bodies, chunked for embeddings |
 | `pdf_title` | Notebook | PDF file titles |
@@ -718,14 +721,14 @@ Tables are created on startup if they don't exist. The FTS5 index is automatical
 | `gmail_threads` | `thread_id` (primary) | Derived Gmail thread cache: subject, participants, message count, first/last dates, `last_synced` |
 | `gmail_messages_fts` | (FTS5 virtual) | Local Gmail full-text index on message subject/body-visible content, maintained via triggers |
 
-`body_visible` stores the canonical Gmail message text after MIME decoding and conservative quoted-reply trimming. When stripping would remove too much authored content, it falls back to the normalized extracted body instead. Global search indexes Gmail at the thread level rather than indexing raw message bodies directly. Schema cleanup migrations drop obsolete Gmail columns and run `VACUUM` so reclaimed bytes are returned to disk automatically.
+`body_visible` stores the canonical Gmail message text after MIME decoding, invalid-UTF-8 cleanup, and conservative quoted-reply trimming. When stripping would remove too much authored content, it falls back to the normalized extracted body instead. Global search indexes Gmail at the thread level rather than indexing raw message bodies directly. Schema cleanup migrations drop obsolete Gmail columns and run `VACUUM` so reclaimed bytes are returned to disk automatically.
 
 ### search.db Schema
 
 | Table | Key | Contents |
 |-------|-----|----------|
 | `search_entries` | `id` (auto), unique(`source`, `source_id`, `content_type`) | Normalized content from all sources: source, ID, type, title, content, JSON metadata, timestamp |
-| `search_fts` | (FTS5 virtual) | Full-text search index on `search_entries` title and content, maintained via triggers |
+| `search_fts` | (FTS5 virtual) | Full-text search index on `search_entries` title and content, maintained via triggers during normal writes and rebuilt once after full bulk indexing passes |
 | `search_embeddings` | `entry_id` (foreign key) | Pre-computed vector embeddings (BGE-Small-EN-v1.5, stored as raw float32 bytes) |
 | `search_meta` | `source` (primary) | Tracks `last_indexed` timestamp per source for incremental updates |
 

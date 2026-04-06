@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"mcpyeahyouknowme/core"
 
@@ -255,7 +256,7 @@ func extractGmailBody(payload *gmail.MessagePart) string {
 	if payload.MimeType == "text/plain" && payload.Body != nil && payload.Body.Data != "" {
 		data, err := base64.URLEncoding.DecodeString(payload.Body.Data)
 		if err == nil {
-			return string(data)
+			return strings.ToValidUTF8(string(data), "")
 		}
 	}
 	// Recurse into parts
@@ -263,7 +264,7 @@ func extractGmailBody(payload *gmail.MessagePart) string {
 		if part.MimeType == "text/plain" && part.Body != nil && part.Body.Data != "" {
 			data, err := base64.URLEncoding.DecodeString(part.Body.Data)
 			if err == nil {
-				return string(data)
+				return strings.ToValidUTF8(string(data), "")
 			}
 		}
 	}
@@ -271,14 +272,14 @@ func extractGmailBody(payload *gmail.MessagePart) string {
 	if payload.MimeType == "text/html" && payload.Body != nil && payload.Body.Data != "" {
 		data, err := base64.URLEncoding.DecodeString(payload.Body.Data)
 		if err == nil {
-			return stripHTML(string(data))
+			return strings.ToValidUTF8(stripHTML(string(data)), "")
 		}
 	}
 	for _, part := range payload.Parts {
 		if part.MimeType == "text/html" && part.Body != nil && part.Body.Data != "" {
 			data, err := base64.URLEncoding.DecodeString(part.Body.Data)
 			if err == nil {
-				return stripHTML(string(data))
+				return strings.ToValidUTF8(stripHTML(string(data)), "")
 			}
 		}
 		// Recurse deeper (multipart/alternative inside multipart/mixed)
@@ -299,6 +300,7 @@ var (
 
 // deriveVisibleBody strips quoted-history noise when safe so search and thread views emphasize authored text.
 func deriveVisibleBody(raw string) string {
+	raw = strings.ToValidUTF8(raw, "")
 	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
 	normalized = strings.TrimSpace(normalized)
@@ -794,13 +796,13 @@ func gmailSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, erro
 	if err := threadRows.Err(); err != nil { // nocov
 		return nil, err
 	}
+	groupedMessages, err := loadAllGmailMessagesByThread(db)
+	if err != nil { // nocov
+		return nil, err
+	}
 	var entries []core.SearchEntry
 	for _, summary := range summaries {
-		messages, err := loadGmailMessagesByThread(db, summary.threadID)
-		if err != nil { // nocov
-			continue
-		}
-		entries = append(entries, gmailSearchEntriesForThread(sourceName, summary, messages)...)
+		entries = append(entries, gmailSearchEntriesForThread(sourceName, summary, groupedMessages[summary.threadID])...)
 	}
 	return entries, nil
 }
@@ -1056,6 +1058,35 @@ func loadGmailMessagesByThread(db *sql.DB, threadID string) ([]gmailMessageRecor
 	return scanGmailMessages(rows)
 }
 
+// loadAllGmailMessagesByThread scans Gmail messages once and groups them by
+// thread so global-search indexing avoids per-thread N+1 queries on large inboxes.
+func loadAllGmailMessagesByThread(db *sql.DB) (map[string][]gmailMessageRecord, error) {
+	rows, err := db.Query(`SELECT id, thread_id, subject, from_addr, to_addrs, cc_addrs, bcc_addrs, date, folder,
+		labels, body_visible, has_attachments
+		FROM gmail_messages`)
+	if err != nil { // nocov
+		return nil, err
+	}
+	defer rows.Close()
+	messages, err := scanGmailMessages(rows)
+	if err != nil { // nocov
+		return nil, err
+	}
+	grouped := make(map[string][]gmailMessageRecord)
+	for _, msg := range messages {
+		if msg.ThreadID == "" {
+			continue
+		}
+		grouped[msg.ThreadID] = append(grouped[msg.ThreadID], msg)
+	}
+	for threadID := range grouped {
+		sort.Slice(grouped[threadID], func(i, j int) bool {
+			return gmailMessageLess(grouped[threadID][i], grouped[threadID][j])
+		})
+	}
+	return grouped, nil
+}
+
 // scanGmailMessages scans stored Gmail rows and sorts them chronologically for thread rendering and search chunking.
 func scanGmailMessages(rows *sql.Rows) ([]gmailMessageRecord, error) {
 	var messages []gmailMessageRecord
@@ -1197,8 +1228,8 @@ func loadGmailThreadMeta(db *sql.DB, threadID string) (gmailThreadRecord, error)
 // buildGmailThreadChunks groups transcript entries into bounded chunks for global search indexing.
 func buildGmailThreadChunks(subject, participants string, messages []gmailMessageRecord) []gmailThreadChunk {
 	const (
-		targetSize = 3000
-		maxSize    = 5000
+		targetSize = core.EmbedContextChars * 3 / 4
+		maxSize    = core.EmbedContextChars
 	)
 	header := formatThreadChunkHeader(subject, participants)
 	var chunks []gmailThreadChunk
@@ -1228,7 +1259,7 @@ func buildGmailThreadChunks(subject, participants string, messages []gmailMessag
 		current.Reset()
 		current.WriteString(header)
 		current.WriteString(content)
-		currentLen = len(header) + len(content)
+		currentLen = utf8.RuneCountInString(header) + utf8.RuneCountInString(content)
 		chunkStartID, chunkEndID = msg.ID, msg.ID
 		chunkStartDate, chunkEndDate = msg.Date, msg.Date
 		hasEntries = true
@@ -1239,9 +1270,9 @@ func buildGmailThreadChunks(subject, participants string, messages []gmailMessag
 		if entry == "" {
 			continue
 		}
-		if len(header)+len(entry) > maxSize {
+		if utf8.RuneCountInString(header)+utf8.RuneCountInString(entry) > maxSize {
 			flush()
-			for _, part := range splitLongThreadEntry(entry, maxSize-len(header)) {
+			for _, part := range splitLongThreadEntry(entry, maxSize-utf8.RuneCountInString(header)) {
 				startChunk(msg, part)
 				flush()
 			}
@@ -1251,14 +1282,14 @@ func buildGmailThreadChunks(subject, participants string, messages []gmailMessag
 			startChunk(msg, entry)
 			continue
 		}
-		if currentLen+2+len(entry) > targetSize {
+		if currentLen+2+utf8.RuneCountInString(entry) > targetSize {
 			flush()
 			startChunk(msg, entry)
 			continue
 		}
 		current.WriteString("\n\n")
 		current.WriteString(entry)
-		currentLen += 2 + len(entry)
+		currentLen += 2 + utf8.RuneCountInString(entry)
 		chunkEndID = msg.ID
 		chunkEndDate = msg.Date
 	}
@@ -1311,15 +1342,16 @@ func formatThreadTranscriptEntry(msg gmailMessageRecord) string {
 
 // splitLongThreadEntry splits oversized transcript entries so chunked search rows stay under the size limit.
 func splitLongThreadEntry(entry string, limit int) []string {
-	if limit <= 0 || len(entry) <= limit {
+	if limit <= 0 || utf8.RuneCountInString(entry) <= limit {
 		return []string{entry}
 	}
 	var parts []string
 	remaining := entry
-	for len(remaining) > limit {
-		splitAt := strings.LastIndex(remaining[:limit], "\n")
+	for utf8.RuneCountInString(remaining) > limit {
+		prefix := truncateUTF8Runes(remaining, limit)
+		splitAt := strings.LastIndex(prefix, "\n")
 		if splitAt <= 0 {
-			splitAt = limit
+			splitAt = len(prefix)
 		}
 		parts = append(parts, strings.TrimSpace(remaining[:splitAt]))
 		remaining = strings.TrimSpace(remaining[splitAt:])
@@ -1328,4 +1360,17 @@ func splitLongThreadEntry(entry string, limit int) []string {
 		parts = append(parts, remaining)
 	}
 	return parts
+}
+
+// truncateUTF8Runes caps a string by rune count so Gmail chunk splitting can
+// honor character budgets without storing invalid UTF-8 in search rows.
+func truncateUTF8Runes(s string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	return string(runes[:limit])
 }

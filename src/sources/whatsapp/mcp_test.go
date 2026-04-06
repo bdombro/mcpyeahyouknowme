@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"mcpyeahyouknowme/core"
 
@@ -472,6 +473,70 @@ func TestWhatsAppSource_buildChatChunks_splitLongMessage(t *testing.T) {
 		if chunk.StartMessageID != "huge" || chunk.EndMessageID != "huge" {
 			t.Fatalf("expected split chunks to point at the same source message, got %#v", chunk)
 		}
+	}
+}
+
+// Verifies chat chunking preserves UTF-8 boundaries and strips invalid bytes
+// from malformed message content before search rows are built.
+func TestWhatsAppSource_buildChatChunks_preservesUTF8Boundaries(t *testing.T) {
+	ws := NewSourceFromStore(newTestStoreWithContacts(t), "http://localhost:1")
+	messages := []whatsAppMessageRecord{{
+		ID:        "huge",
+		ChatJID:   "group1@g.us",
+		Sender:    "11111",
+		Content:   strings.Repeat("A\u200c", 2200) + string([]byte{0xff}),
+		Timestamp: time.Now().Format(time.RFC3339),
+		ChatName:  "Family Chat",
+	}}
+
+	chunks := ws.buildChatChunks(messages)
+	if len(chunks) < 2 {
+		t.Fatalf("expected multibyte message to split into multiple chunks, got %d", len(chunks))
+	}
+	for _, chunk := range chunks {
+		if !utf8.ValidString(chunk.Content) {
+			t.Fatalf("expected valid UTF-8 chunk, got %q", chunk.Content)
+		}
+	}
+}
+
+// Verifies splitChatTranscriptEntry honors rune limits without splitting
+// multibyte runes in oversized WhatsApp transcript entries.
+func TestSplitChatTranscriptEntry_preservesUTF8Boundaries(t *testing.T) {
+	entry := "[2024-03-01T10:00:00Z] Alice\n" + strings.Repeat("A\u200c", 120)
+	parts := splitChatTranscriptEntry(entry, 50)
+	if len(parts) < 2 {
+		t.Fatalf("expected multiple parts, got %#v", parts)
+	}
+	for _, part := range parts {
+		if !utf8.ValidString(part) {
+			t.Fatalf("expected valid UTF-8 part, got %q", part)
+		}
+		if utf8.RuneCountInString(part) > 50 {
+			t.Fatalf("expected part to respect rune limit, got %d runes", utf8.RuneCountInString(part))
+		}
+	}
+}
+
+// Verifies truncateChatRunes handles zero, passthrough, and truncation cases
+// so WhatsApp chunking can cap text without corrupting UTF-8.
+func TestTruncateChatRunes(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		limit int
+		want  string
+	}{
+		{name: "zero limit", input: "hello", limit: 0, want: ""},
+		{name: "within limit", input: "hello", limit: 8, want: "hello"},
+		{name: "truncate multibyte", input: "A\u200cB", limit: 2, want: "A\u200c"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := truncateChatRunes(tt.input, tt.limit); got != tt.want {
+				t.Fatalf("truncateChatRunes(%q, %d) = %q, want %q", tt.input, tt.limit, got, tt.want)
+			}
+		})
 	}
 }
 

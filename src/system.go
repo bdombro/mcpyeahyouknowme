@@ -13,22 +13,60 @@ var coreDaemonLaunchctlList = func(label string) ([]byte, error) {
 	return exec.Command("launchctl", "list", label).Output()
 }
 
-// adaptiveBatchSize returns an embedding batch size scaled to available system
-// memory. Returns 4-32, with 16 as the baseline. Falls back to 16 on error.
+// adaptiveBatchSize returns an embedding batch size scaled to current system
+// headroom and capped by the daemon's RSS so long reindexes stay responsive.
 func adaptiveBatchSize() int {
-	freeMB := availableMemoryMB()
+	return embeddingBatchSizeForSystem(availableMemoryMB(), daemonRSSBytes(plistName)/(1024*1024))
+}
+
+// embeddingBatchSizeForSystem combines free-memory scaling with a daemon-RSS cap
+// so batch growth stops once the indexer itself is already consuming too much RAM.
+func embeddingBatchSizeForSystem(freeMB, daemonRSSMB int64) int {
+	batchSize := embeddingBatchSizeForMemoryMB(freeMB)
+	rssCap := embeddingBatchSizeForRSSMB(daemonRSSMB)
+	if rssCap > 0 && rssCap < batchSize {
+		return rssCap
+	}
+	return batchSize
+}
+
+// embeddingBatchSizeForMemoryMB maps available memory to a safe embedding batch
+// size so high-memory Macs can complete large reindexes in reasonable time.
+func embeddingBatchSizeForMemoryMB(freeMB int64) int {
 	if freeMB <= 0 {
 		return 16
 	}
 	switch {
 	case freeMB < 2048:
-		return 4
-	case freeMB < 4096:
 		return 8
-	case freeMB < 8192:
+	case freeMB < 4096:
 		return 16
-	default:
+	case freeMB < 8192:
 		return 32
+	case freeMB < 16384:
+		return 64
+	default:
+		return 128
+	}
+}
+
+// embeddingBatchSizeForRSSMB caps batch size based on the daemon's current RSS
+// so embedding passes back off before the process makes the machine sluggish.
+func embeddingBatchSizeForRSSMB(rssMB int64) int {
+	if rssMB <= 0 {
+		return 128
+	}
+	switch {
+	case rssMB >= 16384:
+		return 8
+	case rssMB >= 12288:
+		return 16
+	case rssMB >= 8192:
+		return 32
+	case rssMB >= 4096:
+		return 64
+	default:
+		return 128
 	}
 }
 

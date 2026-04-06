@@ -32,7 +32,7 @@ func TestPlistPath(t *testing.T) {
 func TestCommandsListCompleteness(t *testing.T) {
 	expected := map[string]bool{
 		"mcp":             true,
-		"info":            true,
+		"status":          true,
 		"completions":     true,
 		"core":            true,
 		"start":           true,

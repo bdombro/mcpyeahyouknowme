@@ -172,6 +172,12 @@ func RequireBoolArgument(req mcp.CallToolRequest, key, example string) (bool, *m
 	return b, nil
 }
 
+// EmbedContextChars is the maximum number of characters to pass to the embedding model per entry.
+// BGE-small-en-v1.5 has a 512-token context window (~2000 characters). Text beyond this limit
+// is silently discarded by the model, so all source chunkers should target this size to ensure
+// full vector coverage and to avoid the sugarme/tokenizer bounds-check panic on long inputs.
+const EmbedContextChars = 2000
+
 // IsLowValueContent applies the semantic-search chunk filter, rejecting long text that is too numeric/punctuation-heavy to justify embedding.
 func IsLowValueContent(text string) bool {
 	nonWhitespace := 0

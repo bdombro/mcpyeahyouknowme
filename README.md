@@ -158,7 +158,10 @@ Other commands:
 
 ```bash
 # Show status and data locations
-mcpyeahyouknowme info
+mcpyeahyouknowme status
+
+# Refresh the status view every 10 seconds
+mcpyeahyouknowme status --live
 
 # Wipe WhatsApp data and session (only WhatsApp)
 mcpyeahyouknowme whatsapp reset

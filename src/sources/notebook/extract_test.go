@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // Verifies extractMarkdownTitle returns the first H1 heading when present.
@@ -152,6 +153,44 @@ func TestChunkText_long(t *testing.T) {
 		if strings.TrimSpace(c) == "" {
 			t.Errorf("chunk %d is empty", i)
 		}
+	}
+}
+
+// Verifies chunkText preserves UTF-8 validity when a chunk boundary lands in
+// the middle of multibyte markdown content.
+func TestChunkText_preservesUTF8Boundaries(t *testing.T) {
+	input := strings.Repeat("A\u200c ", 2200)
+	chunks := chunkText(input)
+	if len(chunks) < 2 {
+		t.Fatalf("expected multiple chunks, got %#v", chunks)
+	}
+	for _, chunk := range chunks {
+		if !utf8.ValidString(chunk) {
+			t.Fatalf("expected valid UTF-8 chunk, got %q", chunk)
+		}
+	}
+}
+
+// Verifies extractMarkdown strips invalid UTF-8 bytes from on-disk markdown so
+// notebook indexing does not persist malformed text.
+func TestExtractMarkdown_sanitizesInvalidUTF8(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "broken.md")
+	if err := os.WriteFile(path, []byte{'#', ' ', 'T', 'i', 't', 'l', 'e', '\n', 0xff, 'b', 'o', 'd', 'y'}, 0o644); err != nil {
+		t.Fatalf("write markdown: %v", err)
+	}
+	title, content, err := extractMarkdown(path)
+	if err != nil {
+		t.Fatalf("extractMarkdown: %v", err)
+	}
+	if title != "Title" {
+		t.Fatalf("expected title to survive sanitization, got %q", title)
+	}
+	if !utf8.ValidString(content) {
+		t.Fatalf("expected valid UTF-8 content, got %q", content)
+	}
+	if strings.ContainsRune(content, '\ufffd') {
+		t.Fatalf("expected invalid byte to be removed, got %q", content)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"google.golang.org/api/gmail/v1"
 )
@@ -247,6 +248,107 @@ func TestSplitLongThreadEntry_splitsOnNewlineBoundary(t *testing.T) {
 		if part == "" {
 			t.Fatalf("expected non-empty part, got %#v", parts)
 		}
+	}
+}
+
+// Verifies splitLongThreadEntry keeps UTF-8 valid when a size limit lands in
+// the middle of multibyte runes from HTML-heavy Gmail bodies.
+func TestSplitLongThreadEntry_preservesUTF8Boundaries(t *testing.T) {
+	entry := "[2024-03-01T10:00:00Z] alice@example.com\n" + strings.Repeat("A\u200c", 120)
+	parts := splitLongThreadEntry(entry, 50)
+	if len(parts) < 2 {
+		t.Fatalf("expected multiple parts, got %#v", parts)
+	}
+	for _, part := range parts {
+		if !utf8.ValidString(part) {
+			t.Fatalf("expected valid UTF-8 part, got %q", part)
+		}
+		if utf8.RuneCountInString(part) > 50 {
+			t.Fatalf("expected part to respect rune limit, got %d runes in %q", utf8.RuneCountInString(part), part)
+		}
+	}
+}
+
+// Verifies buildGmailThreadChunks splits one oversized Gmail message into
+// multiple valid transcript chunks without corrupting UTF-8.
+func TestBuildGmailThreadChunks_splitsOversizedSingleEntry(t *testing.T) {
+	messages := []gmailMessageRecord{
+		{
+			ID:          "msg1",
+			ThreadID:    "thread1",
+			Subject:     "Quest Promo",
+			From:        "meta@example.com",
+			Date:        "2024-03-01T10:00:00Z",
+			BodyVisible: strings.Repeat("A\u200c", 2200),
+		},
+	}
+
+	chunks := buildGmailThreadChunks("Quest Promo", "meta@example.com", messages)
+	if len(chunks) < 2 {
+		t.Fatalf("expected oversized entry to split into multiple chunks, got %d", len(chunks))
+	}
+	for _, chunk := range chunks {
+		if !utf8.ValidString(chunk.Content) {
+			t.Fatalf("expected valid UTF-8 chunk, got %q", chunk.Content)
+		}
+		if chunk.StartMessageID != "msg1" || chunk.EndMessageID != "msg1" {
+			t.Fatalf("expected split chunks to retain source message id, got %#v", chunk)
+		}
+	}
+}
+
+// Verifies buildGmailThreadChunks skips empty transcript messages and returns
+// no chunks when nothing usable remains after visible-body filtering.
+func TestBuildGmailThreadChunks_skipsEmptyEntries(t *testing.T) {
+	chunks := buildGmailThreadChunks("Quarterly Planning", "alice@example.com", []gmailMessageRecord{
+		{ID: "msg1", ThreadID: "thread1", From: "alice@example.com", Date: "2024-03-01T10:00:00Z", BodyVisible: ""},
+		{ID: "msg2", ThreadID: "thread1", From: "bob@example.com", Date: "2024-03-01T11:00:00Z", BodyVisible: "   "},
+	})
+	if len(chunks) != 0 {
+		t.Fatalf("expected empty-body messages to be skipped, got %#v", chunks)
+	}
+}
+
+// Verifies buildGmailThreadChunks rolls over at the target chunk size when
+// multiple normal messages together would exceed the preferred transcript size.
+func TestBuildGmailThreadChunks_rollsAtTargetSize(t *testing.T) {
+	messages := []gmailMessageRecord{
+		{ID: "msg1", ThreadID: "thread1", From: "alice@example.com", Date: "2024-03-01T10:00:00Z", BodyVisible: strings.Repeat("a", 700)},
+		{ID: "msg2", ThreadID: "thread1", From: "bob@example.com", Date: "2024-03-01T11:00:00Z", BodyVisible: strings.Repeat("b", 700)},
+		{ID: "msg3", ThreadID: "thread1", From: "carol@example.com", Date: "2024-03-01T12:00:00Z", BodyVisible: strings.Repeat("c", 700)},
+	}
+
+	chunks := buildGmailThreadChunks("Quarterly Planning", "alice@example.com, bob@example.com, carol@example.com", messages)
+	if len(chunks) < 2 {
+		t.Fatalf("expected target-size rollover to produce multiple chunks, got %#v", chunks)
+	}
+	if chunks[0].StartMessageID != "msg1" || chunks[0].EndMessageID != "msg1" {
+		t.Fatalf("expected first chunk to contain only msg1 after rollover, got %#v", chunks[0])
+	}
+	if chunks[1].StartMessageID != "msg2" {
+		t.Fatalf("expected second chunk to start with msg2, got %#v", chunks[1])
+	}
+}
+
+// Verifies truncateUTF8Runes handles zero, passthrough, and truncation cases
+// for Gmail transcript chunk splitting.
+func TestTruncateUTF8Runes(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		limit int
+		want  string
+	}{
+		{name: "zero limit", input: "hello", limit: 0, want: ""},
+		{name: "within limit", input: "hello", limit: 8, want: "hello"},
+		{name: "truncate multibyte", input: "A\u200cB", limit: 2, want: "A\u200c"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := truncateUTF8Runes(tt.input, tt.limit); got != tt.want {
+				t.Fatalf("truncateUTF8Runes(%q, %d) = %q, want %q", tt.input, tt.limit, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -594,6 +696,69 @@ func TestBuildGmailThreadRecords_skipsEmptyThreadID(t *testing.T) {
 	})
 	if len(records) != 0 {
 		t.Fatalf("expected empty thread_id to be skipped, got %d records", len(records))
+	}
+}
+
+// Verifies loadAllGmailMessagesByThread groups one ordered scan of Gmail
+// messages by thread so search indexing avoids per-thread lookups.
+func TestLoadAllGmailMessagesByThread(t *testing.T) {
+	db := newTestDB(t)
+	seedGmail(t, db)
+	grouped, err := loadAllGmailMessagesByThread(db)
+	if err != nil {
+		t.Fatalf("loadAllGmailMessagesByThread: %v", err)
+	}
+	thread := grouped["thread1"]
+	if len(thread) != 2 {
+		t.Fatalf("expected 2 messages in thread1, got %#v", thread)
+	}
+	if thread[0].ID != "msg1" || thread[1].ID != "msg2" {
+		t.Fatalf("expected chronological order, got %#v", thread)
+	}
+}
+
+// Verifies loadAllGmailMessagesByThread returns an empty grouping for an empty DB.
+func TestLoadAllGmailMessagesByThread_empty(t *testing.T) {
+	db := newTestDB(t)
+	grouped, err := loadAllGmailMessagesByThread(db)
+	if err != nil {
+		t.Fatalf("loadAllGmailMessagesByThread: %v", err)
+	}
+	if len(grouped) != 0 {
+		t.Fatalf("expected empty grouping, got %#v", grouped)
+	}
+}
+
+// Verifies loadAllGmailMessagesByThread skips orphaned rows whose thread_id is blank.
+func TestLoadAllGmailMessagesByThread_skipsEmptyThreadID(t *testing.T) {
+	db := newTestDB(t)
+	_, err := db.Exec(`INSERT INTO gmail_messages
+		(id, thread_id, labels, folder, subject, from_addr, to_addrs, cc_addrs, bcc_addrs,
+		 date, snippet, body_visible, has_attachments, size_estimate, last_synced)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		"orphan", "", "INBOX", "INBOX", "No Thread", "a@example.com", "b@example.com", "", "",
+		"2024-03-01T10:00:00Z", "snippet", "body", 0, 123)
+	if err != nil {
+		t.Fatalf("insert orphan gmail row: %v", err)
+	}
+	grouped, err := loadAllGmailMessagesByThread(db)
+	if err != nil {
+		t.Fatalf("loadAllGmailMessagesByThread: %v", err)
+	}
+	if len(grouped) != 0 {
+		t.Fatalf("expected orphan row to be skipped, got %#v", grouped)
+	}
+}
+
+// Verifies loadGmailMessagesByThread returns an empty slice when the requested thread is absent.
+func TestLoadGmailMessagesByThread_missingThread(t *testing.T) {
+	db := newTestDB(t)
+	messages, err := loadGmailMessagesByThread(db, "missing")
+	if err != nil {
+		t.Fatalf("loadGmailMessagesByThread: %v", err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected no messages for missing thread, got %#v", messages)
 	}
 }
 

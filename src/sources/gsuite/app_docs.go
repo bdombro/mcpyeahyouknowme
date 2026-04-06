@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"mcpyeahyouknowme/core"
 
@@ -306,6 +307,9 @@ func docsSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error
 // Shared by docs, sheets, and slides.
 func buildContentEntries(sourceName, id, title, content, modTime, owners,
 	titleType, ownerType, contentType, idField string) []core.SearchEntry {
+	title = strings.ToValidUTF8(title, "")
+	content = strings.ToValidUTF8(content, "")
+	owners = strings.ToValidUTF8(owners, "")
 	var entries []core.SearchEntry
 	baseMeta := map[string]interface{}{idField: id, "modified_time": modTime}
 	if owners != "" {
@@ -332,18 +336,13 @@ func buildContentEntries(sourceName, id, title, content, modTime, owners,
 		if owners != "" {
 			contentWithOwners = "Owners: " + owners + "\n\n" + content
 		}
-		chunkSize := 5000
-		for i := 0; i < len(contentWithOwners); i += chunkSize {
-			end := i + chunkSize
-			if end > len(contentWithOwners) {
-				end = len(contentWithOwners)
-			}
-			chunk := contentWithOwners[i:end]
+		chunks := splitDriveContentChunks(contentWithOwners, core.EmbedContextChars)
+		for i, chunk := range chunks {
 			if core.IsLowValueContent(chunk) {
 				continue
 			}
 			chunkMeta, _ := json.Marshal(map[string]interface{}{
-				idField: id, "title": title, "chunk_index": i / chunkSize, "modified_time": modTime,
+				idField: id, "title": title, "chunk_index": i, "modified_time": modTime,
 			})
 			entries = append(entries, core.SearchEntry{
 				Source: sourceName, SourceID: id, ContentType: contentType,
@@ -352,6 +351,29 @@ func buildContentEntries(sourceName, id, title, content, modTime, owners,
 		}
 	}
 	return entries
+}
+
+// splitDriveContentChunks breaks Drive-derived content into UTF-8-safe chunks
+// that stay within the embedding character budget for Docs, Sheets, and Slides.
+func splitDriveContentChunks(text string, limit int) []string {
+	if limit <= 0 || text == "" {
+		return nil
+	}
+	text = strings.ToValidUTF8(text, "")
+	if utf8.RuneCountInString(text) <= limit {
+		return []string{text}
+	}
+	runes := []rune(text)
+	chunks := make([]string, 0, (len(runes)+limit-1)/limit)
+	for len(runes) > 0 {
+		end := limit
+		if end > len(runes) {
+			end = len(runes)
+		}
+		chunks = append(chunks, string(runes[:end]))
+		runes = runes[end:]
+	}
+	return chunks
 }
 
 // --- shared helpers ---

@@ -202,7 +202,20 @@ func runCore() {
 			}
 		}()
 
+		bulkMode := false
+		if err := searchStore.BeginBulkIndex(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to enable bulk FTS indexing: %v\n", err)
+		} else {
+			bulkMode = true
+		}
+
 		completed := indexSources(ctx, searchStore, sources)
+		if bulkMode {
+			if err := searchStore.EndBulkIndex(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to finalize bulk FTS indexing: %v\n", err)
+				return
+			}
+		}
 		if !completed {
 			return
 		}

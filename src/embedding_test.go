@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"mcpyeahyouknowme/core"
 )
 
 // Verifies the platform-specific ONNX runtime path resolves to one of the expected Homebrew locations.
@@ -220,6 +222,68 @@ func TestEmbedder_Close(t *testing.T) {
 	emb.Close()
 	// Calling Close again should also not panic
 	emb.Close()
+}
+
+// Verifies normalizeEmbedText collapses consecutive whitespace and trims edges to prevent tokenizer panics.
+func TestNormalizeEmbedText(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"empty", "", ""},
+		{"whitespace only", "   \t\n  ", ""},
+		{"no change needed", "hello world", "hello world"},
+		{"leading and trailing", "  hello  ", "hello"},
+		{"consecutive spaces", "hello   world", "hello world"},
+		{"consecutive newlines", "hello\n\n\nworld", "hello world"},
+		{"mixed whitespace", "hello \t\n world", "hello world"},
+		{"long space run", "code" + strings.Repeat(" ", 100) + "here", "code here"},
+		{"invalid utf8 removed", string([]byte{'h', 'i', 0xff, ' ', 't', 'h', 'e', 'r', 'e'}), "hi there"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeEmbedText(tt.input)
+			if got != tt.want {
+				t.Errorf("normalizeEmbedText(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// Verifies normalizeEmbedText truncates overlong content to the configured
+// embedding character budget without cutting UTF-8 sequences.
+func TestNormalizeEmbedText_truncatesToContextBudget(t *testing.T) {
+	input := strings.Repeat("a", core.EmbedContextChars+25) + "tail"
+	got := normalizeEmbedText(input)
+	if len([]rune(got)) != core.EmbedContextChars {
+		t.Fatalf("expected %d runes, got %d", core.EmbedContextChars, len([]rune(got)))
+	}
+	if strings.Contains(got, "tail") {
+		t.Fatalf("expected truncated output to drop suffix, got %q", got[len(got)-16:])
+	}
+}
+
+// Verifies truncateRunes handles zero, passthrough, and truncation cases so
+// embedding normalization can safely enforce rune budgets.
+func TestTruncateRunes(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		limit int
+		want  string
+	}{
+		{name: "zero limit", input: "hello", limit: 0, want: ""},
+		{name: "within limit", input: "hello", limit: 8, want: "hello"},
+		{name: "truncate multibyte", input: "A\u200cB", limit: 2, want: "A\u200c"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := truncateRunes(tt.input, tt.limit); got != tt.want {
+				t.Fatalf("truncateRunes(%q, %d) = %q, want %q", tt.input, tt.limit, got, tt.want)
+			}
+		})
+	}
 }
 
 // Verifies the mock embedder still satisfies the production embedding interface used by tests.

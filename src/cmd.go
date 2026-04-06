@@ -41,12 +41,12 @@ func commandTree() []Command {
 			},
 		},
 		{
-			Name:    "info",
+			Name:    "status",
 			Summary: "Show install status and data locations",
-			Usage:   "info",
+			Usage:   "status [--json] [--live]",
 			Section: "General",
-			Run: func(_ []string) {
-				runInfo()
+			Run: func(args []string) {
+				runStatus(args)
 			},
 		},
 		{

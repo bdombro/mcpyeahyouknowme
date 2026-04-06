@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"mcpyeahyouknowme/core"
 
@@ -506,14 +507,6 @@ func TestBuildContentEntries_NoOwner(t *testing.T) {
 
 // Verifies long content is chunked into multiple global-search entries instead of one oversized entry.
 func TestBuildContentEntries_LongContent(t *testing.T) {
-	content := string(make([]byte, 12000))
-	for i := range []byte(content) {
-		content = content[:i] + "x" + content[i+1:]
-		if i == 0 {
-			break // avoid O(n^2); just test chunking math
-		}
-	}
-	// Create a 12001 char string directly
 	buf := make([]byte, 12001)
 	for i := range buf {
 		buf[i] = 'x'
@@ -526,9 +519,67 @@ func TestBuildContentEntries_LongContent(t *testing.T) {
 			contentChunks++
 		}
 	}
-	if contentChunks != 3 {
-		t.Errorf("expected 3 content chunks for 12001 chars, got %d", contentChunks)
+	if contentChunks != 7 {
+		t.Errorf("expected 7 content chunks for 12001 chars at chunkSize 2000, got %d", contentChunks)
 	}
+}
+
+// Verifies Drive-derived content chunking preserves UTF-8 validity when
+// multibyte text crosses chunk boundaries.
+func TestBuildContentEntries_preservesUTF8Boundaries(t *testing.T) {
+	content := strings.Repeat("A\u200c", 2200)
+	entries := buildContentEntries("src", "id1", "Title", content, "2024-01-01T00:00:00Z", "",
+		"tt", "ot", "ct", "id")
+	contentChunks := 0
+	for _, e := range entries {
+		if e.ContentType != "ct" {
+			continue
+		}
+		contentChunks++
+		if !utf8.ValidString(e.Content) {
+			t.Fatalf("expected valid UTF-8 content chunk, got %q", e.Content)
+		}
+	}
+	if contentChunks < 2 {
+		t.Fatalf("expected multibyte content to split into multiple chunks, got %d", contentChunks)
+	}
+}
+
+// Verifies buildContentEntries removes invalid UTF-8 bytes before writing
+// title, owner, and content search rows.
+func TestBuildContentEntries_sanitizesInvalidUTF8(t *testing.T) {
+	entries := buildContentEntries("src", "id1", "Ti"+string([]byte{0xff})+"tle", "Body"+string([]byte{0xff})+"Text",
+		"2024-01-01T00:00:00Z", "Owner"+string([]byte{0xff}), "tt", "ot", "ct", "id")
+	for _, e := range entries {
+		if !utf8.ValidString(e.Title) || !utf8.ValidString(e.Content) {
+			t.Fatalf("expected valid UTF-8 entry, got %#v", e)
+		}
+		if strings.ContainsRune(e.Title, '\ufffd') || strings.ContainsRune(e.Content, '\ufffd') {
+			t.Fatalf("expected invalid bytes to be removed, got %#v", e)
+		}
+	}
+}
+
+// Verifies splitDriveContentChunks handles zero, passthrough, and truncation
+// cases while preserving UTF-8 for shared Drive app chunking.
+func TestSplitDriveContentChunks(t *testing.T) {
+	t.Run("zero limit", func(t *testing.T) {
+		if got := splitDriveContentChunks("hello", 0); got != nil {
+			t.Fatalf("expected nil chunks, got %#v", got)
+		}
+	})
+	t.Run("within limit", func(t *testing.T) {
+		got := splitDriveContentChunks("hello", 8)
+		if len(got) != 1 || got[0] != "hello" {
+			t.Fatalf("unexpected chunks: %#v", got)
+		}
+	})
+	t.Run("truncate multibyte", func(t *testing.T) {
+		got := splitDriveContentChunks("A\u200cB", 2)
+		if len(got) != 2 || got[0] != "A\u200c" || got[1] != "B" {
+			t.Fatalf("unexpected multibyte chunks: %#v", got)
+		}
+	})
 }
 
 // Verifies numeric-dominant chunks are skipped so low-value content does not flood global search.

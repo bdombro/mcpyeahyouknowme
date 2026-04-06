@@ -116,11 +116,46 @@ type EmbedderInterface interface {
 type SearchStore struct {
 	db       *sql.DB
 	embedder EmbedderInterface
+	bulkFTS  bool
+}
+
+var searchStoreAdaptiveBatchSize = adaptiveBatchSize
+var searchStoreRebuildFTS = func(db *sql.DB) error {
+	if _, err := db.Exec(`INSERT INTO search_fts(search_fts) VALUES('rebuild')`); err != nil {
+		return fmt.Errorf("rebuild search fts: %w", err)
+	}
+	return nil
 }
 
 // Close releases the search DB handle so daemon, MCP, or CLI callers do not leave SQLite connections open.
 func (s *SearchStore) Close() error {
 	return s.db.Close()
+}
+
+// Suspends row-by-row FTS trigger maintenance so full rebuilds can upsert and
+// prune many rows before paying one final rebuild cost.
+func (s *SearchStore) BeginBulkIndex() error {
+	if s.bulkFTS {
+		return nil
+	}
+	if err := dropSearchFTSTriggers(s.db); err != nil {
+		return err
+	}
+	s.bulkFTS = true
+	return nil
+}
+
+// Restores FTS triggers and rebuilds the FTS table from live search_entries
+// contents so query-time BM25 matches the latest bulk-loaded rows.
+func (s *SearchStore) EndBulkIndex() error {
+	if !s.bulkFTS {
+		return nil
+	}
+	if err := createSearchFTSTriggers(s.db); err != nil {
+		return err
+	}
+	s.bulkFTS = false
+	return searchStoreRebuildFTS(s.db)
 }
 
 // Clears all search entries, embeddings, FTS rows, and source timestamps so a full rebuild starts from an empty index.
@@ -184,7 +219,9 @@ func (s *SearchStore) IndexEntries(entries []SearchEntry) error {
 	}
 
 	// Rebuild FTS if needed (for the initial bulk load case)
-	s.rebuildFTSIfNeeded()
+	if !s.bulkFTS {
+		s.rebuildFTSIfNeeded()
+	}
 	return nil
 }
 
@@ -255,11 +292,24 @@ func (s *SearchStore) rebuildFTSIfNeeded() {
 	var indexed int
 	s.db.QueryRow("SELECT COUNT(*) FROM search_fts WHERE search_fts MATCH '*'").Scan(&indexed)
 	if indexed == 0 {
-		s.db.Exec("INSERT INTO search_fts(search_fts) VALUES('rebuild')")
+		_ = searchStoreRebuildFTS(s.db)
 	}
 }
 
-const embeddingChunkSize = 200
+const embeddingChunkSize = 1000
+
+// Samples current system headroom and only downshifts the active embedding batch
+// size so long runs stay responsive under memory pressure.
+func nextEmbeddingBatchSize(current int) int {
+	next := searchStoreAdaptiveBatchSize()
+	if next <= 0 {
+		next = 1
+	}
+	if current <= 0 || next < current {
+		return next
+	}
+	return current
+}
 
 // computeEmbeddings generates embeddings for entries that don't have one yet,
 // processing in chunks with per-chunk commits and adaptive batch sizing.
@@ -267,15 +317,18 @@ func (s *SearchStore) computeEmbeddings(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	batchSize := adaptiveBatchSize()
+	batchSize := 0
+	var afterID int64
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		n, err := s.embedChunk(batchSize, embeddingChunkSize)
+		batchSize = nextEmbeddingBatchSize(batchSize)
+		nextID, n, err := s.embedChunk(afterID, batchSize, embeddingChunkSize)
 		if err != nil {
 			return err
 		}
+		afterID = nextID
 		if n == 0 {
 			return nil
 		}
@@ -308,81 +361,92 @@ type pendingEmbed struct {
 	text string
 }
 
-// embedChunk processes the next page of entries missing embeddings.
-// Returns the number of entries found (0 means done).
-func (s *SearchStore) embedChunk(batchSize, limit int) (int, error) {
-	rows, err := s.db.Query(`
-		SELECT e.id, e.title, e.content
-		FROM search_entries e
-		LEFT JOIN search_embeddings se ON e.id = se.entry_id
-		WHERE se.entry_id IS NULL
-		ORDER BY e.id
-		LIMIT ?`, limit)
-	if err != nil { // nocov
-		return 0, err
-	}
-	defer rows.Close()
-
-	var chunk []pendingEmbed
-	for rows.Next() {
-		var id int64
-		var title, content string
-		if rows.Scan(&id, &title, &content) != nil { // nocov
-			continue
+// embedChunk processes the next page of entries missing embeddings after
+// afterID, returning the furthest scanned ID and the number of embedded rows.
+func (s *SearchStore) embedChunk(afterID int64, batchSize, limit int) (int64, int, error) {
+	cursor := afterID
+	for {
+		rows, err := s.db.Query(`
+			SELECT e.id, e.title, e.content
+			FROM search_entries e
+			LEFT JOIN search_embeddings se ON e.id = se.entry_id
+			WHERE e.id > ? AND se.entry_id IS NULL
+			ORDER BY e.id
+			LIMIT ?`, cursor, limit)
+		if err != nil { // nocov
+			return cursor, 0, err
 		}
-		text := title
-		if content != "" {
-			if text != "" {
-				text += ": "
+
+		var (
+			chunk  []pendingEmbed
+			lastID = cursor
+		)
+		for rows.Next() {
+			var id int64
+			var title, content string
+			if rows.Scan(&id, &title, &content) != nil { // nocov
+				continue
 			}
-			text += content
+			lastID = id
+			text := title
+			if content != "" {
+				if text != "" {
+					text += ": "
+				}
+				text += content
+			}
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+			chunk = append(chunk, pendingEmbed{id: id, text: text})
 		}
-		if strings.TrimSpace(text) == "" {
+		rows.Close()
+
+		if lastID == cursor {
+			return cursor, 0, nil
+		}
+		cursor = lastID
+		if len(chunk) == 0 {
 			continue
 		}
-		chunk = append(chunk, pendingEmbed{id: id, text: text})
-	}
 
-	if len(chunk) == 0 {
-		return 0, nil
-	}
-
-	texts := make([]string, len(chunk))
-	for i, p := range chunk {
-		texts[i] = p.text
-	}
-
-	embeddings, err := s.embedder.EmbedTexts(texts, batchSize)
-	if err != nil {
-		return 0, fmt.Errorf("embed texts: %w", err)
-	}
-
-	tx, err := s.db.Begin()
-	if err != nil { // nocov
-		return 0, err
-	}
-	defer tx.Rollback()
-
-	stmt, err := tx.Prepare("INSERT OR REPLACE INTO search_embeddings (entry_id, embedding) VALUES (?, ?)")
-	if err != nil { // nocov
-		return 0, err
-	}
-	defer stmt.Close()
-
-	for i, emb := range embeddings {
-		blob := []byte{}
-		if len(emb) > 0 {
-			blob = float32sToBytes(emb)
+		texts := make([]string, len(chunk))
+		for i, p := range chunk {
+			texts[i] = p.text
 		}
-		if _, err := stmt.Exec(chunk[i].id, blob); err != nil { // nocov
-			return 0, err
-		}
-	}
 
-	if err := tx.Commit(); err != nil { // nocov
-		return 0, err
+		embeddings, err := s.embedder.EmbedTexts(texts, batchSize)
+		if err != nil {
+			return cursor, 0, fmt.Errorf("embed texts: %w", err)
+		}
+
+		tx, err := s.db.Begin()
+		if err != nil { // nocov
+			return cursor, 0, err
+		}
+		defer tx.Rollback()
+
+		stmt, err := tx.Prepare("INSERT OR REPLACE INTO search_embeddings (entry_id, embedding) VALUES (?, ?)")
+		if err != nil { // nocov
+			return cursor, 0, err
+		}
+		defer stmt.Close()
+
+		for i, emb := range embeddings {
+			blob := []byte{}
+			if len(emb) > 0 {
+				blob = float32sToBytes(emb)
+			}
+			if _, err := stmt.Exec(chunk[i].id, blob); err != nil { // nocov
+				return cursor, 0, err
+			}
+		}
+
+		if err := tx.Commit(); err != nil { // nocov
+			return cursor, 0, err
+		}
+		return cursor, len(chunk), nil
 	}
-	return len(chunk), nil
 }
 
 // UpdateSourceTimestamp fire-and-forgets the source's latest successful index time into search_meta for incremental reindex decisions.

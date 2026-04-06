@@ -9,11 +9,14 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
+
+	"mcpyeahyouknowme/core"
 
 	"github.com/ledongthuc/pdf"
 )
 
-const chunkSize = 4096
+const chunkSize = core.EmbedContextChars
 
 var (
 	reWikiLinkAlias = regexp.MustCompile(`\[\[[^\]|]+\|([^\]]+)\]\]`)
@@ -28,7 +31,7 @@ func extractMarkdown(path string) (title, content string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	content = string(data)
+	content = strings.ToValidUTF8(string(data), "")
 	title = extractMarkdownTitle(content, filepath.Base(path))
 	return title, content, nil
 }
@@ -61,23 +64,24 @@ func cleanMarkdownForIndex(content string) string {
 	return content
 }
 
-// chunkText splits text into ~chunkSize byte pieces on word boundaries, returning at least one chunk.
+// chunkText splits text into ~chunkSize rune pieces on word boundaries, returning at least one chunk.
 func chunkText(text string) []string {
-	text = strings.TrimSpace(text)
+	text = strings.TrimSpace(strings.ToValidUTF8(text, ""))
 	if len(text) == 0 {
 		return []string{""}
 	}
-	if len(text) <= chunkSize {
+	if utf8.RuneCountInString(text) <= chunkSize {
 		return []string{text}
 	}
 	var chunks []string
-	for len(text) > chunkSize {
+	for utf8.RuneCountInString(text) > chunkSize {
+		runes := []rune(text)
 		cut := chunkSize
-		for cut > chunkSize/2 && cut < len(text) && !unicode.IsSpace(rune(text[cut])) {
+		for cut > chunkSize/2 && cut < len(runes) && !unicode.IsSpace(runes[cut]) {
 			cut++
 		}
-		chunks = append(chunks, strings.TrimSpace(text[:cut]))
-		text = strings.TrimSpace(text[cut:])
+		chunks = append(chunks, strings.TrimSpace(string(runes[:cut])))
+		text = strings.TrimSpace(string(runes[cut:]))
 	}
 	if len(text) > 0 {
 		chunks = append(chunks, text)

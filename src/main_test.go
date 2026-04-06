@@ -35,7 +35,7 @@ func TestDispatchCommands(t *testing.T) {
 // Verifies the root command-name list matches the expected public CLI commands.
 func TestCommandNames(t *testing.T) {
 	expected := []string{
-		"mcp", "info", "completions", "core", "start", "stop",
+		"mcp", "status", "completions", "core", "start", "stop",
 		"restart", "reindex", "reset", "uninstall", "whatsapp", "gsuite", "browser_history", "notebook", "login",
 	}
 	if got := commandNames(topLevelCommands()); !reflect.DeepEqual(got, expected) {

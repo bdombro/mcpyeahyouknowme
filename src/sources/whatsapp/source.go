@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"mcpyeahyouknowme/core"
 )
@@ -259,8 +260,8 @@ func (w *Source) chatSearchEntries(sourceName string, messages []whatsAppMessage
 // Builds bounded transcript chunks from chronological chat messages so long conversations stay searchable without oversized rows.
 func (w *Source) buildChatChunks(messages []whatsAppMessageRecord) []whatsAppChatChunk {
 	const (
-		targetSize = 3000
-		maxSize    = 5000
+		targetSize = core.EmbedContextChars * 3 / 4
+		maxSize    = core.EmbedContextChars
 	)
 	header := formatChatChunkHeader(messages[0])
 	var chunks []whatsAppChatChunk
@@ -290,7 +291,7 @@ func (w *Source) buildChatChunks(messages []whatsAppMessageRecord) []whatsAppCha
 		current.Reset()
 		current.WriteString(header)
 		current.WriteString(content)
-		currentLen = len(header) + len(content)
+		currentLen = utf8.RuneCountInString(header) + utf8.RuneCountInString(content)
 		chunkStartID, chunkEndID = msg.ID, msg.ID
 		chunkStartDate, chunkEndDate = msg.Timestamp, msg.Timestamp
 		hasEntries = true
@@ -301,9 +302,9 @@ func (w *Source) buildChatChunks(messages []whatsAppMessageRecord) []whatsAppCha
 		if entry == "" {
 			continue
 		}
-		if len(header)+len(entry) > maxSize {
+		if utf8.RuneCountInString(header)+utf8.RuneCountInString(entry) > maxSize {
 			flush()
-			for _, part := range splitChatTranscriptEntry(entry, maxSize-len(header)) {
+			for _, part := range splitChatTranscriptEntry(entry, maxSize-utf8.RuneCountInString(header)) {
 				startChunk(msg, part)
 				flush()
 			}
@@ -313,14 +314,14 @@ func (w *Source) buildChatChunks(messages []whatsAppMessageRecord) []whatsAppCha
 			startChunk(msg, entry)
 			continue
 		}
-		if currentLen+2+len(entry) > targetSize {
+		if currentLen+2+utf8.RuneCountInString(entry) > targetSize {
 			flush()
 			startChunk(msg, entry)
 			continue
 		}
 		current.WriteString("\n\n")
 		current.WriteString(entry)
-		currentLen += 2 + len(entry)
+		currentLen += 2 + utf8.RuneCountInString(entry)
 		chunkEndID = msg.ID
 		chunkEndDate = msg.Timestamp
 	}
@@ -351,7 +352,7 @@ func formatChatChunkHeader(msg whatsAppMessageRecord) string {
 
 // Formats one WhatsApp message as transcript text so chunked search preserves sender and time context around each utterance.
 func (w *Source) formatChatTranscriptEntry(msg whatsAppMessageRecord) string {
-	body := strings.TrimSpace(msg.Content)
+	body := strings.TrimSpace(strings.ToValidUTF8(msg.Content, ""))
 	if body == "" {
 		return ""
 	}
@@ -376,18 +377,19 @@ func (w *Source) formatChatTranscriptEntry(msg whatsAppMessageRecord) string {
 
 // Splits oversized transcript entries so one unusually long WhatsApp message does not overflow the chat chunk size cap.
 func splitChatTranscriptEntry(entry string, limit int) []string {
-	if limit <= 0 || len(entry) <= limit {
+	if limit <= 0 || utf8.RuneCountInString(entry) <= limit {
 		return []string{entry}
 	}
 	var parts []string
 	remaining := entry
-	for len(remaining) > limit {
-		splitAt := strings.LastIndex(remaining[:limit], "\n")
+	for utf8.RuneCountInString(remaining) > limit {
+		prefix := truncateChatRunes(remaining, limit)
+		splitAt := strings.LastIndex(prefix, "\n")
 		if splitAt < limit/2 {
-			splitAt = strings.LastIndex(remaining[:limit], " ")
+			splitAt = strings.LastIndex(prefix, " ")
 		}
 		if splitAt < limit/2 {
-			splitAt = limit
+			splitAt = len(prefix)
 		}
 		parts = append(parts, strings.TrimSpace(remaining[:splitAt]))
 		remaining = strings.TrimSpace(remaining[splitAt:])
@@ -396,4 +398,17 @@ func splitChatTranscriptEntry(entry string, limit int) []string {
 		parts = append(parts, remaining)
 	}
 	return parts
+}
+
+// truncateChatRunes caps transcript text by rune count so chat chunking can
+// honor embedding-size budgets without splitting UTF-8 sequences.
+func truncateChatRunes(s string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	return string(runes[:limit])
 }
