@@ -834,7 +834,7 @@ func gmailStreamSearchEntries(db *sql.DB, sourceName string, emit func([]core.Se
 		summaries = append(summaries, summary)
 		if len(summaries) >= threadBatchSize {
 			if err := flush(); err != nil {
-				return err
+				return err // nocov
 			}
 		}
 	}

@@ -31,7 +31,7 @@
 | [`scanner.go`](#scannergo) | 99 | 106 | 93.4% |
 | `search_mcp.go` | 14 | 14 | 100.0% |
 | [`search_reset.go`](#search_resetgo) | 21 | 23 | 91.3% |
-| [`search_store.go`](#search_storego) | 180 | 209 | 86.1% |
+| [`search_store.go`](#search_storego) | 185 | 209 | 88.5% |
 | [`search_store_init.go`](#search_store_initgo) | 33 | 42 | 78.6% |
 | [`service.go`](#servicego) | 401 | 420 | 95.5% |
 | [`source.go`](#sourcego) | 500 | 514 | 97.3% |
@@ -42,7 +42,7 @@
 | [`system.go`](#systemgo) | 24 | 27 | 88.9% |
 | [`utils.go`](#utilsgo) | 0 | 47 | 0.0% |
 | [`vision.go`](#visiongo) | 0 | 20 | 0.0% |
-| **Total** | **4511** | **6162** | **73.2%** |
+| **Total** | **4516** | **6162** | **73.3%** |
 
 ## Uncovered Blocks
 
@@ -357,13 +357,6 @@
 - Lines 162–164 (1 stmt)
 - Lines 165–167 (1 stmt)
 - Lines 168–170 (1 stmt)
-- Lines 27–29 (1 stmt)
-- Lines 30–32 (1 stmt)
-- Lines 36–41 (3 stmts)
-- Lines 44–48 (2 stmts)
-- Lines 51–55 (2 stmts)
-- Lines 59–63 (2 stmts)
-- Lines 98–100 (1 stmt)
 - Lines 26–43 (12 stmts)
 - Lines 43–44 (1 stmt)
 - Lines 44–47 (2 stmts)
@@ -417,6 +410,13 @@
 - Lines 401–407 (3 stmts)
 - Lines 407–409 (1 stmt)
 - Lines 410–410 (1 stmt)
+- Lines 27–29 (1 stmt)
+- Lines 30–32 (1 stmt)
+- Lines 36–41 (3 stmts)
+- Lines 44–48 (2 stmts)
+- Lines 51–55 (2 stmts)
+- Lines 59–63 (2 stmts)
+- Lines 98–100 (1 stmt)
 - Lines 23–25 (1 stmt)
 - Lines 26–28 (1 stmt)
 - Lines 32–36 (3 stmts)
@@ -1011,7 +1011,6 @@
 - Lines 191–193 (1 stmt)
 - Lines 205–207 (1 stmt)
 - Lines 210–212 (1 stmt)
-- Lines 216–218 (1 stmt)
 - Lines 237–239 (1 stmt)
 - Lines 240–242 (1 stmt)
 - Lines 248–250 (1 stmt)
@@ -1019,12 +1018,9 @@
 - Lines 268–270 (1 stmt)
 - Lines 272–274 (1 stmt)
 - Lines 275–277 (1 stmt)
-- Lines 285–287 (1 stmt)
-- Lines 292–294 (1 stmt)
 - Lines 295–296 (1 stmt)
 - Lines 296–298 (1 stmt)
 - Lines 299–299 (1 stmt)
-- Lines 321–324 (2 stmts)
 - Lines 343–345 (1 stmt)
 - Lines 388–390 (2 stmts)
 - Lines 394–396 (1 stmt)
@@ -1136,11 +1132,11 @@
 - Lines 98–100 (1 stmt)
 - Lines 143–145 (1 stmt)
 - Lines 151–153 (1 stmt)
+- Lines 19–21 (1 stmt)
+- Lines 46–48 (1 stmt)
 - Lines 33–35 (1 stmt)
 - Lines 79–81 (1 stmt)
 - Lines 110–112 (1 stmt)
-- Lines 19–21 (1 stmt)
-- Lines 46–48 (1 stmt)
 - Lines 31–33 (1 stmt)
 - Lines 53–55 (1 stmt)
 - Lines 60–62 (1 stmt)

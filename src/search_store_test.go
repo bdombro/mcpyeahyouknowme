@@ -979,6 +979,62 @@ func TestReadOnlySearchIndexStats_noDB(t *testing.T) {
 	}
 }
 
+// ---------- rebuildFTSIfNeeded ----------
+
+// Verifies rebuildFTSIfNeeded returns an error when the DB is closed before counting entries.
+func TestSearchStore_rebuildFTSIfNeeded_closedDB(t *testing.T) {
+	store := newTestSearchStore(t)
+	// Insert an entry directly, bypassing FTS triggers so search_entries has rows but search_fts does not.
+	store.db.Exec("INSERT INTO search_entries (source, source_id, content_type, title, content) VALUES ('test', 'x1', 'note_content', 'T', 'T')")
+	store.db.Close()
+
+	err := store.rebuildFTSIfNeeded()
+	if err == nil || !strings.Contains(err.Error(), "count search entries") {
+		t.Fatalf("expected 'count search entries' error, got %v", err)
+	}
+}
+
+// Verifies rebuildFTSIfNeeded returns an error when the FTS table is missing.
+func TestSearchStore_rebuildFTSIfNeeded_droppedFTSTable(t *testing.T) {
+	store := newTestSearchStore(t)
+	store.db.Exec("INSERT INTO search_entries (source, source_id, content_type, title, content) VALUES ('test', 'x1', 'note_content', 'T', 'T')")
+	store.db.Exec("DROP TABLE IF EXISTS search_fts")
+
+	err := store.rebuildFTSIfNeeded()
+	if err == nil || !strings.Contains(err.Error(), "count fts rows") {
+		t.Fatalf("expected 'count fts rows' error, got %v", err)
+	}
+}
+
+// Verifies IndexEntries logs a warning (but does not fail) when rebuildFTSIfNeeded returns an error.
+// Drops FTS triggers and the FTS table so rebuildFTSIfNeeded hits the "count fts rows" error path,
+// which IndexEntries surfaces as a warning without propagating to callers.
+func TestSearchStore_IndexEntries_rebuildFTSWarning(t *testing.T) {
+	store := newTestSearchStore(t)
+	// Drop FTS triggers first so IndexEntries upserts succeed without the FTS table.
+	if err := store.BeginBulkIndex(); err != nil {
+		t.Fatalf("BeginBulkIndex: %v", err)
+	}
+	store.db.Exec("DROP TABLE IF EXISTS search_fts")
+	store.bulkFTS = false
+
+	// IndexEntries should succeed; rebuildFTSIfNeeded failure is only a warning.
+	if err := store.IndexEntries([]SearchEntry{{Source: "test", SourceID: "x1", ContentType: "note_content", Title: "U", Content: "U"}}); err != nil {
+		t.Fatalf("IndexEntries should not propagate rebuild warning, got: %v", err)
+	}
+}
+
+// Verifies LastIndexed returns zero time and logs when a stored timestamp cannot be parsed.
+func TestSearchStore_LastIndexed_invalidTimestamp(t *testing.T) {
+	store := newTestSearchStore(t)
+	store.db.Exec("INSERT INTO search_meta (source, last_indexed) VALUES ('test', 'not-a-date')")
+
+	got := store.LastIndexed("test")
+	if !got.IsZero() {
+		t.Errorf("expected zero time for invalid timestamp, got %v", got)
+	}
+}
+
 // Verifies read-only stats can inspect a populated on-disk search database.
 func TestReadOnlySearchIndexStats_withDB(t *testing.T) {
 	dir := t.TempDir()

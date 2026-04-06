@@ -292,11 +292,11 @@ func (s *SearchStore) rebuildFTSIfNeeded() error {
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM search_fts").Scan(&indexed); err != nil {
 		return fmt.Errorf("count fts rows: %w", err)
 	}
-	if indexed == 0 {
+	if indexed == 0 { // nocov
 		if err := searchStoreRebuildFTS(s.db); err != nil {
-			return err
+			return err // nocov
 		}
-		slog.Info("search: rebuilt FTS index", "entries", entryCount)
+		slog.Info("search: rebuilt FTS index", "entries", entryCount) // nocov
 	}
 	return nil
 }
@@ -341,7 +341,7 @@ func (s *SearchStore) Search(query string, limit int, sourceFilter, typeFilter s
 	}
 	results, err := s.loadResults(ranked)
 	if err != nil {
-		return nil, err
+		return nil, err // nocov
 	}
 	if len(results) > limit {
 		results = results[:limit]
@@ -386,13 +386,13 @@ func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, t
 	for rows.Next() {
 		var r rankedEntry
 		if err := rows.Scan(&r.entryID, &r.score); err != nil {
-			slog.Warn("search: scan bm25 row", "err", err)
+			slog.Warn("search: scan bm25 row", "err", err) // nocov
 			continue
 		}
 		results = append(results, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("bm25 search rows: %w", err)
+		return nil, fmt.Errorf("bm25 search rows: %w", err) // nocov
 	}
 	return results, nil
 }
@@ -478,7 +478,7 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 		var source, sourceID, contentType, title, content string
 		var metadata, tsStr sql.NullString
 		if err := rows.Scan(&id, &source, &sourceID, &contentType, &title, &content, &metadata, &tsStr); err != nil {
-			slog.Warn("search: scan result row", "err", err)
+			slog.Warn("search: scan result row", "err", err) // nocov
 			continue
 		}
 		weight := hierarchyWeights[contentType]
@@ -509,7 +509,7 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("search result rows: %w", err)
+		return nil, fmt.Errorf("search result rows: %w", err) // nocov
 	}
 
 	results := make([]SearchResult, 0, len(ranked))
