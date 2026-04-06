@@ -9,12 +9,11 @@
 #   binary is replaced, then restarted afterwards.
 #
 # Installation steps:
-#   1. Install ONNX Runtime via Homebrew (skipped if already present)
-#   2. Build binary
-#   3. (skipped if binary unchanged) Ensure ~/.local/bin is on PATH in .zshrc
-#   4. (skipped if binary unchanged) Configure zsh shell completions
-#   5. (skipped if binary unchanged) Stop daemon, replace binary
-#   6. (skipped if binary unchanged) Start daemon (install plist if not already present)
+#   1. Build binary
+#   2. (skipped if binary unchanged) Ensure ~/.local/bin is on PATH in .zshrc
+#   3. (skipped if binary unchanged) Configure zsh shell completions
+#   4. (skipped if binary unchanged) Stop daemon, replace binary
+#   5. (skipped if binary unchanged) Start daemon (install plist if not already present)
 #
 # Usage:
 #   ./scripts/install.sh    # From repo root
@@ -50,23 +49,8 @@ PLIST_LABEL="com.mcpyeahyouknowme.core"
 PLIST="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
 INSTALLED_BIN="$HOME/.local/bin/mcpyeahyouknowme"
 
-step_1_onnx() {
-	echo "=== Step 1: Installing ONNX Runtime ==="
-	if command -v brew >/dev/null 2>&1; then
-		if brew --prefix onnxruntime >/dev/null 2>&1; then
-			echo -e "✓ ONNX Runtime already installed\n"
-		else
-			brew install onnxruntime
-			echo -e "✓ ONNX Runtime installed\n"
-		fi
-	else
-		echo "Error: Homebrew is required. Install from https://brew.sh" >&2
-		exit 1
-	fi
-}
-
-step_2_build() {
-	echo "=== Step 2: Building binary ==="
+step_1_build() {
+	echo "=== Step 1: Building binary ==="
 	"$ROOT/scripts/build.sh"
 	echo -e "✓ Build complete\n"
 }
@@ -80,8 +64,8 @@ binary_changed() {
 	[ "$built_md5" != "$installed_md5" ]
 }
 
-step_3_path() {
-	echo "=== Step 3: Configuring PATH ==="
+step_2_path() {
+	echo "=== Step 2: Configuring PATH ==="
 	if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
 		if [ -f ~/.zshrc ]; then
 			if ! grep -qF 'export PATH="$HOME/.local/bin:$PATH"' ~/.zshrc 2>/dev/null; then
@@ -101,8 +85,8 @@ step_3_path() {
 	fi
 }
 
-step_4_completions() {
-	echo "=== Step 4: Configuring shell completions ==="
+step_3_completions() {
+	echo "=== Step 3: Configuring shell completions ==="
 	local comp_line='eval "$(mcpyeahyouknowme completions zsh 2>/dev/null)"'
 	if ! grep -qF "$comp_line" ~/.zshrc 2>/dev/null; then
 		echo "" >> ~/.zshrc
@@ -114,8 +98,8 @@ step_4_completions() {
 	fi
 }
 
-step_5_install_binary() {
-	echo "=== Step 5: Installing binary ==="
+step_4_install_binary() {
+	echo "=== Step 4: Installing binary ==="
 	if [ -f "$PLIST" ]; then
 		echo "Stopping daemon..."
 		launchctl unload "$PLIST" 2>/dev/null || true
@@ -136,8 +120,8 @@ step_5_install_binary() {
 	echo -e "✓ Installed $INSTALLED_BIN\n"
 }
 
-step_6_daemon() {
-	echo "=== Step 6: Starting daemon ==="
+step_5_daemon() {
+	echo "=== Step 5: Starting daemon ==="
 	if [ "$(uname -s)" != "Darwin" ]; then
 		echo "Error: daemon is only supported on macOS (LaunchAgent)." >&2
 		exit 1
@@ -186,14 +170,13 @@ main() {
 	echo "Starting mcpyeahyouknowme installation..."
 	echo ""
 
-	step_1_onnx
-	step_2_build
+	step_1_build
 
 	if binary_changed; then
-		step_3_path
-		step_4_completions
-		step_5_install_binary
-		step_6_daemon
+		step_2_path
+		step_3_completions
+		step_4_install_binary
+		step_5_daemon
 	else
 		echo -e "✓ Binary unchanged — skipping remaining steps\n"
 	fi

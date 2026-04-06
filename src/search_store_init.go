@@ -10,7 +10,7 @@ import (
 )
 
 // NewSearchStore opens or creates search.db for daemon/MCP/CLI ownership, applying WAL and busy-timeout settings before use.
-func NewSearchStore(dir string, embedder EmbedderInterface) (*SearchStore, error) {
+func NewSearchStore(dir string) (*SearchStore, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("create search dir: %w", err)
 	}
@@ -24,14 +24,14 @@ func NewSearchStore(dir string, embedder EmbedderInterface) (*SearchStore, error
 
 	db.Exec("PRAGMA journal_mode=WAL")
 	db.Exec("PRAGMA busy_timeout=30000")
-	db.Exec("PRAGMA mmap_size=268435456")
+	db.Exec("PRAGMA mmap_size=67108864")
 
 	if err := initSearchSchema(db); err != nil {
 		db.Close()
 		return nil, err
 	}
 
-	return &SearchStore{db: db, embedder: embedder}, nil
+	return &SearchStore{db: db}, nil
 }
 
 const (
@@ -53,11 +53,11 @@ var searchStoreExecSQL = func(db *sql.DB, statement string) error {
 }
 
 // NewSearchStoreFromDB creates a SearchStore from an existing *sql.DB (for tests).
-func NewSearchStoreFromDB(db *sql.DB, embedder EmbedderInterface) (*SearchStore, error) {
+func NewSearchStoreFromDB(db *sql.DB) (*SearchStore, error) {
 	if err := initSearchSchema(db); err != nil {
 		return nil, err
 	}
-	return &SearchStore{db: db, embedder: embedder}, nil
+	return &SearchStore{db: db}, nil
 }
 
 // initSearchSchema creates the search tables, FTS triggers, and metadata tables used by indexing and queries.
@@ -89,14 +89,6 @@ func initSearchSchema(db *sql.DB) error {
 
 	if err := createSearchFTSTriggers(db); err != nil {
 		return err
-	}
-
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS search_embeddings (
-		entry_id INTEGER PRIMARY KEY REFERENCES search_entries(id) ON DELETE CASCADE,
-		embedding BLOB NOT NULL
-	)`)
-	if err != nil {
-		return fmt.Errorf("create search_embeddings: %w", err)
 	}
 
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS search_meta (

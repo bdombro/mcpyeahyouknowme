@@ -4,9 +4,14 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"mcpyeahyouknowme/core"
 
 	"google.golang.org/api/gmail/v1"
 )
@@ -438,6 +443,140 @@ func TestInitGmailSchema_migratesLegacyRowsAndBuildsThreads(t *testing.T) {
 	}
 }
 
+// Verifies initGmailSchema drops body_raw from gmail_messages and last_message_id /
+// thread_text_visible from gmail_threads when upgrading from a legacy schema.
+func TestInitGmailSchema_migratesBodyRawAndThreadColumns(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)&cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	// Pre-create gmail_messages with body_raw but without body_visible so the migration runs.
+	_, err = db.Exec(`CREATE TABLE gmail_messages (
+		id TEXT PRIMARY KEY,
+		thread_id TEXT NOT NULL DEFAULT '',
+		labels TEXT NOT NULL DEFAULT '',
+		folder TEXT NOT NULL DEFAULT '',
+		subject TEXT NOT NULL DEFAULT '',
+		from_addr TEXT NOT NULL DEFAULT '',
+		to_addrs TEXT NOT NULL DEFAULT '',
+		cc_addrs TEXT NOT NULL DEFAULT '',
+		bcc_addrs TEXT NOT NULL DEFAULT '',
+		date TEXT NOT NULL DEFAULT '',
+		snippet TEXT NOT NULL DEFAULT '',
+		body_raw TEXT NOT NULL DEFAULT '',
+		has_attachments INTEGER NOT NULL DEFAULT 0,
+		size_estimate INTEGER NOT NULL DEFAULT 0,
+		last_synced TEXT NOT NULL DEFAULT ''
+	)`)
+	if err != nil {
+		t.Fatalf("create legacy gmail_messages: %v", err)
+	}
+
+	// Pre-create gmail_threads with old last_message_id and thread_text_visible columns.
+	_, err = db.Exec(`CREATE TABLE gmail_threads (
+		thread_id TEXT PRIMARY KEY,
+		subject TEXT NOT NULL DEFAULT '',
+		participants TEXT NOT NULL DEFAULT '',
+		message_count INTEGER NOT NULL DEFAULT 0,
+		first_date TEXT NOT NULL DEFAULT '',
+		last_date TEXT NOT NULL DEFAULT '',
+		last_synced TEXT NOT NULL DEFAULT '',
+		last_message_id TEXT NOT NULL DEFAULT '',
+		thread_text_visible TEXT NOT NULL DEFAULT ''
+	)`)
+	if err != nil {
+		t.Fatalf("create legacy gmail_threads: %v", err)
+	}
+
+	if err := initGmailSchema(db); err != nil {
+		t.Fatalf("initGmailSchema: %v", err)
+	}
+
+	for _, tc := range []struct{ table, column string }{
+		{"gmail_messages", "body_raw"},
+		{"gmail_threads", "last_message_id"},
+		{"gmail_threads", "thread_text_visible"},
+	} {
+		has, err := tableHasColumn(db, tc.table, tc.column)
+		if err != nil {
+			t.Fatalf("tableHasColumn %s.%s: %v", tc.table, tc.column, err)
+		}
+		if has {
+			t.Errorf("expected %s.%s to be dropped after migration", tc.table, tc.column)
+		}
+	}
+}
+
+// Verifies backfillGmailVisibleBodies handles the case where both legacy body_text and body_raw columns exist.
+func TestBackfillGmailVisibleBodies_bothLegacyColumns(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)&cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`CREATE TABLE gmail_messages (
+		id TEXT PRIMARY KEY,
+		body_text TEXT NOT NULL DEFAULT '',
+		body_raw TEXT NOT NULL DEFAULT '',
+		body_visible TEXT NOT NULL DEFAULT ''
+	)`)
+	if err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	_, err = db.Exec(`INSERT INTO gmail_messages (id, body_text, body_raw, body_visible) VALUES ('m1', 'text body', 'raw body', '')`)
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	filled, err := backfillGmailVisibleBodies(db)
+	if err != nil {
+		t.Fatalf("backfillGmailVisibleBodies: %v", err)
+	}
+	if !filled {
+		t.Error("expected filled=true when both legacy columns present and row needs backfill")
+	}
+}
+
+// Verifies backfillGmailVisibleBodiesFromLegacyColumns skips rows that already have body_visible set
+// and rows where both source body columns are empty.
+func TestBackfillGmailVisibleBodiesFromLegacyColumns_skipsFilledAndEmpty(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)&cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`CREATE TABLE gmail_messages (
+		id TEXT PRIMARY KEY,
+		body_raw TEXT NOT NULL DEFAULT '',
+		body_visible TEXT NOT NULL DEFAULT ''
+	)`)
+	if err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	// Row with body_visible already populated — should be skipped.
+	_, err = db.Exec(`INSERT INTO gmail_messages (id, body_raw, body_visible) VALUES ('m1', 'content', 'already filled')`)
+	if err != nil {
+		t.Fatalf("insert m1: %v", err)
+	}
+	// Row with empty source body — should be skipped.
+	_, err = db.Exec(`INSERT INTO gmail_messages (id, body_raw, body_visible) VALUES ('m2', '', '')`)
+	if err != nil {
+		t.Fatalf("insert m2: %v", err)
+	}
+
+	filled, err := backfillGmailVisibleBodiesFromLegacyColumns(db, `SELECT id, '', body_raw, body_visible FROM gmail_messages`)
+	if err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if filled {
+		t.Error("expected filled=false when all rows are skipped")
+	}
+}
+
 // Verifies direct message storage persists Gmail rows without needing the higher-level sync path.
 func TestStoreGmailMessage_direct(t *testing.T) {
 	db := newTestDB(t)
@@ -747,6 +886,176 @@ func TestLoadAllGmailMessagesByThread_skipsEmptyThreadID(t *testing.T) {
 	}
 	if len(grouped) != 0 {
 		t.Fatalf("expected orphan row to be skipped, got %#v", grouped)
+	}
+}
+
+// Verifies gmailStreamSearchEntries accepts a nil emitter so callers can probe availability without panicking.
+func TestGmailStreamSearchEntries_nilEmit(t *testing.T) {
+	db := newTestDB(t)
+	seedGmail(t, db)
+	if err := gmailStreamSearchEntries(db, "gsuite", nil); err != nil {
+		t.Fatalf("gmailStreamSearchEntries(nil): %v", err)
+	}
+}
+
+// Verifies gmailStreamSearchEntries emits thread-derived search entries in callback batches.
+func TestGmailStreamSearchEntries(t *testing.T) {
+	db := newTestDB(t)
+	seedGmail(t, db)
+
+	var batches int
+	var entries []core.SearchEntry
+	if err := gmailStreamSearchEntries(db, "gsuite", func(batch []core.SearchEntry) error {
+		batches++
+		entries = append(entries, batch...)
+		return nil
+	}); err != nil {
+		t.Fatalf("gmailStreamSearchEntries: %v", err)
+	}
+	if batches == 0 {
+		t.Fatal("expected at least one emitted batch")
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected emitted Gmail search entries")
+	}
+}
+
+// Verifies gmailStreamSearchEntries returns no batches for an empty thread cache.
+func TestGmailStreamSearchEntries_empty(t *testing.T) {
+	db := newTestDB(t)
+	batches := 0
+	if err := gmailStreamSearchEntries(db, "gsuite", func(batch []core.SearchEntry) error {
+		batches++
+		if len(batch) != 0 {
+			t.Fatalf("expected empty db to emit no entries, got %#v", batch)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("gmailStreamSearchEntries: %v", err)
+	}
+	if batches != 0 {
+		t.Fatalf("expected no emitted batches, got %d", batches)
+	}
+}
+
+// Verifies gmailStreamSearchEntries skips blank thread IDs without emitting empty batches.
+func TestGmailStreamSearchEntries_skipsBlankThreadIDs(t *testing.T) {
+	db := newTestDB(t)
+	if _, err := db.Exec(`INSERT INTO gmail_threads
+		(thread_id, subject, participants, message_count, first_date, last_date, last_synced)
+		VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`, "", "Blank", "", 0, "", ""); err != nil {
+		t.Fatalf("insert blank thread: %v", err)
+	}
+	batches := 0
+	if err := gmailStreamSearchEntries(db, "gsuite", func(batch []core.SearchEntry) error {
+		batches++
+		if len(batch) != 0 {
+			t.Fatalf("expected blank thread to emit no entries, got %#v", batch)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("gmailStreamSearchEntries: %v", err)
+	}
+	if batches != 0 {
+		t.Fatalf("expected no emitted batches, got %d", batches)
+	}
+}
+
+// Verifies gmailStreamSearchEntries propagates emitter failures so callers can stop long-running exports.
+func TestGmailStreamSearchEntries_emitError(t *testing.T) {
+	db := newTestDB(t)
+	seedGmail(t, db)
+	if err := gmailStreamSearchEntries(db, "gsuite", func([]core.SearchEntry) error {
+		return sql.ErrConnDone
+	}); err == nil {
+		t.Fatal("expected emit error")
+	}
+}
+
+// Verifies gmailStreamSearchEntries flushes intermediate batches once the thread batch size threshold is reached.
+func TestGmailStreamSearchEntries_flushesLargeThreadBatches(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "gmail-stream.db")
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+	if err := initGSuiteDB(db); err != nil {
+		t.Fatalf("initGSuiteDB: %v", err)
+	}
+	for i := 0; i < 100; i++ {
+		threadID := fmt.Sprintf("thread-%03d", i)
+		date := fmt.Sprintf("2024-03-%02dT10:00:00Z", (i%28)+1)
+		if _, err := db.Exec(`INSERT INTO gmail_messages
+			(id, thread_id, labels, folder, subject, from_addr, to_addrs, cc_addrs, bcc_addrs,
+			 date, snippet, body_visible, has_attachments, size_estimate, last_synced)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+			"msg-"+threadID, threadID, "INBOX", "INBOX", "Subject "+threadID, "alice@example.com",
+			"bob@example.com", "", "", date, "snippet", "body", 0, 100); err != nil {
+			t.Fatalf("insert gmail message: %v", err)
+		}
+		if _, err := db.Exec(`INSERT INTO gmail_threads
+			(thread_id, subject, participants, message_count, first_date, last_date, last_synced)
+			VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+			threadID, "Subject "+threadID, "alice@example.com, bob@example.com", 1, date, date); err != nil {
+			t.Fatalf("insert gmail thread: %v", err)
+		}
+	}
+
+	batches := 0
+	if err := gmailStreamSearchEntries(db, "gsuite", func(_ []core.SearchEntry) error {
+		batches++
+		return nil
+	}); err != nil {
+		t.Fatalf("gmailStreamSearchEntries: %v", err)
+	}
+	if batches == 0 {
+		t.Fatal("expected at least one flushed batch")
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("expected file-backed Gmail DB to exist: %v", err)
+	}
+}
+
+// Verifies loadGmailMessagesByThreadBatch returns an empty grouping for an empty summary batch.
+func TestLoadGmailMessagesByThreadBatch_empty(t *testing.T) {
+	db := newTestDB(t)
+	grouped, err := loadGmailMessagesByThreadBatch(db, nil)
+	if err != nil {
+		t.Fatalf("loadGmailMessagesByThreadBatch: %v", err)
+	}
+	if len(grouped) != 0 {
+		t.Fatalf("expected empty grouping, got %#v", grouped)
+	}
+}
+
+// Verifies loadGmailMessagesByThreadBatch loads only the requested thread IDs.
+func TestLoadGmailMessagesByThreadBatch(t *testing.T) {
+	db := newTestDB(t)
+	seedGmail(t, db)
+
+	grouped, err := loadGmailMessagesByThreadBatch(db, []gmailThreadSearchSummary{{
+		threadID: "thread1",
+	}})
+	if err != nil {
+		t.Fatalf("loadGmailMessagesByThreadBatch: %v", err)
+	}
+	if len(grouped["thread1"]) != 2 {
+		t.Fatalf("expected 2 thread1 messages, got %#v", grouped["thread1"])
+	}
+}
+
+// Verifies loadGmailMessagesByThreadBatch ignores blank thread IDs in the requested summary batch.
+func TestLoadGmailMessagesByThreadBatch_skipsBlankIDs(t *testing.T) {
+	db := newTestDB(t)
+	seedGmail(t, db)
+
+	grouped, err := loadGmailMessagesByThreadBatch(db, []gmailThreadSearchSummary{{threadID: ""}})
+	if err != nil {
+		t.Fatalf("loadGmailMessagesByThreadBatch: %v", err)
+	}
+	if len(grouped) != 0 {
+		t.Fatalf("expected blank thread IDs to be skipped, got %#v", grouped)
 	}
 }
 

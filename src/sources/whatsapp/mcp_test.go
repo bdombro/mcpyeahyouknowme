@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -359,6 +361,66 @@ func TestWhatsAppSource_SearchEntries_noContacts(t *testing.T) {
 	}
 }
 
+// Verifies StreamSearchEntries propagates emit failures after producing earlier WhatsApp batches.
+func TestWhatsAppSource_StreamSearchEntries_emitError(t *testing.T) {
+	store := newTestStoreWithContacts(t)
+	ws := NewSourceFromStore(store, "http://localhost:1")
+	if err := ws.StreamSearchEntries(nil); err != nil {
+		t.Fatalf("StreamSearchEntries(nil): %v", err)
+	}
+
+	calls := 0
+	err := ws.StreamSearchEntries(func([]core.SearchEntry) error {
+		calls++
+		if calls == 2 {
+			return fmt.Errorf("stop")
+		}
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected emit error")
+	}
+	if calls < 2 {
+		t.Fatalf("expected at least two batches before failure, got %d", calls)
+	}
+}
+
+// Verifies HasChangesSince checks WhatsApp DB and WAL mtimes so incremental indexing can skip unchanged caches.
+func TestWhatsAppSource_HasChangesSince(t *testing.T) {
+	dataDir := t.TempDir()
+	ws := &Source{dataDir: dataDir}
+	if !ws.HasChangesSince(time.Time{}) {
+		t.Fatal("expected zero watermark to force indexing")
+	}
+	if !ws.HasChangesSince(time.Now()) {
+		t.Fatal("expected missing WhatsApp files to trigger indexing")
+	}
+
+	dbPath := filepath.Join(dataDir, "messages.db")
+	walPath := filepath.Join(dataDir, "messages.db-wal")
+	if err := os.WriteFile(dbPath, []byte("db"), 0o644); err != nil {
+		t.Fatalf("write db: %v", err)
+	}
+	if err := os.WriteFile(walPath, []byte("wal"), 0o644); err != nil {
+		t.Fatalf("write wal: %v", err)
+	}
+	oldTime := time.Now().Add(-2 * time.Hour)
+	newTime := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(dbPath, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes db: %v", err)
+	}
+	if err := os.Chtimes(walPath, newTime, newTime); err != nil {
+		t.Fatalf("chtimes wal: %v", err)
+	}
+
+	if ws.HasChangesSince(time.Now()) {
+		t.Fatal("expected future watermark to skip unchanged WhatsApp cache")
+	}
+	if !ws.HasChangesSince(time.Now().Add(-90 * time.Minute)) {
+		t.Fatal("expected WAL change to trigger WhatsApp reindex")
+	}
+}
+
 // Verifies SearchEntries formats chat-content chunks with sender labels for inbound and self-authored messages.
 func TestWhatsAppSource_SearchEntries_senderPrepend(t *testing.T) {
 	store := newTestStoreWithContacts(t)
@@ -645,4 +707,44 @@ func TestMCP_SendMessage_missingArgs(t *testing.T) {
 	s, _ := buildTestMCPServer(t)
 	text := callToolRaw(t, s, "whatsapp_send_message", map[string]interface{}{})
 	requireContains(t, text, "recipient parameter is required")
+}
+
+// Verifies chatNameEntries returns an error when the DB has been closed so StreamSearchEntries surfaces it.
+func TestWhatsAppSource_chatNameEntries_dbError(t *testing.T) {
+	store := newTestStore(t)
+	ws := NewSourceFromStore(store, "http://localhost:1")
+	store.db.Close()
+
+	_, err := ws.chatNameEntries()
+	if err == nil {
+		t.Fatal("expected error from closed DB in chatNameEntries")
+	}
+}
+
+// Verifies participantEntries silently returns nil when the contacts DB is inaccessible,
+// since the contacts DB is optional and may legitimately be unavailable.
+func TestWhatsAppSource_participantEntries_dbError(t *testing.T) {
+	store := newTestStoreWithContacts(t)
+	ws := NewSourceFromStore(store, "http://localhost:1")
+	store.contactsDB.Close()
+
+	entries, err := ws.participantEntries()
+	if err != nil {
+		t.Fatalf("expected closed contacts DB to be silently ignored, got error: %v", err)
+	}
+	if entries != nil {
+		t.Fatalf("expected nil entries when contacts DB is closed, got %d", len(entries))
+	}
+}
+
+// Verifies streamChatContentEntries returns an error when the messages DB has been closed.
+func TestWhatsAppSource_streamChatContentEntries_dbError(t *testing.T) {
+	store := newTestStore(t)
+	ws := NewSourceFromStore(store, "http://localhost:1")
+	store.db.Close()
+
+	err := ws.streamChatContentEntries(func([]core.SearchEntry) error { return nil })
+	if err == nil {
+		t.Fatal("expected error from closed DB in streamChatContentEntries")
+	}
 }

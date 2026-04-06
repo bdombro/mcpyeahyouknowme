@@ -293,6 +293,40 @@ func TestInfoLines(t *testing.T) {
 	}
 }
 
+// Verifies HasChangesSince checks snapshot and WAL mtimes so incremental indexing can skip unchanged snapshots.
+func TestSource_HasChangesSince(t *testing.T) {
+	dataDir := t.TempDir()
+	src := NewSource(dataDir)
+	if !src.HasChangesSince(time.Time{}) {
+		t.Fatal("expected zero watermark to force indexing")
+	}
+	if !src.HasChangesSince(time.Now()) {
+		t.Fatal("expected missing snapshot files to trigger indexing")
+	}
+
+	if err := os.WriteFile(src.snapshotPath, []byte("db"), 0o644); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+	if err := os.WriteFile(src.snapshotPath+"-wal", []byte("wal"), 0o644); err != nil {
+		t.Fatalf("write wal: %v", err)
+	}
+	oldTime := time.Now().Add(-2 * time.Hour)
+	newTime := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(src.snapshotPath, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes snapshot: %v", err)
+	}
+	if err := os.Chtimes(src.snapshotPath+"-wal", newTime, newTime); err != nil {
+		t.Fatalf("chtimes wal: %v", err)
+	}
+
+	if src.HasChangesSince(time.Now()) {
+		t.Fatal("expected future watermark to skip unchanged snapshot")
+	}
+	if !src.HasChangesSince(time.Now().Add(-90 * time.Minute)) {
+		t.Fatal("expected WAL change to trigger browser history reindex")
+	}
+}
+
 // assertErr builds deterministic errors for compact source error-path assertions.
 func assertErr(msg string) error { return &testErr{msg: msg} }
 

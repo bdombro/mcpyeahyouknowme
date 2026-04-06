@@ -120,8 +120,11 @@ func TestInfoLines_WithDB(t *testing.T) {
 	for _, l := range lines {
 		if containsStr(l, "Docs") {
 			found = true
-			if containsStr(l, "~") && containsStr(l, "MB") {
+			if containsStr(l, "MB") {
 				foundAppSize = true
+			}
+			if containsStr(l, "~") {
+				t.Fatalf("expected docs size without approximation marker, got: %v", lines)
 			}
 		}
 		if containsStr(l, "Database:") && containsStr(l, "MB") {

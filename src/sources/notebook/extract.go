@@ -16,7 +16,7 @@ import (
 	"github.com/ledongthuc/pdf"
 )
 
-const chunkSize = core.EmbedContextChars
+const chunkSize = core.ChunkMaxChars
 
 var (
 	reWikiLinkAlias = regexp.MustCompile(`\[\[[^\]|]+\|([^\]]+)\]\]`)
@@ -55,7 +55,7 @@ func stemName(filename string) string {
 	return strings.TrimSuffix(base, ext)
 }
 
-// Cleans markdown link syntax before indexing so FTS and embeddings keep human-readable text without URL noise.
+// Cleans markdown link syntax before indexing so FTS keeps human-readable text without URL noise.
 func cleanMarkdownForIndex(content string) string {
 	content = reWikiLinkAlias.ReplaceAllString(content, "$1")
 	content = reWikiLink.ReplaceAllString(content, "$1")

@@ -27,6 +27,7 @@ var gmailAppDef = &appDef{
 	syncFunc:      syncGmail,
 	registerTools: registerGmailTools,
 	searchEntries: gmailSearchEntries,
+	streamEntries: gmailStreamSearchEntries,
 	countRows:     func(db *sql.DB) (int, error) { return countTable(db, "gmail_messages") }, // nocov
 	tablesToDrop:  []string{"gmail_threads", "gmail_messages", "gmail_messages_fts"},
 }
@@ -777,34 +778,111 @@ func gmailSearchEntriesForThread(sourceName string, summary gmailThreadSearchSum
 	return entries
 }
 
-// gmailSearchEntries walks the derived thread cache and expands each thread into global search entries.
+// gmailSearchEntries collects the streamed Gmail thread batches so non-daemon
+// callers can preserve the older slice-returning SearchEntries behavior.
 func gmailSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
+	var entries []core.SearchEntry
+	err := gmailStreamSearchEntries(db, sourceName, func(batch []core.SearchEntry) error {
+		entries = append(entries, batch...)
+		return nil
+	})
+	return entries, err
+}
+
+// gmailStreamSearchEntries emits Gmail thread-derived search rows in bounded
+// thread batches so large inboxes avoid one giant in-memory message map.
+func gmailStreamSearchEntries(db *sql.DB, sourceName string, emit func([]core.SearchEntry) error) error {
+	if emit == nil {
+		return nil
+	}
 	threadRows, err := db.Query(`SELECT thread_id, subject, participants, message_count, first_date, last_date
 		FROM gmail_threads ORDER BY last_date DESC, thread_id`)
 	if err != nil { // nocov
-		return nil, err
+		return err
 	}
-	var summaries []gmailThreadSearchSummary
+	defer threadRows.Close()
+
+	const threadBatchSize = 100
+	summaries := make([]gmailThreadSearchSummary, 0, threadBatchSize)
+	flush := func() error {
+		if len(summaries) == 0 {
+			return nil
+		}
+		groupedMessages, err := loadGmailMessagesByThreadBatch(db, summaries)
+		if err != nil { // nocov
+			return err
+		}
+		var batch []core.SearchEntry
+		for _, summary := range summaries {
+			if summary.threadID == "" {
+				continue
+			}
+			batch = append(batch, gmailSearchEntriesForThread(sourceName, summary, groupedMessages[summary.threadID])...)
+		}
+		summaries = summaries[:0]
+		if len(batch) == 0 {
+			return nil
+		}
+		return emit(batch)
+	}
+
 	for threadRows.Next() {
 		var summary gmailThreadSearchSummary
 		if err := threadRows.Scan(&summary.threadID, &summary.subject, &summary.participants, &summary.messageCount, &summary.firstDate, &summary.lastDate); err != nil { // nocov
 			continue
 		}
 		summaries = append(summaries, summary)
+		if len(summaries) >= threadBatchSize {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
 	}
-	threadRows.Close()
 	if err := threadRows.Err(); err != nil { // nocov
-		return nil, err
+		return err
 	}
-	groupedMessages, err := loadAllGmailMessagesByThread(db)
+	return flush()
+}
+
+// loadGmailMessagesByThreadBatch loads and groups the stored messages for a
+// bounded thread summary batch so streamed Gmail indexing avoids all-thread maps.
+func loadGmailMessagesByThreadBatch(db *sql.DB, summaries []gmailThreadSearchSummary) (map[string][]gmailMessageRecord, error) {
+	if len(summaries) == 0 {
+		return map[string][]gmailMessageRecord{}, nil
+	}
+
+	threadIDs := make([]string, 0, len(summaries))
+	placeholders := make([]string, 0, len(summaries))
+	args := make([]interface{}, 0, len(summaries))
+	for _, summary := range summaries {
+		if summary.threadID == "" {
+			continue
+		}
+		threadIDs = append(threadIDs, summary.threadID)
+		placeholders = append(placeholders, "?")
+		args = append(args, summary.threadID)
+	}
+	if len(threadIDs) == 0 {
+		return map[string][]gmailMessageRecord{}, nil
+	}
+
+	rows, err := db.Query(`SELECT id, thread_id, subject, from_addr, to_addrs, cc_addrs, bcc_addrs, date, folder,
+		labels, body_visible, has_attachments
+		FROM gmail_messages WHERE thread_id IN (`+strings.Join(placeholders, ",")+`)`, args...)
 	if err != nil { // nocov
 		return nil, err
 	}
-	var entries []core.SearchEntry
-	for _, summary := range summaries {
-		entries = append(entries, gmailSearchEntriesForThread(sourceName, summary, groupedMessages[summary.threadID])...)
+	defer rows.Close()
+
+	messages, err := scanGmailMessages(rows)
+	if err != nil { // nocov
+		return nil, err
 	}
-	return entries, nil
+	grouped := make(map[string][]gmailMessageRecord, len(threadIDs))
+	for _, msg := range messages {
+		grouped[msg.ThreadID] = append(grouped[msg.ThreadID], msg)
+	}
+	return grouped, nil
 }
 
 type gmailMessageRecord struct {
@@ -1228,8 +1306,8 @@ func loadGmailThreadMeta(db *sql.DB, threadID string) (gmailThreadRecord, error)
 // buildGmailThreadChunks groups transcript entries into bounded chunks for global search indexing.
 func buildGmailThreadChunks(subject, participants string, messages []gmailMessageRecord) []gmailThreadChunk {
 	const (
-		targetSize = core.EmbedContextChars * 3 / 4
-		maxSize    = core.EmbedContextChars
+		targetSize = core.ChunkMaxChars * 3 / 4
+		maxSize    = core.ChunkMaxChars
 	)
 	header := formatThreadChunkHeader(subject, participants)
 	var chunks []gmailThreadChunk

@@ -1,6 +1,16 @@
 # Product Spec
 
-A single Go binary that provides a pluggable [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data sources. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides via Google APIs with OAuth 2.0), **Google Places** (live business and address lookup via the Places API), **Brave Search** (live web search via the Brave Search API), **Browser History** (local Chrome/Brave history snapshots), and **Notebook** (user-configured local markdown, PDF, and image directories).
+A single Go binary providing a unified [MCP](https://modelcontextprotocol.io/) server for AI assistants to access personal data. Currently supports **WhatsApp** (via [whatsmeow](https://github.com/tulir/whatsmeow)), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides via Google APIs with OAuth 2.0), **Google Places** (live business and address lookup via the Places API), **Brave Search** (live web search via the Brave Search API), **Browser History** (local Chrome/Brave history snapshots), and **Notebook** (user-configured local markdown, PDF, and image directories).
+
+## Design Philosophy
+
+**One MCP to rule them all.** Every data source is registered in a single MCP server behind one stdio endpoint. The AI assistant uses one toolset with consistent naming conventions, shared error handling, and a uniform search interface — no per-source server configuration, no MCP proxy, no tool namespace collisions.
+
+**Global search as the entry point.** The `search` tool performs BM25 keyword search across all (except live-lookup sources) connected sources simultaneously. A single query surfaces the most relevant emails, chats, notes, calendar events, documents, and visited URLs in a ranked list. Each result carries a `metadata_hint` that tells the LLM which source-specific tool to call next for the full content. This makes `search` the default first move for memory-retrieval questions, with source-specific tools as precision follow-ups.
+
+**Offline-first, privacy-preserving.** All data (except live-lookup sources) is synced into local SQLite databases in `~/.local/share/mcpyeahyouknowme/`. Every MCP read tool queries local SQLite directly — zero network latency and no data leaves the machine until the user explicitly triggers a write or live-lookup tool. The background core daemon handles sync and search indexing; the MCP server is a pure reader.
+
+**Performance** Written in highly-tuned Golang, vs. others which are usually untuned Python. Is faster and uses less resources.
 
 ## Building
 
@@ -41,7 +51,7 @@ Authenticates with Google using OAuth 2.0 for the unified Google Suite source. O
 mcpyeahyouknowme core
 ```
 
-Runs all enabled data source core services and the search indexer. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on `127.0.0.1:8080` (loopback only). For Google Suite: syncs each enabled Google app every 5 minutes via the corresponding Google APIs. The daemon also re-reads config, starts or stops core-backed sources, and indexes all sources into `search.db` on startup and on each 5-minute loop. During full index passes it defers global-search FTS maintenance until the pass finishes, then rebuilds FTS once. Embedding batch size is app-managed and sampled between embedding chunks so it can downshift automatically when available memory drops or when the daemon's own RSS gets too large. Requires authentication for each enabled source.
+Runs all enabled data source core services and the search indexer. For WhatsApp: connects to WhatsApp, listens for messages, syncs history, and starts the REST API server on `127.0.0.1:8080` (loopback only). For Google Suite: syncs each enabled Google app every 5 minutes via the corresponding Google APIs. The daemon also re-reads config, starts or stops core-backed sources, and indexes all sources into `search.db`. Startup and manual reindex signals run full passes; scheduled 5-minute ticks run incremental passes that skip sources whose local cache files have not changed since `search_meta.last_indexed`. During full index passes it defers global-search FTS maintenance until the pass finishes, then rebuilds FTS once. The daemon reuses index-only source objects across passes instead of reopening them on every tick. Requires authentication for each enabled source.
 
 Re-authentication may be required after ~20 days for WhatsApp. Google OAuth access tokens refresh automatically as long as the refresh token remains valid, but repeated Google `401 Invalid Credentials` or token refresh `invalid_grant` errors should be treated as persistent credential/configuration problems rather than transient network blips.
 
@@ -51,7 +61,7 @@ Re-authentication may be required after ~20 days for WhatsApp. Google OAuth acce
 mcpyeahyouknowme mcp
 ```
 
-Starts the built-in MCP server over stdio transport. This is what Claude Desktop and Cursor invoke to interact with enabled local and live sources. It reads directly from the local SQLite databases for queries (including `search.db` for hybrid search) and proxies write operations (send, download) through the core daemon's REST API at `127.0.0.1:8080`. The core daemon must be running for write operations. Search indexing is handled by the daemon, not the MCP server.
+Starts the built-in MCP server over stdio transport. This is what Claude Desktop and Cursor invoke to interact with enabled local and live sources. It reads directly from the local SQLite databases for queries (including `search.db` for keyword search) and proxies write operations (send, download) through the core daemon's REST API at `127.0.0.1:8080`. The core daemon must be running for write operations. Search indexing is handled by the daemon, not the MCP server.
 
 Configure in your AI client:
 
@@ -75,7 +85,7 @@ For **Cursor**: save to `~/.cursor/mcp.json`
 mcpyeahyouknowme reindex
 ```
 
-Requests a full search index rebuild from scratch. Existing `search_entries`, `search_embeddings`, FTS rows, and `search_meta` timestamps are cleared before rebuilding from local source data. Full rebuilds bulk-load `search_entries`, then rebuild the global FTS table once at the end instead of updating it row-by-row during the pass. When the core daemon is running, this command signals the daemon to do the clear-and-rebuild in the background instead of doing the work in the CLI process. If a daemon-owned index pass is already running, the daemon cancels it at the next safe checkpoint (between source passes or embedding batches) and immediately restarts from the beginning with a cleared search index. Scheduled 5-minute indexing ticks do not interrupt an active pass. When no daemon is running, it falls back to a standalone synchronous rebuild with progress output.
+Requests a full search index rebuild from scratch. Existing `search_entries`, FTS rows, and `search_meta` timestamps are cleared before rebuilding from local source data. Full rebuilds bulk-load `search_entries`, then rebuild the global FTS table once at the end instead of updating it row-by-row during the pass. When the core daemon is running, this command signals the daemon to do the clear-and-rebuild in the background instead of doing the work in the CLI process. If a daemon-owned index pass is already running, the daemon cancels it at the next safe checkpoint and immediately restarts from the beginning with a cleared search index. Scheduled 5-minute incremental indexing ticks do not interrupt an active pass. When no daemon is running, it falls back to a standalone synchronous rebuild with progress output, still preferring streamed source batches when a source implements them.
 
 ### Notebook Commands
 
@@ -111,7 +121,7 @@ The `notebook` source indexes `.md`, `.txt`, `.pdf`, and image files (`.jpg`, `.
 
 **Change tracking** — `notebook.db` stores `(path, mod_time, size)` per file. On each 5-minute daemon loop, only new or modified files are re-extracted; unchanged files are served from cache.
 
-**Markdown extraction** — Title comes from the first `# H1` heading, or the filename stem. Raw content is stored in `notebook.db` and returned by `notebook_read`. Markdown bytes are normalized to valid UTF-8 on ingest so malformed local files do not persist broken text into the search index. Before markdown text is added to the global search index, Obsidian wiki-link syntax (`[[target]]`, `[[target|alias]]`) and Markdown link/image syntax (`[text](url)`, `![alt](url)`) are reduced to their human-readable text so FTS and embeddings index readable note content instead of URL punctuation noise. Files larger than ~2000 characters are chunked into `~2000` character pieces on rune boundaries to match the BGE-small-en-v1.5 embedding model context window.
+**Markdown extraction** — Title comes from the first `# H1` heading, or the filename stem. Raw content is stored in `notebook.db` and returned by `notebook_read`. Markdown bytes are normalized to valid UTF-8 on ingest so malformed local files do not persist broken text into the search index. Before markdown text is added to the global search index, Obsidian wiki-link syntax (`[[target]]`, `[[target|alias]]`) and Markdown link/image syntax (`[text](url)`, `![alt](url)`) are reduced to their human-readable text so FTS indexes readable note content instead of URL punctuation noise. Files larger than ~2000 characters are chunked into `~2000` character pieces on rune boundaries to keep BM25 chunks at a manageable size.
 
 **PDF extraction** — Uses `github.com/ledongthuc/pdf` for pure-Go text extraction. If extracted text contains fewer than 10 words (a scanned document), falls back to macOS Vision OCR (`OCRPDFPages`), which renders each page to a `CGImage` via CoreGraphics and runs `VNRecognizeTextRequest`. Title comes from the filename stem.
 
@@ -151,6 +161,20 @@ type DataSource interface {
 }
 ```
 
+Sources may also implement optional indexing helpers:
+
+```go
+type StreamingSource interface {
+    StreamSearchEntries(func([]SearchEntry) error) error
+}
+
+type IncrementalSource interface {
+    HasChangesSince(time.Time) bool
+}
+```
+
+The daemon prefers `StreamSearchEntries` to avoid materializing one source-wide slice in memory, and uses `HasChangesSince` on scheduled ticks to skip unchanged local caches.
+
 Sources that sync in the background implement `core.CoreService` (started from `runtime.go`):
 
 ```go
@@ -181,7 +205,7 @@ src/
   runtime.go        — core daemon loop + source lifecycle orchestration
   mcp.go            — MCP server setup and source wiring (read-only search consumer)
   indexer.go        — shared indexing logic used by daemon and reindex CLI
-  search_store.go   — cross-source search index with chunked embedding
+  search_store.go   — cross-source BM25 keyword search index
   search_mcp.go     — global MCP search tool registration
   system.go         — system resource detection (adaptive batch sizing)
   reindex_cli.go    — manual reindex CLI command
@@ -244,7 +268,7 @@ mcpyeahyouknowme notebook reset
 | Command | Description |
 |---------|-------------|
 | `status` | Shows build metadata; core daemon install/running status including network state and optional RSS; global data directory status; a Search Index section with entry/indexed counts and DB size; and per-source sections sorted alphabetically, including unavailable reasons when a source is not built/configured. Pass `--json` to return the same status snapshot as pretty-printed JSON instead of the human-readable report. Pass `--live` to redraw the human-readable report in place every 10 seconds until interrupted. `--live` cannot be combined with `--json`. The core daemon prints the same human-readable report on startup. |
-| `reset` | Prompts for confirmation, resets every registered source connection and its local data, clears the global search index, rewrites `config.json` to a fully disabled normalized state, and restarts the daemon when it is running so daemon-owned SQLite handles reopen against the clean on-disk state. It preserves the installed daemon, embedding models, tokenizer cache, logs, and binary. |
+| `reset` | Prompts for confirmation, resets every registered source connection and its local data, clears the global search index, rewrites `config.json` to a fully disabled normalized state, and restarts the daemon when it is running so daemon-owned SQLite handles reopen against the clean on-disk state. It preserves the installed daemon, logs, and binary. |
 | `whatsapp reset` | Removes WhatsApp auth/session data, clears local synced data, removes WhatsApp rows from the global search index, and leaves the source disabled in config until the user logs in again. |
 | `gsuite reset` | Prompts for confirmation, removes the Google Suite token and local synced data, removes Google Suite rows from the global search index, and leaves the source disabled in config until the user logs in again. |
 | `browser_history reset` | Prompts for confirmation, removes local browser history snapshot files, removes browser-history rows from the global search index, and leaves the source disabled in config until re-enabled. |
@@ -415,7 +439,7 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 | `notebook_read` | Read a markdown or text file from a configured notebook directory. |
 | `notebook_read_pdf` | Extract and return text from a PDF in a configured notebook directory. |
 | `profile_about_me` | Searches all connected sources for an "About Me" note, reconstructs its content from indexed chunks, and aggregates referenced notes as separate sections. Call before making personalized recommendations. |
-| `search` | Global hybrid search across connected sources (BM25 + vectors); requires `query`, with optional `source`, `content_type`, and `limit`. Index populated by daemon. |
+| `search` | Global keyword search across connected sources (BM25/FTS5); requires `query`, with optional `source`, `content_type`, and `limit`. Index populated by daemon. |
 | `whatsapp_download_media` | Download media for a message via core daemon. |
 | `whatsapp_get_chat` | Get one chat by JID; optional last message. |
 | `whatsapp_get_contact_chats` | List chats where a contact appears as sender. |
@@ -435,7 +459,7 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 
 | Tool | Description |
 |------|-------------|
-| `search` | Search across all connected data sources by titles, names, people, and body content. Requires `query`. Returns results ranked by hybrid BM25 keyword + semantic vector search with hierarchy weighting. Accepts optional `source`, `content_type`, and `limit` parameters; `content_type` matches exact indexed types such as `chat_name`, `document_title`, `note_content`, or `browser_visit`. |
+| `search` | Search across all connected data sources by titles, names, people, and body content. Requires `query`. Returns results ranked by BM25 keyword search with hierarchy weighting. Accepts optional `source`, `content_type`, and `limit` parameters; `content_type` matches exact indexed types such as `chat_name`, `document_title`, `note_content`, or `browser_visit`. |
 
 Results are returned as JSON with a fixed outer shape and source-specific metadata:
 
@@ -606,9 +630,9 @@ Metadata shapes per WhatsApp content type:
 
 ## Search
 
-### Global Hybrid Search
+### Global Keyword Search
 
-The `search` tool combines BM25 keyword search with semantic vector search across a unified search index (`search.db`). The core daemon indexes all sources on startup and periodically re-indexes on each 5-minute tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available; when the daemon is running it signals that process to start reindexing immediately, and when no daemon is running it falls back to a standalone rebuild. Each `DataSource` provides its indexable content via `SearchEntries()`, and the indexer writes entries for every source before starting a separate embedding pass. During each full pass, the indexer defers `search_fts` maintenance and rebuilds it once after the source upserts/prunes finish so large refreshes do not pay row-by-row FTS write costs. After each source upsert, the indexer prunes stale rows for that source so deleted notes, removed source records, or disabled content do not linger in hybrid search results. Per-source reset commands also delete that source's rows from `search.db`, and the global `reset` command restarts the daemon after clearing `search.db` so daemon-held SQLite handles cannot recreate stale on-disk indexes. Embedding batch size scales dynamically based on available system memory (8–128, baseline 16), is capped further by daemon RSS when the process grows too large, and is re-sampled between embedding chunks so the app can downshift under memory pressure without exposing a user-configurable cap. Embeddings are computed afterward in chunks of 1000 rows with per-chunk commits to limit resource usage without blocking later sources from entering the shared keyword index. To improve retrieval for multi-message conversations, WhatsApp is indexed as bounded per-chat transcript chunks instead of one row per message. To reduce index size and embedding cost, numeric-dominant body chunks from WhatsApp, Docs, Sheets, and Slides are skipped while titles, owners, subjects, and other short structured entries remain indexed. All content chunks are sized to ~2000 characters to match BGE-small-en-v1.5's 512-token context window, ensuring full vector coverage of every chunk. Gmail, WhatsApp, notebook, and Drive-derived content chunks now split on rune boundaries so multibyte text cannot store invalid UTF-8 in `search.db`. Text passed to the embedding model is coerced to valid UTF-8, has consecutive whitespace collapsed to a single space, and is truncated to the same 2000-character budget so malformed or oversized rows cannot panic the tokenizer. Content is normalized into a shared schema:
+The `search` tool uses BM25 keyword search (SQLite FTS5) across a unified search index (`search.db`). The core daemon indexes all sources on startup and then runs incremental checks on each 5-minute tick. The MCP server reads `search.db` for queries but does not perform indexing. A manual `reindex` CLI command is also available; when the daemon is running it signals that process to start reindexing immediately, and when no daemon is running it falls back to a standalone rebuild. Each `DataSource` provides its indexable content via `SearchEntries()`, while sources that implement `StreamingSource` can emit multiple smaller batches during indexing instead of returning one source-wide slice. During each full pass, the indexer defers `search_fts` maintenance and rebuilds it once after the source upserts/prunes finish so large refreshes do not pay row-by-row FTS write costs. Full passes also prune stale rows for that source so deleted notes, removed source records, or disabled content do not linger in search results; incremental passes upsert only changed sources and leave prune work for the next full pass. Per-source reset commands also delete that source's rows from `search.db`, and the global `reset` command restarts the daemon after clearing `search.db` so daemon-held SQLite handles cannot recreate stale on-disk indexes. To improve retrieval for multi-message conversations, WhatsApp is indexed as bounded per-chat transcript chunks instead of one row per message. To reduce index size, numeric-dominant body chunks from WhatsApp, Docs, Sheets, and Slides are skipped while titles, owners, subjects, and other short structured entries remain indexed. All content chunks are sized to ~2000 characters; Gmail, WhatsApp, notebook, and Drive-derived content chunks split on rune boundaries so multibyte text cannot store invalid UTF-8 in `search.db`. Content is normalized into a shared schema:
 
 | Content Type | Source | Indexed From |
 |-------------|--------|-------------|
@@ -632,24 +656,20 @@ The `search` tool combines BM25 keyword search with semantic vector search acros
 | `presentation_owner` | Google Slides | Presentation owner names and emails |
 | `presentation_content` | Google Slides | Extracted slide text, chunked at ~2000 chars and owner-prefixed |
 | `note_title` | Notebook | Markdown/text file titles |
-| `note_content` | Notebook | Markdown/text file bodies, chunked for embeddings |
+| `note_content` | Notebook | Markdown/text file bodies, chunked at ~2000 chars |
 | `pdf_title` | Notebook | PDF file titles |
-| `pdf_content` | Notebook | Extracted PDF text, chunked for embeddings |
+| `pdf_content` | Notebook | Extracted PDF text, chunked at ~2000 chars |
 | `image` | Notebook | OCR text plus classification labels from indexed images |
 | `browser_visit` | Browser History | Per-URL entries keyed by browser `urls.id` with latest visit timestamp |
 
 **Search algorithm:**
 
-1. **BM25** — FTS5 full-text search on the `search_fts` virtual table, with natural-language queries sanitized into individually quoted word tokens so multi-word queries behave like implicit AND matching instead of one exact phrase
-2. **Vector** — when BM25 returns fewer than the requested result limit, embed the query with BGE-Small-EN-v1.5 and compute cosine similarity against stored embeddings
-3. **Reciprocal Rank Fusion (RRF)** — combine BM25 and vector ranked lists: `score(d) = sum(1/(k+rank_i))` with k=60
-4. **Hierarchy weighting** — multiply fused score by content type: `chat_name` (3x), `participant` (2x), `chat_content` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x), `email_thread_subject` (2.5x), `email_thread_participants` (2x), `email_thread_content` (1x), `calendar_event` (2x), `calendar_event_description` (1x), `task` (1.5x), `contact` (2x), `presentation_title` (2x), `presentation_owner` (2x), `presentation_content` (1x), `note_title` (2x), `note_content` (1x), `pdf_title` (2x), `pdf_content` (1x), `image` (1.5x), `browser_visit` (1.8x)
-
-The MCP server lazily initializes the embedder on first semantic-search use, so non-search tools and BM25-only search remain available even if ONNX Runtime is missing or embedding initialization fails.
+1. **BM25 with OR + prefix matching** — FTS5 full-text search on the `search_fts` virtual table. The natural-language query is tokenized into individually quoted prefix terms joined with `OR` (e.g. `"birthday"* OR "dinner"* OR "2024"*`). OR semantics return any document matching at least one keyword; BM25 naturally ranks documents matching more terms higher. Tokens shorter than 3 characters are dropped before building the OR expression to avoid broad prefix noise (e.g. `"me"*` matching "meeting", "member", "message"). When all tokens are short the filter is bypassed. Prefix matching (`*`) catches word-form variants so "run" matches "running", "runner", etc.
+2. **Hierarchy weighting** — multiply BM25 score by content type: `chat_name` (3x), `participant` (2x), `chat_content` (1x), `document_title` (2x), `document_owner` (2x), `document_content` (1x), `spreadsheet_title` (2x), `spreadsheet_owner` (2x), `spreadsheet_content` (1x), `email_thread_subject` (2.5x), `email_thread_participants` (2x), `email_thread_content` (1x), `calendar_event` (2x), `calendar_event_description` (1x), `task` (1.5x), `contact` (2x), `presentation_title` (2x), `presentation_owner` (2x), `presentation_content` (1x), `note_title` (2x), `note_content` (1x), `pdf_title` (2x), `pdf_content` (1x), `image` (1.5x), `browser_visit` (1.8x)
 
 ### BM25 Keyword Search (FTS5)
 
-When `whatsapp_list_messages` is called with a `query` parameter, the server uses SQLite's FTS5 full-text search engine with BM25 scoring. The `messages_fts` virtual table in `messages.db` is maintained via triggers so the index is always in sync. Unlike the global `search` tool, this path stays within WhatsApp's local SQLite index and does not invoke vector search or RRF fusion.
+When `whatsapp_list_messages` is called with a `query` parameter, the server uses SQLite's FTS5 full-text search engine with BM25 scoring. The `messages_fts` virtual table in `messages.db` is maintained via triggers so the index is always in sync. This path stays within WhatsApp's local SQLite index.
 
 Without a `query` parameter, `whatsapp_list_messages` falls back to chronological listing with optional filters.
 
@@ -662,12 +682,6 @@ The `whatsapp_list_chats` tool supports fuzzy search across two dimensions when 
 2. **Participant name matching** — the `whatsmeow_contacts` table in `whatsapp.db` is searched for contacts whose `full_name` or `push_name` fuzzy-matches the query. Matching contact JIDs are then looked up in the `group_participants` table to find groups they belong to, plus their direct chat JIDs. Searching for "Kevin" returns Kevin's direct chat and any group where Kevin is a member, even if the group name doesn't contain "Kevin".
 
 For queries shorter than 3 characters, only exact substring matching is used (fuzzy word matching is disabled to avoid false positives). Multi-word queries require each word to fuzzy-match at least one word in the target text.
-
-### Embedding Infrastructure
-
-Semantic vector search uses [fastembed-go](https://github.com/bdombro/fastembed-go) with the BGE-Small-EN-v1.5 ONNX model. The ONNX Runtime shared library is auto-downloaded during `./scripts/install.sh` to `~/.local/share/mcpyeahyouknowme/lib/` (app-local, not exposed to system paths). The embedding model is auto-cached in `~/.local/share/mcpyeahyouknowme/models/` on first use. Query-time cosine similarity is computed with SIMD-accelerated `vek32.CosineSimilarity` where supported, with pure-Go fallback on unsupported CPUs.
-
-Embeddings are pre-computed by the core daemon during indexing and stored in the `search_embeddings` table. Only new/changed entries are embedded on subsequent indexing runs. The MCP server reuses the stored embeddings and does not compute passage embeddings during startup.
 
 ---
 
@@ -698,9 +712,7 @@ All data is stored in `~/.local/share/mcpyeahyouknowme/`.
 | `gsuite_token.json` | OAuth 2.0 token for Google APIs |
 | `gsuite_email.txt` | Cached Google account email (fetched during login via Drive API) |
 | `notebook.db` | Local notebook metadata and extracted-content cache for configured directories |
-| `search.db` | Global search index (FTS5 + vector embeddings across all sources) |
-| `lib/` | ONNX Runtime shared library (auto-downloaded by `./scripts/install.sh`) |
-| `models/` | Cached embedding model (auto-downloaded on first semantic-search use by MCP or during daemon indexing) |
+| `search.db` | Global search index (FTS5/BM25 across all sources) |
 | `downloads/` | Downloaded WhatsApp media files |
 ### messages.db Schema
 
@@ -729,10 +741,9 @@ Tables are created on startup if they don't exist. The FTS5 index is automatical
 |-------|-----|----------|
 | `search_entries` | `id` (auto), unique(`source`, `source_id`, `content_type`) | Normalized content from all sources: source, ID, type, title, content, JSON metadata, timestamp |
 | `search_fts` | (FTS5 virtual) | Full-text search index on `search_entries` title and content, maintained via triggers during normal writes and rebuilt once after full bulk indexing passes |
-| `search_embeddings` | `entry_id` (foreign key) | Pre-computed vector embeddings (BGE-Small-EN-v1.5, stored as raw float32 bytes) |
-| `search_meta` | `source` (primary) | Tracks `last_indexed` timestamp per source for incremental updates |
+| `search_meta` | `source` (primary) | Tracks `last_indexed` timestamp per source so scheduled incremental passes can skip unchanged local caches |
 
-Populated by the core daemon from each `DataSource.SearchEntries()`. Incremental: only new/changed entries are added on subsequent indexing runs.
+Populated by the core daemon from each `DataSource.SearchEntries()` or `StreamingSource.StreamSearchEntries()` implementation. Incremental scheduled passes update only sources whose local cache files changed since `last_indexed`; startup and manual reindex requests still run full passes.
 
 ---
 
@@ -808,10 +819,8 @@ Without this, Gatekeeper blocks execution — the first invocation is killed (SI
 - [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) — pure-Go SQLite driver (no CGO, FTS5 built-in)
 - [mcp-go](https://github.com/mark3labs/mcp-go) — Model Context Protocol server framework
 - [qrterminal](https://github.com/mdp/qrterminal) — QR code rendering in terminal
-- [fastembed-go](https://github.com/bdombro/fastembed-go) — ONNX-based text embeddings (BGE-Small-EN-v1.5)
 - [golang.org/x/oauth2](https://pkg.go.dev/golang.org/x/oauth2) — OAuth 2.0 client library
 - [google.golang.org/api](https://pkg.go.dev/google.golang.org/api) — Google APIs (Docs v1, Drive v3)
-- **ONNX Runtime** (optional, auto-downloaded) — native shared library for embedding inference, downloaded by `./scripts/install.sh` to `~/.local/share/mcpyeahyouknowme/lib/`
 - **ffmpeg** (optional) — required only for automatic audio format conversion in `send_audio_message`
 - [ledongthuc/pdf](https://github.com/ledongthuc/pdf) — pure-Go PDF text extraction for the `notebook` source
 - **macOS Vision framework** (macOS only) — on-device OCR and image classification for the `notebook` source, called via CGO Objective-C

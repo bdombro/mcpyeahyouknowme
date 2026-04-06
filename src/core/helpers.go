@@ -21,7 +21,7 @@ var (
 	knownSources   []string
 )
 
-// DataDir returns the shared app data root so CLI, daemon, MCP, models, and SQLite files resolve to one stable location.
+// DataDir returns the shared app data root so CLI, daemon, MCP, and SQLite files resolve to one stable location.
 func DataDir() string {
 	dataDirOnce.Do(func() {
 		home, err := os.UserHomeDir()
@@ -172,13 +172,12 @@ func RequireBoolArgument(req mcp.CallToolRequest, key, example string) (bool, *m
 	return b, nil
 }
 
-// EmbedContextChars is the maximum number of characters to pass to the embedding model per entry.
-// BGE-small-en-v1.5 has a 512-token context window (~2000 characters). Text beyond this limit
-// is silently discarded by the model, so all source chunkers should target this size to ensure
-// full vector coverage and to avoid the sugarme/tokenizer bounds-check panic on long inputs.
-const EmbedContextChars = 2000
+// ChunkMaxChars is the maximum number of characters per search index chunk.
+// ~2000 characters keeps chunks at a size that balances FTS recall and DB row size
+// across all source types (Gmail, WhatsApp, Docs, Notebook, etc.).
+const ChunkMaxChars = 2000
 
-// IsLowValueContent applies the semantic-search chunk filter, rejecting long text that is too numeric/punctuation-heavy to justify embedding.
+// IsLowValueContent filters out chunks that are too numeric or punctuation-heavy to return useful FTS results.
 func IsLowValueContent(text string) bool {
 	nonWhitespace := 0
 	letters := 0

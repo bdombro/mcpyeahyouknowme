@@ -1,21 +1,23 @@
-# MCP Bridge
+# MCP Yeah You Know Me
 
-A pluggable [Model Context Protocol](https://modelcontextprotocol.io/) server that gives AI assistants access to personal data sources. Currently supports **WhatsApp** (search/read messages, search contacts, send messages), **Google Suite** (Docs, Sheets, Gmail, Calendar, Tasks, Contacts, Slides), **Google Places** (live business/address lookup), and **Brave Search** (live web search and URL metadata lookup), with the architecture ready for additional sources.
+**One MCP server. All your personal data.** `mcpyeahyouknowme` connects WhatsApp, Gmail, Docs, Sheets, Calendar, Tasks, Contacts, Slides, local notes, browser history, live web search, and Google Places behind a single [MCP](https://modelcontextprotocol.io/) endpoint — so your AI assistant uses one consistent toolset instead of juggling a patchwork of separate servers.
 
-Data is stored locally in SQLite and only sent to an LLM when accessed through MCP tools. Each data source registers its own namespaced tools (e.g. `whatsapp_list_chats`, `whatsapp_send_message`).
+**Global search across everything.** A single `search` tool performs BM25 keyword search across every connected source at once — emails, chats, calendar events, documents, notes, browser history — ranked by relevance with follow-up metadata pointing to the right source-specific tool for deep reads.
 
-> *Caution:* as with many MCP servers, this is subject to [the lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/). Project injection could lead to private data exfiltration.
+**Offline-first, privacy-preserving.** All data syncs into local SQLite databases. Every read tool queries local files directly — no network latency, nothing leaves your machine until you explicitly ask for it. The background daemon handles sync; the MCP server just reads.
+
+> *Caution:* as with many MCP servers, this is subject to [the lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/). Prompt injection could lead to private data exfiltration.
 
 ## Architecture
 
-A single Go binary (`mcpyeahyouknowme`) with a pluggable `DataSource` interface. Each source owns its tools, storage, and lifecycle.
+A single Go binary with a pluggable `DataSource` interface. Two long-running modes:
 
 | Mode | Command | Description |
 |------|---------|-------------|
-| Core | `mcpyeahyouknowme core` | Core daemon: WhatsApp connection + Google Suite sync, stores data in SQLite, exposes REST API |
-| MCP  | `mcpyeahyouknowme mcp`  | MCP server over stdio. Loads all enabled sources and registers their tools |
+| Core daemon | `mcpyeahyouknowme core` | Syncs all sources into local SQLite, maintains the global search index, exposes a REST API for writes |
+| MCP server  | `mcpyeahyouknowme mcp`  | Stdio MCP server — reads from local SQLite for every query, proxies writes to the core daemon |
 
-Data flows: Claude/Cursor talks MCP (stdio) to `mcpyeahyouknowme mcp`, which loads each data source. Read tools query local SQLite directly; write tools proxy through the source's backend (e.g. WhatsApp core daemon REST API).
+All reads hit local SQLite; the MCP server never calls external APIs directly. Write operations (send message, download media) are proxied through the core daemon's loopback REST API.
 
 See the [product spec](docs/spec.md) for full details.
 
@@ -25,7 +27,6 @@ See the [product spec](docs/spec.md) for full details.
 - **Homebrew** (for installing dependencies)
 - **Go** (to build)
 - **FFmpeg** (*optional*) — only needed for automatic audio format conversion when sending voice messages
-- **ONNX Runtime** (*optional*, via Homebrew) — required for semantic vector search; `./scripts/install.sh` installs it automatically
 
 ## Quick Start
 
@@ -42,7 +43,7 @@ See the [product spec](docs/spec.md) for full details.
    ./scripts/install.sh
    ```
 
-   This builds the Go binary, copies it to `/usr/local/bin/mcpyeahyouknowme`, installs ONNX Runtime via Homebrew for semantic search, sets up the core daemon, and adds shell completions.
+   This builds the Go binary, copies it to `/usr/local/bin/mcpyeahyouknowme`, sets up the core daemon, and adds shell completions.
 
 3. **Log in** (first time only)
 

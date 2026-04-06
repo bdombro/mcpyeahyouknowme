@@ -336,7 +336,7 @@ func buildContentEntries(sourceName, id, title, content, modTime, owners,
 		if owners != "" {
 			contentWithOwners = "Owners: " + owners + "\n\n" + content
 		}
-		chunks := splitDriveContentChunks(contentWithOwners, core.EmbedContextChars)
+		chunks := splitDriveContentChunks(contentWithOwners, core.ChunkMaxChars)
 		for i, chunk := range chunks {
 			if core.IsLowValueContent(chunk) {
 				continue
@@ -354,7 +354,7 @@ func buildContentEntries(sourceName, id, title, content, modTime, owners,
 }
 
 // splitDriveContentChunks breaks Drive-derived content into UTF-8-safe chunks
-// that stay within the embedding character budget for Docs, Sheets, and Slides.
+// within the FTS character budget for Docs, Sheets, and Slides.
 func splitDriveContentChunks(text string, limit int) []string {
 	if limit <= 0 || text == "" {
 		return nil

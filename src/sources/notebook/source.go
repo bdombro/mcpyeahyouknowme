@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"mcpyeahyouknowme/core"
 
@@ -23,9 +25,10 @@ type Source struct {
 	dataDir string
 }
 
-//revive:disable:exported
 // NotebookConfig lists directories the notebook source walks on each daemon SearchEntries tick; entries land in notebook.db
 // and notebook_* tools (docs/spec.md Notebook File Indexing).
+//
+//revive:disable:exported
 type NotebookConfig struct {
 	Dirs []string `json:"dirs"`
 }
@@ -102,6 +105,19 @@ func (s *Source) SearchEntries() ([]core.SearchEntry, error) {
 	return scanDirs(s.db, cfg.Dirs, s.Name())
 }
 
+// HasChangesSince checks the notebook SQLite cache files so incremental daemon
+// ticks can skip a full directory walk when cached extraction state is unchanged.
+func (s *Source) HasChangesSince(t time.Time) bool {
+	if t.IsZero() {
+		return true
+	}
+	latest := latestNotebookDBModTime(s.dataDir)
+	if latest.IsZero() {
+		return true
+	}
+	return !latest.Before(t)
+}
+
 // InfoLines returns indented status lines for the `info` command notebook section.
 func InfoLines(dataDir string) []string {
 	sc := core.LoadConfig(dataDir).Sources["notebook"]
@@ -176,4 +192,17 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(buf[pos:])
+}
+
+// latestNotebookDBModTime returns the newest modification time across the
+// notebook SQLite files so WAL-backed writes still count as source changes.
+func latestNotebookDBModTime(dataDir string) time.Time {
+	var latest time.Time
+	for _, name := range []string{"notebook.db", "notebook.db-wal", "notebook.db-shm"} {
+		info, err := os.Stat(filepath.Join(dataDir, name))
+		if err == nil && info.ModTime().After(latest) {
+			latest = info.ModTime()
+		}
+	}
+	return latest
 }

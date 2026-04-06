@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"mcpyeahyouknowme/core"
 )
@@ -325,4 +326,40 @@ func TestInfoLines_cacheSize(t *testing.T) {
 		}
 	}
 	_ = foundCache // cache line only appears when FileGroupSizeBytes > 0; just verify no panic
+}
+
+// Verifies HasChangesSince checks notebook DB and WAL mtimes so incremental indexing can skip unchanged caches.
+func TestSource_HasChangesSince(t *testing.T) {
+	dataDir := t.TempDir()
+	src := &Source{dataDir: dataDir}
+	if !src.HasChangesSince(time.Time{}) {
+		t.Fatal("expected zero watermark to force indexing")
+	}
+	if !src.HasChangesSince(time.Now()) {
+		t.Fatal("expected missing notebook files to trigger indexing")
+	}
+
+	dbPath := filepath.Join(dataDir, "notebook.db")
+	walPath := filepath.Join(dataDir, "notebook.db-wal")
+	if err := os.WriteFile(dbPath, []byte("db"), 0o644); err != nil {
+		t.Fatalf("write db: %v", err)
+	}
+	if err := os.WriteFile(walPath, []byte("wal"), 0o644); err != nil {
+		t.Fatalf("write wal: %v", err)
+	}
+	oldTime := time.Now().Add(-2 * time.Hour)
+	newTime := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(dbPath, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes db: %v", err)
+	}
+	if err := os.Chtimes(walPath, newTime, newTime); err != nil {
+		t.Fatalf("chtimes wal: %v", err)
+	}
+
+	if src.HasChangesSince(time.Now()) {
+		t.Fatal("expected future watermark to skip unchanged notebook cache")
+	}
+	if !src.HasChangesSince(time.Now().Add(-90 * time.Minute)) {
+		t.Fatal("expected recent WAL change to trigger notebook reindex")
+	}
 }

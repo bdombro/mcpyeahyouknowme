@@ -338,7 +338,7 @@ func InfoLines(dataDir string) []string {
 		lastSync := src.getLastSyncTime(app.name)
 		statusStr := formatSyncStatus(syncStatus, lastSync, count)
 		if size, ok := appSizes[app.name]; ok && size > 0 {
-			statusStr = fmt.Sprintf("%s — ~%s", statusStr, core.FormatSizeMB(size))
+			statusStr = fmt.Sprintf("%s — %s", statusStr, core.FormatSizeMB(size))
 		}
 		lines = append(lines, fmt.Sprintf("   %-11s %s", cliAppName(app)+":", statusStr))
 	}

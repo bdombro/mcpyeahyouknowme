@@ -12,7 +12,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// ClearSearchSource removes one source's rows from search.db so source-local reset commands stop returning stale hybrid-search hits.
+// ClearSearchSource removes one source's rows from search.db so source-local reset commands stop returning stale search hits.
 func ClearSearchSource(dataDir, source string) error {
 	db, err := openSearchResetDB(dataDir)
 	if err != nil {

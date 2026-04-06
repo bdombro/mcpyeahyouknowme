@@ -121,6 +121,19 @@ func (s *Source) SearchEntries() ([]core.SearchEntry, error) {
 	return buildSearchEntries(rows), nil
 }
 
+// HasChangesSince checks the local browser-history snapshot files so
+// incremental daemon ticks can skip re-reading them when they are unchanged.
+func (s *Source) HasChangesSince(t time.Time) bool {
+	if t.IsZero() {
+		return true
+	}
+	latest := latestBrowserSnapshotModTime(s.snapshotPath)
+	if latest.IsZero() {
+		return true
+	}
+	return !latest.Before(t)
+}
+
 // InfoLines returns source status lines for the `info` command output.
 func InfoLines(dataDir string) []string {
 	sc := core.LoadConfig(dataDir).Sources["browser_history"]
@@ -188,4 +201,17 @@ func (s *Source) refreshSnapshotIfNeeded(browser string) error {
 	s.lastSourceMeta = meta
 	s.lastRefreshed = time.Now().UTC()
 	return nil
+}
+
+// latestBrowserSnapshotModTime returns the newest modification time across the
+// copied browser-history snapshot files so WAL-backed writes count as changes.
+func latestBrowserSnapshotModTime(snapshotPath string) time.Time {
+	var latest time.Time
+	for _, path := range []string{snapshotPath, snapshotPath + "-wal", snapshotPath + "-shm"} {
+		info, err := os.Stat(path)
+		if err == nil && info.ModTime().After(latest) {
+			latest = info.ModTime()
+		}
+	}
+	return latest
 }

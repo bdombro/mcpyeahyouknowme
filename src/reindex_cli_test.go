@@ -119,36 +119,30 @@ func TestHandleReindex_runsLocalWhenDaemonStopped(t *testing.T) {
 // Verifies runLocalReindex clears the existing search DB before rebuilding from local source data.
 func TestRunLocalReindex_clearsAndRebuilds(t *testing.T) {
 	dir := t.TempDir()
-	seedStore, err := NewSearchStore(dir, &mockEmbedder{dim: 8})
+	seedStore, err := NewSearchStore(dir)
 	if err != nil {
 		t.Fatalf("NewSearchStore: %v", err)
 	}
 	if err := seedStore.IndexEntries(seedSearchEntries()); err != nil {
 		t.Fatalf("IndexEntries: %v", err)
 	}
-	computePendingEmbeddingsForTest(t, seedStore)
 	seedStore.UpdateSourceTimestamp("seed", time.Now())
 	if err := seedStore.Close(); err != nil {
 		t.Fatalf("Close seedStore: %v", err)
 	}
 
 	oldDataDir := reindexDataDir
-	oldNewEmbedder := reindexNewEmbedder
 	oldNewSearchStore := reindexNewSearchStore
 	oldActiveSources := reindexActiveSources
 	defer func() {
 		reindexDataDir = oldDataDir
-		reindexNewEmbedder = oldNewEmbedder
 		reindexNewSearchStore = oldNewSearchStore
 		reindexActiveSources = oldActiveSources
 	}()
 
 	reindexDataDir = func() string { return dir }
-	reindexNewEmbedder = func(string) (EmbedderInterface, error) {
-		return &mockEmbedder{dim: 8}, nil
-	}
-	reindexNewSearchStore = func(dir string, embedder EmbedderInterface) (*SearchStore, error) {
-		return NewSearchStore(dir, embedder)
+	reindexNewSearchStore = func(dir string) (*SearchStore, error) {
+		return NewSearchStore(dir)
 	}
 	reindexActiveSources = func(string) []activeSource {
 		return []activeSource{{
@@ -176,50 +170,65 @@ func TestRunLocalReindex_clearsAndRebuilds(t *testing.T) {
 	}
 
 	stats := ReadOnlySearchIndexStats(dir)
-	if stats.Entries != 1 || stats.Embedded != 1 {
-		t.Fatalf("expected rebuilt single entry with embedding, got %+v", stats)
+	if stats.Entries != 1 {
+		t.Fatalf("expected rebuilt single entry, got %+v", stats)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "search.db")); err != nil {
 		t.Fatalf("expected rebuilt search.db: %v", err)
 	}
 }
 
-// Verifies runLocalReindex returns embedder setup errors before touching the search DB.
-func TestRunLocalReindex_embedderError(t *testing.T) {
+// Verifies runLocalReindex uses StreamSearchEntries when the source implements StreamingSource.
+func TestRunLocalReindex_streamingSource(t *testing.T) {
+	dir := t.TempDir()
+
 	oldDataDir := reindexDataDir
-	oldNewEmbedder := reindexNewEmbedder
+	oldNewSearchStore := reindexNewSearchStore
+	oldActiveSources := reindexActiveSources
 	defer func() {
 		reindexDataDir = oldDataDir
-		reindexNewEmbedder = oldNewEmbedder
+		reindexNewSearchStore = oldNewSearchStore
+		reindexActiveSources = oldActiveSources
 	}()
 
-	reindexDataDir = func() string { return t.TempDir() }
-	reindexNewEmbedder = func(string) (EmbedderInterface, error) {
-		return nil, errors.New("embedder boom")
+	reindexDataDir = func() string { return dir }
+	reindexNewSearchStore = func(d string) (*SearchStore, error) {
+		return NewSearchStore(d)
+	}
+	reindexActiveSources = func(string) []activeSource {
+		return []activeSource{{
+			desc: registry.Descriptor{Name: "streamed", IndexGlobally: true},
+			src: &streamingTestSource{
+				name: "streamed",
+				streamBatches: [][]core.SearchEntry{
+					{{Source: "streamed", SourceID: "a", ContentType: "msg", Title: "A", Content: "alpha"}},
+					{{Source: "streamed", SourceID: "b", ContentType: "msg", Title: "B", Content: "beta"}},
+				},
+			},
+		}}
 	}
 
-	err := runLocalReindex(nil)
-	if err == nil || !strings.Contains(err.Error(), "embedder boom") {
-		t.Fatalf("runLocalReindex error = %v", err)
+	if err := runLocalReindex(nil); err != nil {
+		t.Fatalf("runLocalReindex: %v", err)
+	}
+
+	stats := ReadOnlySearchIndexStats(dir)
+	if stats.Entries != 2 {
+		t.Fatalf("expected 2 streamed entries indexed, got %d", stats.Entries)
 	}
 }
 
 // Verifies runLocalReindex reports search-store construction failures before trying to clear or index anything.
 func TestRunLocalReindex_searchStoreError(t *testing.T) {
 	oldDataDir := reindexDataDir
-	oldNewEmbedder := reindexNewEmbedder
 	oldNewSearchStore := reindexNewSearchStore
 	defer func() {
 		reindexDataDir = oldDataDir
-		reindexNewEmbedder = oldNewEmbedder
 		reindexNewSearchStore = oldNewSearchStore
 	}()
 
 	reindexDataDir = func() string { return t.TempDir() }
-	reindexNewEmbedder = func(string) (EmbedderInterface, error) {
-		return &mockEmbedder{dim: 8}, nil
-	}
-	reindexNewSearchStore = func(string, EmbedderInterface) (*SearchStore, error) {
+	reindexNewSearchStore = func(string) (*SearchStore, error) {
 		return nil, errors.New("store boom")
 	}
 
@@ -234,20 +243,15 @@ func TestRunLocalReindex_clearError(t *testing.T) {
 	dir := t.TempDir()
 
 	oldDataDir := reindexDataDir
-	oldNewEmbedder := reindexNewEmbedder
 	oldNewSearchStore := reindexNewSearchStore
 	defer func() {
 		reindexDataDir = oldDataDir
-		reindexNewEmbedder = oldNewEmbedder
 		reindexNewSearchStore = oldNewSearchStore
 	}()
 
 	reindexDataDir = func() string { return dir }
-	reindexNewEmbedder = func(string) (EmbedderInterface, error) {
-		return &mockEmbedder{dim: 8}, nil
-	}
-	reindexNewSearchStore = func(dir string, embedder EmbedderInterface) (*SearchStore, error) {
-		store, err := NewSearchStore(dir, embedder)
+	reindexNewSearchStore = func(dir string) (*SearchStore, error) {
+		store, err := NewSearchStore(dir)
 		if err != nil {
 			return nil, err
 		}

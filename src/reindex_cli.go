@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -15,11 +14,8 @@ var reindexSignalProcess = func(pid int, signal syscall.Signal) error {
 	return syscall.Kill(pid, signal)
 }
 var reindexDataDir = core.DataDir
-var reindexNewEmbedder = func(cacheDir string) (EmbedderInterface, error) {
-	return NewEmbedder(cacheDir)
-}
-var reindexNewSearchStore = func(dir string, embedder EmbedderInterface) (*SearchStore, error) {
-	return NewSearchStore(dir, embedder)
+var reindexNewSearchStore = func(dir string) (*SearchStore, error) {
+	return NewSearchStore(dir)
 }
 var reindexActiveSources = buildActiveSources
 var reindexLocalRunner = runLocalReindex
@@ -52,13 +48,7 @@ func handleReindex(args []string) error {
 func runLocalReindex(_ []string) error {
 	dir := reindexDataDir()
 
-	embedder, err := reindexNewEmbedder(filepath.Join(dir, "models"))
-	if err != nil {
-		return err
-	}
-	defer embedder.Close()
-
-	searchStore, err := reindexNewSearchStore(dir, embedder)
+	searchStore, err := reindexNewSearchStore(dir)
 	if err != nil {
 		return fmt.Errorf("search index unavailable: %w", err)
 	}
@@ -87,16 +77,28 @@ func runLocalReindex(_ []string) error {
 			continue
 		}
 		fmt.Fprintf(os.Stderr, "  %s: loading entries...\n", active.src.Name())
-		entries, err := active.src.SearchEntries()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "  %s: error: %v\n", active.src.Name(), err)
-			continue
+		count := 0
+		emit := func(batch []core.SearchEntry) error {
+			count += len(batch)
+			return searchStore.IndexEntries(batch)
 		}
-		fmt.Fprintf(os.Stderr, "  %s: indexing %d entries...\n", active.src.Name(), len(entries))
-		if err := searchStore.IndexEntries(entries); err != nil {
-			fmt.Fprintf(os.Stderr, "  %s: index error: %v\n", active.src.Name(), err)
-			continue
+		if streaming, ok := active.src.(core.StreamingSource); ok {
+			if err := streaming.StreamSearchEntries(emit); err != nil {
+				fmt.Fprintf(os.Stderr, "  %s: error: %v\n", active.src.Name(), err)
+				continue
+			}
+		} else {
+			entries, err := active.src.SearchEntries()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  %s: error: %v\n", active.src.Name(), err)
+				continue
+			}
+			if err := emit(entries); err != nil {
+				fmt.Fprintf(os.Stderr, "  %s: index error: %v\n", active.src.Name(), err)
+				continue
+			}
 		}
+		fmt.Fprintf(os.Stderr, "  %s: indexed %d entries...\n", active.src.Name(), count)
 		searchStore.UpdateSourceTimestamp(active.src.Name(), time.Now())
 		fmt.Fprintf(os.Stderr, "  %s: done\n", active.src.Name())
 	}
@@ -106,13 +108,7 @@ func runLocalReindex(_ []string) error {
 		return fmt.Errorf("finalize bulk FTS indexing: %w", err)
 	}
 
-	fmt.Fprintln(os.Stderr, "  embeddings: computing pending vectors...")
-	if err := searchStore.ComputePendingEmbeddings(); err != nil {
-		fmt.Fprintf(os.Stderr, "  embeddings: error: %v\n", err)
-	}
-
 	stats := searchStore.IndexStats()
-	fmt.Fprintf(os.Stderr, "\nComplete: %d entries, %d embedded (%d%%)\n",
-		stats.Entries, stats.Embedded, stats.Embedded*100/max(stats.Entries, 1))
+	fmt.Fprintf(os.Stderr, "\nComplete: %d entries indexed\n", stats.Entries)
 	return nil
 }

@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -65,137 +67,51 @@ func (w *Source) Reset(dataDir string) error {
 // SearchEntries returns all indexable content for the global search index.
 func (w *Source) SearchEntries() ([]core.SearchEntry, error) {
 	var entries []core.SearchEntry
-	src := w.Name()
+	err := w.StreamSearchEntries(func(batch []core.SearchEntry) error {
+		entries = append(entries, batch...)
+		return nil
+	})
+	return entries, err
+}
 
-	// Chat names
-	chatRows, err := w.store.db.Query("SELECT jid, name, last_message_time FROM chats")
-	if err == nil {
-		defer chatRows.Close()
-		for chatRows.Next() {
-			var jid string
-			var name sql.NullString
-			var lastTime sql.NullString
-			if chatRows.Scan(&jid, &name, &lastTime) != nil || !name.Valid || name.String == "" {
-				continue
-			}
-			meta, _ := json.Marshal(map[string]interface{}{
-				"jid":      jid,
-				"is_group": strings.HasSuffix(jid, "@g.us"),
-			})
-			var ts *time.Time
-			if lastTime.Valid {
-				t := parseTime(lastTime.String)
-				ts = &t
-			}
-			entries = append(entries, core.SearchEntry{
-				Source:      src,
-				SourceID:    jid,
-				ContentType: "chat_name",
-				Title:       name.String,
-				Content:     name.String,
-				Metadata:    meta,
-				Timestamp:   ts,
-			})
+// StreamSearchEntries emits WhatsApp chat metadata and transcript chunks in
+// bounded batches so daemon indexing avoids one giant in-memory export slice.
+func (w *Source) StreamSearchEntries(emit func([]core.SearchEntry) error) error {
+	if emit == nil {
+		return nil
+	}
+	entries, err := w.chatNameEntries()
+	if err != nil {
+		return err
+	}
+	if len(entries) > 0 {
+		if err := emit(entries); err != nil {
+			return err
 		}
 	}
-
-	// Participants (from whatsmeow_contacts if available)
-	if w.store.contactsDB != nil {
-		contactRows, err := w.store.contactsDB.Query("SELECT their_jid, full_name, push_name FROM whatsmeow_contacts")
-		if err == nil {
-			defer contactRows.Close()
-			for contactRows.Next() {
-				var jid string
-				var fullName, pushName sql.NullString
-				if contactRows.Scan(&jid, &fullName, &pushName) != nil {
-					continue
-				}
-				if strings.HasSuffix(jid, "@g.us") {
-					continue
-				}
-				displayName := nullStr(fullName)
-				if displayName == "" {
-					displayName = nullStr(pushName)
-				}
-				if displayName == "" {
-					continue
-				}
-				phone := jidPhone(jid)
-				content := displayName
-				if phone != displayName {
-					content = displayName + " " + phone
-				}
-
-				var groups []string
-				gpRows, gpErr := w.store.db.Query(
-					"SELECT group_jid FROM group_participants WHERE participant_jid = ?", jid)
-				if gpErr == nil {
-					for gpRows.Next() {
-						var gj string
-						if gpRows.Scan(&gj) == nil {
-							groups = append(groups, gj)
-						}
-					}
-					gpRows.Close()
-				}
-
-				meta, _ := json.Marshal(map[string]interface{}{
-					"jid":    jid,
-					"groups": groups,
-				})
-				entries = append(entries, core.SearchEntry{
-					Source:      src,
-					SourceID:    jid,
-					ContentType: "participant",
-					Title:       displayName,
-					Content:     content,
-					Metadata:    meta,
-				})
-			}
+	entries, err = w.participantEntries()
+	if err != nil {
+		return err
+	}
+	if len(entries) > 0 {
+		if err := emit(entries); err != nil {
+			return err
 		}
 	}
+	return w.streamChatContentEntries(emit)
+}
 
-	// Messages are indexed as bounded per-chat transcript chunks so search can
-	// match meaning that spans adjacent WhatsApp messages.
-	msgRows, err := w.store.db.Query(`
-		SELECT m.id, m.chat_jid, m.sender, m.content, m.timestamp, m.is_from_me, c.name
-		FROM messages m
-		JOIN chats c ON m.chat_jid = c.jid
-		WHERE LENGTH(m.content) > 3
-		ORDER BY m.chat_jid, m.timestamp, m.id`)
-	if err == nil {
-		defer msgRows.Close()
-		var chatMessages []whatsAppMessageRecord
-		currentChatJID := ""
-
-		flushChat := func() {
-			if len(chatMessages) == 0 {
-				return
-			}
-			entries = append(entries, w.chatSearchEntries(src, chatMessages)...)
-			chatMessages = nil
-		}
-
-		for msgRows.Next() {
-			var msg whatsAppMessageRecord
-			var isFromMe bool
-			var chatName sql.NullString
-			if msgRows.Scan(&msg.ID, &msg.ChatJID, &msg.Sender, &msg.Content, &msg.Timestamp, &isFromMe, &chatName) != nil {
-				continue
-			}
-			msg.IsFromMe = isFromMe
-			msg.ChatName = nullStr(chatName)
-
-			if currentChatJID != "" && msg.ChatJID != currentChatJID {
-				flushChat()
-			}
-			currentChatJID = msg.ChatJID
-			chatMessages = append(chatMessages, msg)
-		}
-		flushChat()
+// HasChangesSince checks the WhatsApp SQLite files so incremental daemon
+// ticks can skip re-indexing when no synced chat data changed.
+func (w *Source) HasChangesSince(t time.Time) bool {
+	if t.IsZero() {
+		return true
 	}
-
-	return entries, nil
+	latest := latestWhatsAppDBModTime(w.dataDir)
+	if latest.IsZero() {
+		return true
+	}
+	return !latest.Before(t)
 }
 
 type whatsAppMessageRecord struct {
@@ -216,7 +132,178 @@ type whatsAppChatChunk struct {
 	EndDate        string
 }
 
-// Builds per-chat transcript chunks so hybrid search can match adjacent WhatsApp messages together.
+// chatNameEntries loads the searchable chat-title rows that point global
+// search results back to one WhatsApp chat or group JID.
+func (w *Source) chatNameEntries() ([]core.SearchEntry, error) {
+	var entries []core.SearchEntry
+	src := w.Name()
+	chatRows, err := w.store.db.Query("SELECT jid, name, last_message_time FROM chats")
+	if err != nil {
+		return nil, fmt.Errorf("query chats: %w", err)
+	}
+	defer chatRows.Close()
+	for chatRows.Next() {
+		var jid string
+		var name sql.NullString
+		var lastTime sql.NullString
+		if chatRows.Scan(&jid, &name, &lastTime) != nil || !name.Valid || name.String == "" {
+			continue
+		}
+		meta, _ := json.Marshal(map[string]interface{}{
+			"jid":      jid,
+			"is_group": strings.HasSuffix(jid, "@g.us"),
+		})
+		var ts *time.Time
+		if lastTime.Valid {
+			t := parseTime(lastTime.String)
+			ts = &t
+		}
+		entries = append(entries, core.SearchEntry{
+			Source:      src,
+			SourceID:    jid,
+			ContentType: "chat_name",
+			Title:       name.String,
+			Content:     name.String,
+			Metadata:    meta,
+			Timestamp:   ts,
+		})
+	}
+	return entries, nil
+}
+
+// participantEntries loads searchable participant rows, including the groups a
+// contact belongs to, so name and phone lookups can find the right chat.
+// The contacts DB is optional (opened read-only from whatsapp.db which may not
+// exist), so query failures are treated as "no contacts" rather than errors.
+func (w *Source) participantEntries() ([]core.SearchEntry, error) {
+	if w.store.contactsDB == nil {
+		return nil, nil
+	}
+	var entries []core.SearchEntry
+	src := w.Name()
+	contactRows, err := w.store.contactsDB.Query("SELECT their_jid, full_name, push_name FROM whatsmeow_contacts")
+	if err != nil {
+		return nil, nil
+	}
+	defer contactRows.Close()
+	for contactRows.Next() {
+		var jid string
+		var fullName, pushName sql.NullString
+		if contactRows.Scan(&jid, &fullName, &pushName) != nil {
+			continue
+		}
+		if strings.HasSuffix(jid, "@g.us") {
+			continue
+		}
+		displayName := nullStr(fullName)
+		if displayName == "" {
+			displayName = nullStr(pushName)
+		}
+		if displayName == "" {
+			continue
+		}
+		phone := jidPhone(jid)
+		content := displayName
+		if phone != displayName {
+			content = displayName + " " + phone
+		}
+
+		var groups []string
+		gpRows, gpErr := w.store.db.Query(
+			"SELECT group_jid FROM group_participants WHERE participant_jid = ?", jid)
+		if gpErr == nil {
+			for gpRows.Next() {
+				var gj string
+				if gpRows.Scan(&gj) == nil {
+					groups = append(groups, gj)
+				}
+			}
+			gpRows.Close()
+		}
+
+		meta, _ := json.Marshal(map[string]interface{}{
+			"jid":    jid,
+			"groups": groups,
+		})
+		entries = append(entries, core.SearchEntry{
+			Source:      src,
+			SourceID:    jid,
+			ContentType: "participant",
+			Title:       displayName,
+			Content:     content,
+			Metadata:    meta,
+		})
+	}
+	return entries, nil
+}
+
+// streamChatContentEntries emits one chat's transcript chunks at a time so
+// long WhatsApp histories do not accumulate all message chunks in memory.
+func (w *Source) streamChatContentEntries(emit func([]core.SearchEntry) error) error {
+	src := w.Name()
+	msgRows, err := w.store.db.Query(`
+		SELECT m.id, m.chat_jid, m.sender, m.content, m.timestamp, m.is_from_me, c.name
+		FROM messages m
+		JOIN chats c ON m.chat_jid = c.jid
+		WHERE LENGTH(m.content) > 3
+		ORDER BY m.chat_jid, m.timestamp, m.id`)
+	if err != nil {
+		return fmt.Errorf("query messages: %w", err)
+	}
+	defer msgRows.Close()
+
+	var chatMessages []whatsAppMessageRecord
+	currentChatJID := ""
+	flushChat := func() error {
+		if len(chatMessages) == 0 {
+			return nil
+		}
+		err := emit(w.chatSearchEntries(src, chatMessages))
+		chatMessages = nil
+		return err
+	}
+
+	for msgRows.Next() {
+		var msg whatsAppMessageRecord
+		var isFromMe bool
+		var chatName sql.NullString
+		if msgRows.Scan(&msg.ID, &msg.ChatJID, &msg.Sender, &msg.Content, &msg.Timestamp, &isFromMe, &chatName) != nil {
+			continue
+		}
+		msg.IsFromMe = isFromMe
+		msg.ChatName = nullStr(chatName)
+
+		if currentChatJID != "" && msg.ChatJID != currentChatJID {
+			if err := flushChat(); err != nil {
+				return err
+			}
+		}
+		currentChatJID = msg.ChatJID
+		chatMessages = append(chatMessages, msg)
+	}
+	if err := flushChat(); err != nil {
+		return err
+	}
+	return msgRows.Err()
+}
+
+// latestWhatsAppDBModTime returns the newest modification time across the
+// WhatsApp SQLite files so WAL-backed writes still count as source changes.
+func latestWhatsAppDBModTime(dataDir string) time.Time {
+	var latest time.Time
+	for _, name := range []string{
+		"messages.db", "messages.db-wal", "messages.db-shm",
+		"whatsapp.db", "whatsapp.db-wal", "whatsapp.db-shm",
+	} {
+		info, err := os.Stat(filepath.Join(dataDir, name))
+		if err == nil && info.ModTime().After(latest) {
+			latest = info.ModTime()
+		}
+	}
+	return latest
+}
+
+// Builds per-chat transcript chunks so BM25 search can match adjacent WhatsApp messages together.
 func (w *Source) chatSearchEntries(sourceName string, messages []whatsAppMessageRecord) []core.SearchEntry {
 	if len(messages) == 0 {
 		return nil
@@ -260,8 +347,8 @@ func (w *Source) chatSearchEntries(sourceName string, messages []whatsAppMessage
 // Builds bounded transcript chunks from chronological chat messages so long conversations stay searchable without oversized rows.
 func (w *Source) buildChatChunks(messages []whatsAppMessageRecord) []whatsAppChatChunk {
 	const (
-		targetSize = core.EmbedContextChars * 3 / 4
-		maxSize    = core.EmbedContextChars
+		targetSize = core.ChunkMaxChars * 3 / 4
+		maxSize    = core.ChunkMaxChars
 	)
 	header := formatChatChunkHeader(messages[0])
 	var chunks []whatsAppChatChunk
@@ -401,7 +488,7 @@ func splitChatTranscriptEntry(entry string, limit int) []string {
 }
 
 // truncateChatRunes caps transcript text by rune count so chat chunking can
-// honor embedding-size budgets without splitting UTF-8 sequences.
+// honor chunk-size limits without splitting UTF-8 sequences.
 func truncateChatRunes(s string, limit int) string {
 	if limit <= 0 {
 		return ""

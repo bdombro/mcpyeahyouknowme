@@ -635,10 +635,10 @@ func TestBM25Search_noResults(t *testing.T) {
 	}
 }
 
-// ---------- ListMessages (hybrid search variants) ----------
+// ---------- ListMessages (search with filters) ----------
 
-// Verifies hybrid message search applies sender filtering after hydrating ranked results.
-func TestHybridSearch_withSenderFilter(t *testing.T) {
+// Verifies message search applies sender filtering after hydrating ranked results.
+func TestListMessages_withSenderFilter(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("", "", "11111", "", "dinner", 10, 0, false, 0, 0)
 	if err != nil {
@@ -647,8 +647,8 @@ func TestHybridSearch_withSenderFilter(t *testing.T) {
 	requireContains(t, result, "dinner")
 }
 
-// Verifies hybrid message search can filter every ranked hit away when the sender mismatches.
-func TestHybridSearch_senderMismatch(t *testing.T) {
+// Verifies message search can filter every ranked hit away when the sender mismatches.
+func TestListMessages_senderMismatch(t *testing.T) {
 	svc := newTestService(t, "")
 	result, err := svc.ListMessages("", "", "99999", "", "dinner", 10, 0, false, 0, 0)
 	if err != nil {

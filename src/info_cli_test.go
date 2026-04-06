@@ -172,7 +172,7 @@ func TestWriteStatus_json(t *testing.T) {
 	infoIsNetworkAvailable = func() bool { return true }
 	infoLaunchctlOutput = func(context.Context) ([]byte, error) { return []byte("123"), nil }
 	infoDaemonRSSBytes = func(string) int64 { return 2 * 1024 * 1024 }
-	infoSearchIndexStats = func(string) SearchIndexStats { return SearchIndexStats{Entries: 4, Embedded: 2} }
+	infoSearchIndexStats = func(string) SearchIndexStats { return SearchIndexStats{Entries: 4} }
 	infoFileGroupSizeBytes = func(string) int64 { return 3 * 1024 * 1024 }
 	infoSourceDefs = []infoSourceDef{
 		{
@@ -200,8 +200,8 @@ func TestWriteStatus_json(t *testing.T) {
 	if got.CoreDaemon.Status != "running" {
 		t.Fatalf("expected running daemon status, got %#v", got.CoreDaemon)
 	}
-	if got.SearchIndex.IndexedPercent != 50 {
-		t.Fatalf("expected indexed percent 50, got %#v", got.SearchIndex)
+	if got.SearchIndex.Entries != 4 {
+		t.Fatalf("expected entries 4, got %#v", got.SearchIndex)
 	}
 	if len(got.Sources) != 1 || got.Sources[0].Key != "alpha" {
 		t.Fatalf("expected alpha source in JSON, got %#v", got.Sources)
@@ -389,11 +389,8 @@ func TestRenderStatusSnapshot_rendersOptionalFields(t *testing.T) {
 			Initialized: true,
 		},
 		SearchIndex: infoSearchIndexSnapshot{
-			Entries:        4,
-			Indexed:        2,
-			IndexedPercent: 50,
-			DBSize:         "3.0 MB",
-			Status:         "indexing in progress",
+			Entries: 4,
+			DBSize:  "3.0 MB",
 		},
 		Sources: []infoSourceSnapshot{
 			{Title: "Alpha", Available: true, Lines: []string{"   Status:     enabled"}},
@@ -437,7 +434,7 @@ func TestBuildInfoSnapshot_runningDaemon(t *testing.T) {
 	infoIsNetworkAvailable = func() bool { return true }
 	infoLaunchctlOutput = func(context.Context) ([]byte, error) { return []byte("123"), nil }
 	infoDaemonRSSBytes = func(string) int64 { return 2 * 1024 * 1024 }
-	infoSearchIndexStats = func(string) SearchIndexStats { return SearchIndexStats{Entries: 6, Embedded: 3} }
+	infoSearchIndexStats = func(string) SearchIndexStats { return SearchIndexStats{Entries: 6} }
 	infoFileGroupSizeBytes = func(string) int64 { return 4 * 1024 * 1024 }
 	infoSourceDefs = []infoSourceDef{
 		{
@@ -473,7 +470,7 @@ func TestBuildInfoSnapshot_runningDaemon(t *testing.T) {
 	if !got.Data.Initialized || got.Data.Status != "initialized" {
 		t.Fatalf("unexpected data snapshot: %#v", got.Data)
 	}
-	if got.SearchIndex.IndexedPercent != 50 || got.SearchIndex.Status != "indexing in progress" || got.SearchIndex.DBSize == "" {
+	if got.SearchIndex.Entries != 6 || got.SearchIndex.DBSize == "" {
 		t.Fatalf("unexpected search snapshot: %#v", got.SearchIndex)
 	}
 	if len(got.Sources) != 2 {
@@ -560,43 +557,38 @@ func TestBuildInfoSearchIndexSnapshot_notIndexed(t *testing.T) {
 	}
 }
 
-// Verifies buildInfoSearchIndexSnapshot reports a stopped daemon when embeddings are still pending.
-func TestBuildInfoSearchIndexSnapshot_daemonStopped(t *testing.T) {
+// Verifies buildInfoSearchIndexSnapshot includes DB size and entry count when entries exist.
+func TestBuildInfoSearchIndexSnapshot_indexed(t *testing.T) {
 	restore := restoreStatusTestGlobals(t)
 	defer restore()
 
-	infoSearchIndexStats = func(string) SearchIndexStats { return SearchIndexStats{Entries: 5, Embedded: 2} }
-	infoFileGroupSizeBytes = func(string) int64 { return 0 }
+	infoSearchIndexStats = func(string) SearchIndexStats { return SearchIndexStats{Entries: 5} }
+	infoFileGroupSizeBytes = func(string) int64 { return 2 * 1024 * 1024 }
 
 	got := buildInfoSearchIndexSnapshot(t.TempDir(), false)
-	if got.Status != "daemon not running" || got.IndexedPercent != 40 {
-		t.Fatalf("expected daemon-not-running snapshot, got %#v", got)
+	if got.Entries != 5 || got.DBSize == "" || got.Status != "" {
+		t.Fatalf("expected indexed snapshot with DB size, got %#v", got)
 	}
 }
 
-// Verifies writeSearchIndexSection renders progress details from a precomputed partial-index snapshot.
-func TestWriteSearchIndexSection_partialIndexing(t *testing.T) {
+// Verifies writeSearchIndexSection renders entry count, DB size, and optional status.
+func TestWriteSearchIndexSection_indexed(t *testing.T) {
 	var b strings.Builder
 	writeSearchIndexSection(&b, infoSearchIndexSnapshot{
-		Entries:        2,
-		Indexed:        1,
-		IndexedPercent: 50,
-		DBSize:         "1.0 MB",
-		Status:         "indexing in progress",
+		Entries: 2,
+		DBSize:  "1.0 MB",
+		Status:  "indexing in progress",
 	})
 
 	got := b.String()
-	if !strings.Contains(got, "Indexed:") {
-		t.Fatalf("expected Indexed label in output, got %q", got)
+	if !strings.Contains(got, "Entries:") {
+		t.Fatalf("expected Entries label in output, got %q", got)
 	}
 	if !strings.Contains(got, "DB Size:") {
 		t.Fatalf("expected DB Size label in output, got %q", got)
 	}
-	if strings.Contains(got, "Embedded:") {
-		t.Fatalf("did not expect Embedded label in output, got %q", got)
-	}
 	if !strings.Contains(got, "indexing in progress") {
-		t.Fatalf("expected indexing progress status in output, got %q", got)
+		t.Fatalf("expected status in output, got %q", got)
 	}
 }
 

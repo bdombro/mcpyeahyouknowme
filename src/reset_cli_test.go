@@ -181,13 +181,6 @@ func TestDoResetAll_clearsSourceFilesSearchAndConfig(t *testing.T) {
 	resetAllDescriptors = func() []registry.Descriptor { return registry.All }
 	resetAllDaemonPID = func() int { return 4321 }
 	resetAllRestartDaemon = func() error { return errors.New("restart failed") }
-	resetAllSearchReset = func(dataDir string) error {
-		return core.DefaultReset(dataDir, []string{
-			"search.db",
-			"search.db-wal",
-			"search.db-shm",
-		})
-	}
 	resetAllSaveConfig = func(dataDir string, cfg core.Config) error {
 		return core.SaveConfig(dataDir, cfg)
 	}
@@ -217,7 +210,6 @@ func TestDoResetAll_clearsSourceFilesSearchAndConfig(t *testing.T) {
 	for _, rel := range seedPaths {
 		writeTestFile(t, filepath.Join(tmpDir, rel), "seed")
 	}
-	writeTestFile(t, filepath.Join(tmpDir, "models", "keep.txt"), "model-cache")
 	writeTestFile(t, filepath.Join(tmpDir, "cache", "tokenizer", "keep.txt"), "token-cache")
 
 	err := core.SaveConfig(tmpDir, core.Config{
@@ -243,10 +235,8 @@ func TestDoResetAll_clearsSourceFilesSearchAndConfig(t *testing.T) {
 			t.Fatalf("expected %s to be removed, stat err = %v", rel, err)
 		}
 	}
-	for _, rel := range []string{"models/keep.txt", "cache/tokenizer/keep.txt"} {
-		if _, err := os.Stat(filepath.Join(tmpDir, rel)); err != nil {
-			t.Fatalf("expected %s to remain, stat err = %v", rel, err)
-		}
+	if _, err := os.Stat(filepath.Join(tmpDir, "cache", "tokenizer", "keep.txt")); err != nil {
+		t.Fatalf("expected cache/tokenizer/keep.txt to remain, stat err = %v", err)
 	}
 
 	cfg := core.LoadConfig(tmpDir)

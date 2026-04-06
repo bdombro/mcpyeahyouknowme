@@ -82,7 +82,7 @@ func listVisits(db *sql.DB, query, sortOrder string, limit, offset int) ([]Visit
 	return results, nil
 }
 
-// Lists per-url aggregates using the latest visit time to feed global hybrid indexing.
+// Lists per-url aggregates using the latest visit time to feed global search indexing.
 func listIndexRows(db *sql.DB) ([]indexRow, error) {
 	rows, err := db.Query(`
 		SELECT
@@ -113,7 +113,7 @@ func listIndexRows(db *sql.DB) ([]indexRow, error) {
 	return entries, nil
 }
 
-// Builds global search entries from per-url history rows so browser visits appear in hybrid search.
+// Builds global search entries from per-url history rows so browser visits appear in search results.
 func buildSearchEntries(rows []indexRow) []core.SearchEntry {
 	entries := make([]core.SearchEntry, 0, len(rows))
 	for _, row := range rows {

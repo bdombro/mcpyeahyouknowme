@@ -50,8 +50,7 @@ func buildTestMCPServerWithSearch(t *testing.T) *server.MCPServer {
 	searchDB.Exec("PRAGMA journal_mode=WAL")
 	searchDB.Exec("PRAGMA busy_timeout=5000")
 
-	emb := &mockEmbedder{dim: 16}
-	searchStore, err := NewSearchStoreFromDB(searchDB, emb)
+	searchStore, err := NewSearchStoreFromDB(searchDB)
 	if err != nil {
 		t.Fatalf("create search store: %v", err)
 	}
@@ -164,8 +163,9 @@ func TestMCP_GlobalSearch_metadataHint(t *testing.T) {
 func TestMCP_GlobalSearch_chatContent(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "dinner"})
-	if text == "" || text == "[]" {
-		t.Error("expected search results for 'dinner'")
+	var results []SearchResult
+	if err := json.Unmarshal([]byte(text), &results); err != nil || len(results) == 0 {
+		t.Errorf("expected search results for 'dinner', got %q", text)
 	}
 }
 
@@ -173,8 +173,9 @@ func TestMCP_GlobalSearch_chatContent(t *testing.T) {
 func TestMCP_GlobalSearch_participant(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Alice"})
-	if text == "" || text == "[]" {
-		t.Error("expected search results for 'Alice'")
+	var results []SearchResult
+	if err := json.Unmarshal([]byte(text), &results); err != nil || len(results) == 0 {
+		t.Errorf("expected search results for 'Alice', got %q", text)
 	}
 }
 
@@ -182,8 +183,9 @@ func TestMCP_GlobalSearch_participant(t *testing.T) {
 func TestMCP_GlobalSearch_sourceFilter(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Family", "source": "whatsapp"})
-	if text == "" || text == "[]" {
-		t.Error("expected results for whatsapp source filter")
+	var results []SearchResult
+	if err := json.Unmarshal([]byte(text), &results); err != nil || len(results) == 0 {
+		t.Errorf("expected results for whatsapp source filter, got %q", text)
 	}
 }
 
@@ -191,8 +193,9 @@ func TestMCP_GlobalSearch_sourceFilter(t *testing.T) {
 func TestMCP_GlobalSearch_typeFilter(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Family", "content_type": "chat_name"})
-	if text == "" || text == "[]" {
-		t.Error("expected results for chat_name type filter")
+	var results []SearchResult
+	if err := json.Unmarshal([]byte(text), &results); err != nil || len(results) == 0 {
+		t.Errorf("expected results for chat_name type filter, got %q", text)
 	}
 }
 
@@ -200,12 +203,13 @@ func TestMCP_GlobalSearch_typeFilter(t *testing.T) {
 func TestMCP_GlobalSearch_chatContentTypeFilter(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "dinner", "content_type": "chat_content"})
-	if text == "" || text == "[]" {
-		t.Error("expected results for chat_content type filter")
+	var results []SearchResult
+	if err := json.Unmarshal([]byte(text), &results); err != nil || len(results) == 0 {
+		t.Errorf("expected results for chat_content type filter, got %q", text)
 	}
 }
 
-// Verifies pure keyword search still returns an empty array when no indexed content matches.
+// Verifies that a query with no keyword matches returns the actionable retry hint instead of a silent empty array.
 func TestMCP_GlobalSearch_noKeywordMatch(t *testing.T) {
 	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -221,7 +225,7 @@ func TestMCP_GlobalSearch_noKeywordMatch(t *testing.T) {
 	searchDB, _ := sql.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(on)")
 	defer searchDB.Close()
 
-	searchStore, _ := NewSearchStoreFromDB(searchDB, nil)
+	searchStore, _ := NewSearchStoreFromDB(searchDB)
 	entries, _ := ws.SearchEntries()
 	searchStore.IndexEntries(entries)
 
@@ -230,8 +234,8 @@ func TestMCP_GlobalSearch_noKeywordMatch(t *testing.T) {
 	RegisterSearchTool(s, searchStore)
 
 	text := callGlobalTool(t, s, "search", map[string]interface{}{"query": "zzzznonexistent"})
-	if text != "[]" {
-		t.Errorf("expected empty results, got %q", text)
+	if !strings.Contains(text, "No matches found") {
+		t.Errorf("expected no-results hint, got %q", text)
 	}
 }
 
@@ -250,7 +254,7 @@ func TestMCP_GlobalSearch_withLimit(t *testing.T) {
 func TestMCP_GlobalSearch_missingQuery(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{})
-	want := `query parameter is required; retry with params.arguments: {"query":"meeting notes"}`
+	want := `query parameter is required; retry with params.arguments: {"query":"birthday dinner 2024"}`
 	if text != want {
 		t.Errorf("expected missing query error, got %q", text)
 	}
@@ -260,7 +264,7 @@ func TestMCP_GlobalSearch_missingQuery(t *testing.T) {
 func TestMCP_GlobalSearch_missingArgumentsObject(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchToolWithoutArguments(t, s)
-	want := `query parameter is required; retry with params.arguments: {"query":"meeting notes"}`
+	want := `query parameter is required; retry with params.arguments: {"query":"birthday dinner 2024"}`
 	if text != want {
 		t.Errorf("expected missing query error, got %q", text)
 	}
@@ -344,8 +348,8 @@ func TestMCP_ToolsListContainsSearchTool(t *testing.T) {
 			if err := json.Unmarshal(tool.InputSchema.Properties["query"], &querySchema); err != nil {
 				t.Fatalf("unmarshal query schema: %v", err)
 			}
-			if querySchema.Description != "Required search query" {
-				t.Fatalf("unexpected query description: %q", querySchema.Description)
+			if !strings.Contains(querySchema.Description, "synonyms") {
+				t.Fatalf("expected query description to mention synonyms, got %q", querySchema.Description)
 			}
 			break
 		}

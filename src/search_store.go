@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,8 +12,6 @@ import (
 	"unicode"
 
 	"mcpyeahyouknowme/core"
-
-	"github.com/viterin/vek/vek32"
 )
 
 // SearchEntry is an alias for core.SearchEntry for backward compatibility.
@@ -30,6 +26,13 @@ type SearchResult struct {
 	Score        float64         `json:"score"`
 	Metadata     json.RawMessage `json:"metadata,omitempty"`
 	MetadataHint string          `json:"metadata_hint,omitempty"`
+}
+
+// indexKey identifies one indexed row within a source so prune passes can
+// retain current entries without holding full SearchEntry payloads in memory.
+type indexKey struct {
+	SourceID    string
+	ContentType string
 }
 
 // Hierarchy weights: name matches are most valuable, then participants, then content.
@@ -103,26 +106,15 @@ var searchMetadataHints = map[string]string{
 	"browser_history:browser_visit":     `metadata contains {"url","visit_count","last_visit_time","url_id","domain"}; use browser_history_search for visit rows`,
 }
 
-const rrfK = 60 // constant for Reciprocal Rank Fusion
-
-// EmbedderInterface abstracts embedding operations for testability.
-type EmbedderInterface interface {
-	EmbedTexts(texts []string, batchSize int) ([][]float32, error)
-	EmbedQuery(query string) ([]float32, error)
-	Close()
-}
-
 // SearchStore manages the combined search index across all data sources.
 type SearchStore struct {
-	db       *sql.DB
-	embedder EmbedderInterface
-	bulkFTS  bool
+	db      *sql.DB
+	bulkFTS bool
 }
 
-var searchStoreAdaptiveBatchSize = adaptiveBatchSize
 var searchStoreRebuildFTS = func(db *sql.DB) error {
 	if _, err := db.Exec(`INSERT INTO search_fts(search_fts) VALUES('rebuild')`); err != nil {
-		return fmt.Errorf("rebuild search fts: %w", err)
+		return fmt.Errorf("rebuild search fts: %w", err) // nocov
 	}
 	return nil
 }
@@ -158,10 +150,9 @@ func (s *SearchStore) EndBulkIndex() error {
 	return searchStoreRebuildFTS(s.db)
 }
 
-// Clears all search entries, embeddings, FTS rows, and source timestamps so a full rebuild starts from an empty index.
+// Clears all search entries, FTS rows, and source timestamps so a full rebuild starts from an empty index.
 func (s *SearchStore) Clear() error {
 	_, err := s.db.Exec(`
-		DELETE FROM search_embeddings;
 		DELETE FROM search_entries;
 		INSERT INTO search_fts(search_fts) VALUES('rebuild');
 		DELETE FROM search_meta;
@@ -172,7 +163,7 @@ func (s *SearchStore) Clear() error {
 	return nil
 }
 
-// Deletes all indexed rows for one source so resets stop surfacing stale content in hybrid search.
+// Deletes all indexed rows for one source so resets stop surfacing stale content in search.
 func (s *SearchStore) DeleteBySource(source string) error {
 	if _, err := s.db.Exec(`DELETE FROM search_entries WHERE source = ?`, source); err != nil {
 		return fmt.Errorf("delete search entries for source %s: %w", source, err)
@@ -181,7 +172,7 @@ func (s *SearchStore) DeleteBySource(source string) error {
 }
 
 // IndexEntries upserts entries into the search index so all sources become
-// searchable before any background embedding work begins.
+// searchable before any background work begins.
 func (s *SearchStore) IndexEntries(entries []SearchEntry) error {
 	tx, err := s.db.Begin()
 	if err != nil { // nocov
@@ -225,8 +216,9 @@ func (s *SearchStore) IndexEntries(entries []SearchEntry) error {
 	return nil
 }
 
-// Prunes stale rows for one source so incremental indexing matches the source's latest SearchEntries output exactly.
-func (s *SearchStore) PruneSource(source string, current []SearchEntry) error {
+// PruneSourceKeys removes stale rows for one source after a full pass so the
+// stored index exactly matches the current emitted source_id/content_type keys.
+func (s *SearchStore) PruneSourceKeys(source string, current []indexKey) error {
 	tx, err := s.db.Begin()
 	if err != nil { // nocov
 		return fmt.Errorf("begin prune for %s: %w", source, err)
@@ -254,9 +246,9 @@ func (s *SearchStore) PruneSource(source string, current []SearchEntry) error {
 		}
 		defer stmt.Close()
 
-		for _, entry := range current {
-			if _, err := stmt.Exec(entry.SourceID, entry.ContentType); err != nil { // nocov
-				return fmt.Errorf("insert prune key for %s/%s/%s: %w", source, entry.SourceID, entry.ContentType, err)
+		for _, key := range current {
+			if _, err := stmt.Exec(key.SourceID, key.ContentType); err != nil { // nocov
+				return fmt.Errorf("insert prune key for %s/%s/%s: %w", source, key.SourceID, key.ContentType, err)
 			}
 		}
 	}
@@ -296,159 +288,6 @@ func (s *SearchStore) rebuildFTSIfNeeded() {
 	}
 }
 
-const embeddingChunkSize = 1000
-
-// Samples current system headroom and only downshifts the active embedding batch
-// size so long runs stay responsive under memory pressure.
-func nextEmbeddingBatchSize(current int) int {
-	next := searchStoreAdaptiveBatchSize()
-	if next <= 0 {
-		next = 1
-	}
-	if current <= 0 || next < current {
-		return next
-	}
-	return current
-}
-
-// computeEmbeddings generates embeddings for entries that don't have one yet,
-// processing in chunks with per-chunk commits and adaptive batch sizing.
-func (s *SearchStore) computeEmbeddings(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	batchSize := 0
-	var afterID int64
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		batchSize = nextEmbeddingBatchSize(batchSize)
-		nextID, n, err := s.embedChunk(afterID, batchSize, embeddingChunkSize)
-		if err != nil {
-			return err
-		}
-		afterID = nextID
-		if n == 0 {
-			return nil
-		}
-		timer := time.NewTimer(50 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
-		}
-	}
-}
-
-// ComputePendingEmbeddings fills in missing embeddings after indexing so
-// source insertion can finish before expensive model work starts.
-func (s *SearchStore) ComputePendingEmbeddings() error {
-	return s.ComputePendingEmbeddingsContext(context.Background())
-}
-
-// Fills in missing embeddings until completion or context cancellation so daemon reindex requests can restart promptly.
-func (s *SearchStore) ComputePendingEmbeddingsContext(ctx context.Context) error {
-	if s.embedder == nil {
-		return nil
-	}
-	return s.computeEmbeddings(ctx)
-}
-
-type pendingEmbed struct {
-	id   int64
-	text string
-}
-
-// embedChunk processes the next page of entries missing embeddings after
-// afterID, returning the furthest scanned ID and the number of embedded rows.
-func (s *SearchStore) embedChunk(afterID int64, batchSize, limit int) (int64, int, error) {
-	cursor := afterID
-	for {
-		rows, err := s.db.Query(`
-			SELECT e.id, e.title, e.content
-			FROM search_entries e
-			LEFT JOIN search_embeddings se ON e.id = se.entry_id
-			WHERE e.id > ? AND se.entry_id IS NULL
-			ORDER BY e.id
-			LIMIT ?`, cursor, limit)
-		if err != nil { // nocov
-			return cursor, 0, err
-		}
-
-		var (
-			chunk  []pendingEmbed
-			lastID = cursor
-		)
-		for rows.Next() {
-			var id int64
-			var title, content string
-			if rows.Scan(&id, &title, &content) != nil { // nocov
-				continue
-			}
-			lastID = id
-			text := title
-			if content != "" {
-				if text != "" {
-					text += ": "
-				}
-				text += content
-			}
-			if strings.TrimSpace(text) == "" {
-				continue
-			}
-			chunk = append(chunk, pendingEmbed{id: id, text: text})
-		}
-		rows.Close()
-
-		if lastID == cursor {
-			return cursor, 0, nil
-		}
-		cursor = lastID
-		if len(chunk) == 0 {
-			continue
-		}
-
-		texts := make([]string, len(chunk))
-		for i, p := range chunk {
-			texts[i] = p.text
-		}
-
-		embeddings, err := s.embedder.EmbedTexts(texts, batchSize)
-		if err != nil {
-			return cursor, 0, fmt.Errorf("embed texts: %w", err)
-		}
-
-		tx, err := s.db.Begin()
-		if err != nil { // nocov
-			return cursor, 0, err
-		}
-		defer tx.Rollback()
-
-		stmt, err := tx.Prepare("INSERT OR REPLACE INTO search_embeddings (entry_id, embedding) VALUES (?, ?)")
-		if err != nil { // nocov
-			return cursor, 0, err
-		}
-		defer stmt.Close()
-
-		for i, emb := range embeddings {
-			blob := []byte{}
-			if len(emb) > 0 {
-				blob = float32sToBytes(emb)
-			}
-			if _, err := stmt.Exec(chunk[i].id, blob); err != nil { // nocov
-				return cursor, 0, err
-			}
-		}
-
-		if err := tx.Commit(); err != nil { // nocov
-			return cursor, 0, err
-		}
-		return cursor, len(chunk), nil
-	}
-}
-
 // UpdateSourceTimestamp fire-and-forgets the source's latest successful index time into search_meta for incremental reindex decisions.
 func (s *SearchStore) UpdateSourceTimestamp(source string, t time.Time) {
 	s.db.Exec(`INSERT INTO search_meta (source, last_indexed) VALUES (?, ?)
@@ -467,32 +306,19 @@ func (s *SearchStore) LastIndexed(source string) time.Time {
 	return time.Time{}
 }
 
-// Search runs hybrid BM25+vector retrieval for `query`, falling back to BM25-only if query embedding fails, then returns weighted top results.
+// Search runs BM25 keyword retrieval for query and returns weighted top results.
 func (s *SearchStore) Search(query string, limit int, sourceFilter, typeFilter string) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 
-	bm25Results := s.bm25SearchEntries(query, limit*5, sourceFilter, typeFilter)
+	ranked := s.bm25SearchEntries(query, limit*5, sourceFilter, typeFilter)
 
-	var vectorResults []rankedEntry
-	if s.embedder != nil && len(bm25Results) < limit {
-		var err error
-		vectorResults, err = s.vectorSearch(query, limit*5, sourceFilter, typeFilter)
-		if err != nil {
-			vectorResults = nil
-		}
+	if len(ranked) > limit {
+		ranked = ranked[:limit]
 	}
 
-	fused := rrfFuse(bm25Results, vectorResults)
-
-	sort.Slice(fused, func(i, j int) bool { return fused[i].score > fused[j].score })
-
-	if len(fused) > limit {
-		fused = fused[:limit]
-	}
-
-	return s.loadResults(fused)
+	return s.loadResults(ranked)
 }
 
 type rankedEntry struct {
@@ -538,8 +364,12 @@ func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, t
 	return results
 }
 
-// sanitizeFTSQuery tokenizes natural-language queries into quoted FTS terms so
-// keyword search matches per-word intent instead of requiring one exact phrase.
+// sanitizeFTSQuery tokenizes the query into OR-joined prefix terms so BM25 search
+// returns any document containing a word that starts with any query keyword.
+// OR semantics maximise recall; BM25 naturally ranks documents matching more terms higher.
+// Tokens shorter than 3 characters are dropped before building the OR expression to avoid
+// overly broad prefix matches (e.g. "me*" matching "meeting", "message", "member", etc.).
+// If all tokens are short, the filter is skipped so single-letter queries still work.
 func sanitizeFTSQuery(query string) string {
 	tokens := strings.FieldsFunc(query, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
@@ -549,90 +379,25 @@ func sanitizeFTSQuery(query string) string {
 		return `"` + safeQuery + `"`
 	}
 
-	quoted := make([]string, 0, len(tokens))
-	for _, token := range tokens {
+	significant := make([]string, 0, len(tokens))
+	for _, tok := range tokens {
+		if len(tok) >= 3 {
+			significant = append(significant, tok)
+		}
+	}
+	if len(significant) == 0 {
+		significant = tokens
+	}
+
+	parts := make([]string, 0, len(significant))
+	for _, token := range significant {
 		safeToken := strings.ReplaceAll(token, `"`, `""`)
-		quoted = append(quoted, `"`+safeToken+`"`)
+		parts = append(parts, `"`+safeToken+`"*`)
 	}
-	return strings.Join(quoted, " ")
+	return strings.Join(parts, " OR ")
 }
 
-// vectorSearch embeds query, scores stored embeddings with cosine similarity, and returns top ranked entry IDs.
-func (s *SearchStore) vectorSearch(query string, limit int, sourceFilter, typeFilter string) ([]rankedEntry, error) {
-	queryEmb, err := s.embedder.EmbedQuery(query)
-	if err != nil {
-		return nil, err
-	}
-
-	filterParts := []string{"1=1"}
-	var filterParams []interface{}
-	if sourceFilter != "" {
-		filterParts = append(filterParts, "e.source = ?")
-		filterParams = append(filterParams, sourceFilter)
-	}
-	if typeFilter != "" {
-		filterParts = append(filterParts, "e.content_type = ?")
-		filterParams = append(filterParams, typeFilter)
-	}
-
-	rows, err := s.db.Query(
-		"SELECT se.entry_id, se.embedding FROM search_embeddings se "+
-			"JOIN search_entries e ON se.entry_id = e.id WHERE "+
-			strings.Join(filterParts, " AND "),
-		filterParams...)
-	if err != nil { // nocov
-		return nil, err
-	}
-	defer rows.Close()
-
-	type scored struct {
-		id    int64
-		score float64
-	}
-	var all []scored
-	for rows.Next() {
-		var id int64
-		var blob []byte
-		if rows.Scan(&id, &blob) != nil { // nocov
-			continue
-		}
-		if len(blob) == 0 {
-			continue
-		}
-		emb := bytesToFloat32s(blob)
-		sim := cosineSimilarity(queryEmb, emb)
-		all = append(all, scored{id: id, score: sim})
-	}
-
-	sort.Slice(all, func(i, j int) bool { return all[i].score > all[j].score })
-	if len(all) > limit {
-		all = all[:limit]
-	}
-
-	results := make([]rankedEntry, len(all))
-	for i, s := range all {
-		results[i] = rankedEntry{entryID: s.id, score: s.score}
-	}
-	return results, nil
-}
-
-// rrfFuse merges BM25/vector ranked lists with Reciprocal Rank Fusion so hybrid search rewards agreement between retrieval modes.
-func rrfFuse(lists ...[]rankedEntry) []rankedEntry {
-	scores := make(map[int64]float64)
-	for _, list := range lists {
-		for rank, entry := range list {
-			scores[entry.entryID] += 1.0 / float64(rrfK+rank+1)
-		}
-	}
-
-	result := make([]rankedEntry, 0, len(scores))
-	for id, score := range scores {
-		result = append(result, rankedEntry{entryID: id, score: score})
-	}
-	return result
-}
-
-// loadResults hydrates ranked entry IDs, applies hierarchy weighting, and returns ordered MCP search results.
+// loadResults hydrates ranked entry IDs, applies hierarchy weighting, and returns ordered search results.
 func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) {
 	if len(ranked) == 0 {
 		return []SearchResult{}, nil
@@ -679,7 +444,7 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 			ContentType:  contentType,
 			Title:        title,
 			Content:      content,
-			Score:        scoreMap[id] * weight,
+			Score:        -scoreMap[id] * weight,
 			Metadata:     meta,
 			MetadataHint: searchMetadataHint(source, contentType),
 		}
@@ -703,20 +468,18 @@ func searchMetadataHint(source, contentType string) string {
 
 // SearchIndexStats holds summary statistics for the search index.
 type SearchIndexStats struct {
-	Entries  int
-	Embedded int
+	Entries int
 }
 
-// IndexStats returns entry and embedding counts so info/status surfaces can report indexing progress without loading results.
+// IndexStats returns entry count so info/status surfaces can report indexing progress without loading results.
 func (s *SearchStore) IndexStats() SearchIndexStats {
 	stats := SearchIndexStats{}
 	s.db.QueryRow("SELECT COUNT(*) FROM search_entries").Scan(&stats.Entries)
-	s.db.QueryRow("SELECT COUNT(*) FROM search_embeddings").Scan(&stats.Embedded)
 	return stats
 }
 
 // ReadOnlySearchIndexStats opens search.db read-only and returns index stats
-// without needing an embedder. Returns zero stats if the DB doesn't exist.
+// without needing a full store. Returns zero stats if the DB doesn't exist.
 func ReadOnlySearchIndexStats(dir string) SearchIndexStats {
 	dbPath := filepath.Join(dir, "search.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -730,43 +493,4 @@ func ReadOnlySearchIndexStats(dir string) SearchIndexStats {
 
 	store := &SearchStore{db: db}
 	return store.IndexStats()
-}
-
-// ---------- Vector math helpers ----------
-
-// cosineSimilarity scores two equal-length vectors so semantic search can rank embedding matches.
-func cosineSimilarity(a, b []float32) float64 {
-	if len(a) != len(b) || len(a) == 0 {
-		return 0
-	}
-	if vek32.Norm(a) == 0 || vek32.Norm(b) == 0 {
-		return 0
-	}
-	return float64(vek32.CosineSimilarity(a, b))
-}
-
-// float32sToBytes packs an embedding vector into SQLite blob bytes for storage.
-func float32sToBytes(f []float32) []byte {
-	buf := make([]byte, len(f)*4)
-	for i, v := range f {
-		bits := math.Float32bits(v)
-		buf[i*4] = byte(bits)
-		buf[i*4+1] = byte(bits >> 8)
-		buf[i*4+2] = byte(bits >> 16)
-		buf[i*4+3] = byte(bits >> 24)
-	}
-	return buf
-}
-
-// bytesToFloat32s unpacks an embedding blob into float32 values for similarity scoring.
-func bytesToFloat32s(b []byte) []float32 {
-	if len(b)%4 != 0 {
-		return nil
-	}
-	f := make([]float32, len(b)/4)
-	for i := range f {
-		bits := uint32(b[i*4]) | uint32(b[i*4+1])<<8 | uint32(b[i*4+2])<<16 | uint32(b[i*4+3])<<24
-		f[i] = math.Float32frombits(bits)
-	}
-	return f
 }

@@ -45,11 +45,9 @@ type infoDataSnapshot struct {
 }
 
 type infoSearchIndexSnapshot struct {
-	Entries        int    `json:"entries"`
-	Indexed        int    `json:"indexed"`
-	IndexedPercent int    `json:"indexed_percent"`
-	DBSize         string `json:"db_size,omitempty"`
-	Status         string `json:"status,omitempty"`
+	Entries int    `json:"entries"`
+	DBSize  string `json:"db_size,omitempty"`
+	Status  string `json:"status,omitempty"`
 }
 
 type infoSourceSnapshot struct {
@@ -310,29 +308,18 @@ func buildInfoDataSnapshot(dataDir string) infoDataSnapshot {
 	return snapshot
 }
 
-// buildInfoSearchIndexSnapshot summarizes read-only search index progress for both CLI formats.
-func buildInfoSearchIndexSnapshot(dataDir string, daemonRunning bool) infoSearchIndexSnapshot {
+// buildInfoSearchIndexSnapshot summarizes read-only search index stats for both CLI formats.
+func buildInfoSearchIndexSnapshot(dataDir string, _ bool) infoSearchIndexSnapshot {
 	stats := infoSearchIndexStats(dataDir)
 	snapshot := infoSearchIndexSnapshot{
 		Entries: stats.Entries,
-		Indexed: stats.Embedded,
 	}
-	if stats.Entries == 0 && stats.Embedded == 0 {
+	if stats.Entries == 0 {
 		snapshot.Status = "not indexed"
 		return snapshot
 	}
-	if stats.Entries > 0 {
-		snapshot.IndexedPercent = stats.Embedded * 100 / stats.Entries
-	}
 	if sizeBytes := infoFileGroupSizeBytes(filepath.Join(dataDir, "search.db")); sizeBytes > 0 {
 		snapshot.DBSize = core.FormatSizeMB(sizeBytes)
-	}
-	if stats.Embedded < stats.Entries {
-		if daemonRunning {
-			snapshot.Status = "indexing in progress"
-		} else {
-			snapshot.Status = "daemon not running"
-		}
 	}
 	return snapshot
 }
@@ -361,13 +348,12 @@ func buildInfoSourceSnapshots(dataDir string) []infoSourceSnapshot {
 // writeSearchIndexSection appends search index status lines from a precomputed snapshot to the human report.
 func writeSearchIndexSection(b *strings.Builder, snapshot infoSearchIndexSnapshot) {
 	fmt.Fprintln(b, "\U0001f50d Search Index")
-	if snapshot.Entries == 0 && snapshot.Indexed == 0 {
+	if snapshot.Entries == 0 {
 		fmt.Fprintln(b, "   Status:     not indexed")
 		fmt.Fprintln(b)
 		return
 	}
 	fmt.Fprintf(b, "   Entries:    %d\n", snapshot.Entries)
-	fmt.Fprintf(b, "   Indexed:    %d (%d%%)\n", snapshot.Indexed, snapshot.IndexedPercent)
 	if snapshot.DBSize != "" {
 		fmt.Fprintf(b, "   DB Size:    %s\n", snapshot.DBSize)
 	}

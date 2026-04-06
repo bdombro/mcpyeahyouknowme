@@ -67,7 +67,7 @@ func TestHandleReset_disablesSourceInsteadOfDeleting(t *testing.T) {
 		t.Fatalf("open search db: %v", err)
 	}
 	t.Cleanup(func() { searchDB.Close() })
-	searchStore, err := NewSearchStoreFromDB(searchDB, nil)
+	searchStore, err := NewSearchStoreFromDB(searchDB)
 	if err != nil {
 		t.Fatalf("NewSearchStoreFromDB: %v", err)
 	}
@@ -214,18 +214,19 @@ func TestIndexCoordinator_requestRestart(t *testing.T) {
 	type run struct {
 		ctx        context.Context
 		clearFirst bool
+		fullPass   bool
 	}
 	started := make(chan run, 2)
 	released := make(chan struct{}, 1)
-	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst bool) {
-		started <- run{ctx: ctx, clearFirst: clearFirst}
+	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst, fullPass bool) {
+		started <- run{ctx: ctx, clearFirst: clearFirst, fullPass: fullPass}
 		<-released
 	})
 
-	coordinator.Request(false, false)
+	coordinator.Request(false, false, false)
 	firstRun := <-started
 
-	coordinator.Request(true, true)
+	coordinator.Request(true, true, true)
 
 	select {
 	case <-firstRun.ctx.Done():
@@ -240,6 +241,9 @@ func TestIndexCoordinator_requestRestart(t *testing.T) {
 		if !nextRun.clearFirst {
 			t.Fatal("expected restarted run to request a full clear")
 		}
+		if !nextRun.fullPass {
+			t.Fatal("expected restarted run to be a full pass")
+		}
 	case <-time.After(time.Second):
 		t.Fatal("expected restart run to begin after cancellation")
 	}
@@ -250,18 +254,19 @@ func TestIndexCoordinator_requestWhileRunning_noRestart(t *testing.T) {
 	type run struct {
 		ctx        context.Context
 		clearFirst bool
+		fullPass   bool
 	}
 	started := make(chan run, 1)
 	released := make(chan struct{}, 1)
-	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst bool) {
-		started <- run{ctx: ctx, clearFirst: clearFirst}
+	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst, fullPass bool) {
+		started <- run{ctx: ctx, clearFirst: clearFirst, fullPass: fullPass}
 		<-released
 	})
 
-	coordinator.Request(false, false)
+	coordinator.Request(false, false, false)
 	firstRun := <-started
 
-	coordinator.Request(false, true)
+	coordinator.Request(false, true, true)
 
 	select {
 	case <-firstRun.ctx.Done():
@@ -281,11 +286,11 @@ func TestIndexCoordinator_requestWhileRunning_noRestart(t *testing.T) {
 // Verifies nil-safe coordinator helpers return without panicking when no worker is configured.
 func TestIndexCoordinator_nilSafety(_ *testing.T) {
 	var nilCoordinator *indexCoordinator
-	nilCoordinator.Request(false, false)
+	nilCoordinator.Request(false, false, false)
 	nilCoordinator.Stop()
 
 	coordinator := newIndexCoordinator(nil)
-	coordinator.Request(false, false)
+	coordinator.Request(false, false, false)
 }
 
 // Verifies Stop cancels the active run and clears pending restart state.
@@ -293,20 +298,26 @@ func TestIndexCoordinator_stop(t *testing.T) {
 	type run struct {
 		ctx        context.Context
 		clearFirst bool
+		fullPass   bool
 	}
 	started := make(chan run, 1)
 	released := make(chan struct{}, 1)
-	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst bool) {
-		started <- run{ctx: ctx, clearFirst: clearFirst}
+	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst, fullPass bool) {
+		started <- run{ctx: ctx, clearFirst: clearFirst, fullPass: fullPass}
 		<-released
 	})
 
-	coordinator.Request(false, false)
+	coordinator.Request(false, false, false)
 	activeRun := <-started
 	coordinator.restartPending = true
 	coordinator.clearPending = true
+	coordinator.fullPassPending = true
 
-	coordinator.Stop()
+	stopped := make(chan struct{})
+	go func() {
+		coordinator.Stop()
+		close(stopped)
+	}()
 
 	select {
 	case <-activeRun.ctx.Done():
@@ -315,12 +326,19 @@ func TestIndexCoordinator_stop(t *testing.T) {
 	}
 
 	released <- struct{}{}
-	time.Sleep(10 * time.Millisecond)
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("expected Stop to return after the worker exits")
+	}
 	if coordinator.restartPending {
 		t.Fatal("expected Stop to clear pending restart state")
 	}
 	if coordinator.clearPending {
 		t.Fatal("expected Stop to clear pending full-clear state")
+	}
+	if coordinator.fullPassPending {
+		t.Fatal("expected Stop to clear pending full-pass state")
 	}
 }
 
@@ -513,7 +531,7 @@ func TestHandleCoreSignal_reindex(t *testing.T) {
 	running := map[string]context.CancelFunc{}
 	indexCalled := false
 
-	if stop := handleCoreSignal(syscall.SIGUSR1, running, nil, nil, nil, func() { indexCalled = true }); stop {
+	if stop := handleCoreSignal(syscall.SIGUSR1, running, nil, nil, func() { indexCalled = true }); stop {
 		t.Fatal("expected daemon to keep running after SIGUSR1")
 	}
 	if !indexCalled {
@@ -537,7 +555,7 @@ func TestHandleCoreSignal_shutdown(t *testing.T) {
 		"stub": func() { cancelled = true },
 	}
 
-	if stop := handleCoreSignal(syscall.SIGTERM, running, searchStore, &Embedder{}, func() { indexStopped = true }, func() {}); !stop {
+	if stop := handleCoreSignal(syscall.SIGTERM, running, searchStore, func() { indexStopped = true }, func() {}); !stop {
 		t.Fatal("expected daemon to stop after SIGTERM")
 	}
 	if !indexStopped {

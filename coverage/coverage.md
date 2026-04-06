@@ -4,45 +4,26 @@
 
 | File | Covered | Total | Coverage |
 |------|---------|-------|----------|
-| [`app_calendar.go`](#app_calendargo) | 121 | 122 | 99.2% |
-| [`app_contacts.go`](#app_contactsgo) | 94 | 95 | 98.9% |
-| `app_docs.go` | 123 | 123 | 100.0% |
-| [`app_gmail.go`](#app_gmailgo) | 517 | 527 | 98.1% |
+| `app_calendar.go` | 122 | 122 | 100.0% |
+| `app_contacts.go` | 95 | 95 | 100.0% |
+| `app_docs.go` | 136 | 136 | 100.0% |
+| [`app_gmail.go`](#app_gmailgo) | 590 | 591 | 99.8% |
 | `app_sheets.go` | 86 | 86 | 100.0% |
 | `app_slides.go` | 80 | 80 | 100.0% |
-| [`app_tasks.go`](#app_tasksgo) | 71 | 72 | 98.6% |
+| `app_tasks.go` | 72 | 72 | 100.0% |
 | `client.go` | 246 | 246 | 100.0% |
-| `embedding.go` | 24 | 24 | 100.0% |
-| `extract.go` | 55 | 55 | 100.0% |
+| `extract.go` | 56 | 56 | 100.0% |
 | `helpers.go` | 73 | 73 | 100.0% |
 | `mcp.go` | 120 | 120 | 100.0% |
 | `scanner.go` | 99 | 99 | 100.0% |
-| `search_store.go` | 244 | 244 | 100.0% |
+| `search_store.go` | 157 | 157 | 100.0% |
 | `service.go` | 401 | 401 | 100.0% |
-| `source.go` | 148 | 148 | 100.0% |
-| `store.go` | 139 | 139 | 100.0% |
-| **Total** | **2641** | **2654** | **99.5%** |
+| `source.go` | 189 | 189 | 100.0% |
+| `store.go` | 142 | 142 | 100.0% |
+| **Total** | **2664** | **2665** | **100.0%** |
 
 ## Uncovered Blocks
 
-### [`app_calendar.go`](../src/app_calendar.go)
-
-- Lines 58–60 (1 stmt)
-
-### [`app_contacts.go`](../src/app_contacts.go)
-
-- Lines 49–51 (1 stmt)
-
 ### [`app_gmail.go`](../src/app_gmail.go)
 
-- Lines 86–89 (2 stmts)
-- Lines 92–95 (2 stmts)
-- Lines 98–101 (2 stmts)
-- Lines 904–905 (1 stmt)
-- Lines 906–907 (1 stmt)
-- Lines 932–933 (1 stmt)
-- Lines 939–940 (1 stmt)
-
-### [`app_tasks.go`](../src/app_tasks.go)
-
-- Lines 48–50 (1 stmt)
+- Lines 836–838 (1 stmt)

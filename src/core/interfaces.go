@@ -28,14 +28,31 @@ type DataSource interface {
 	Close() error
 }
 
-//revive:disable:exported
 // CoreService is implemented by data sources that run background sync (subscription or polling, max 5-minute interval).
+//
+//revive:disable:exported
 type CoreService interface {
 	// StartCore runs the source's background sync service. It blocks until ctx
 	// is cancelled. Sources must use core.RunPollLoop or manage their own loop.
 	StartCore(ctx context.Context) error
 	// RequiresAuth returns true if this source needs credentials before running.
 	RequiresAuth() bool
+}
+
+// StreamingSource is implemented by data sources that can emit search rows in
+// batches so daemon indexing avoids materializing the full corpus in memory.
+type StreamingSource interface {
+	// StreamSearchEntries emits zero or more batches of SearchEntry values. The
+	// callback may return an error to stop streaming early.
+	StreamSearchEntries(emit func([]SearchEntry) error) error
+}
+
+// IncrementalSource is implemented by data sources that can cheaply decide
+// whether their indexed content changed since the last successful pass.
+type IncrementalSource interface {
+	// HasChangesSince reports whether the source should be re-indexed after t.
+	// A zero time means no previous successful index watermark exists.
+	HasChangesSince(t time.Time) bool
 }
 
 //revive:enable:exported

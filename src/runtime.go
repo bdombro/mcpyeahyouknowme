@@ -29,23 +29,28 @@ var trimLogWrite = func(file *os.File, tail []byte) error {
 
 // indexCoordinator serializes background index runs and can request a restart after the current run yields.
 type indexCoordinator struct {
-	mu             sync.Mutex
-	running        bool
-	restartPending bool
-	clearPending   bool
-	cancel         context.CancelFunc
-	start          func(context.Context, bool)
+	mu              sync.Mutex
+	running         bool
+	restartPending  bool
+	clearPending    bool
+	fullPassPending bool
+	cancel          context.CancelFunc
+	start           func(context.Context, bool, bool)
+	wg              sync.WaitGroup
 }
 
 // Builds a coordinator that owns one cancellable background indexing worker at a time.
-func newIndexCoordinator(start func(context.Context, bool)) *indexCoordinator {
+func newIndexCoordinator(start func(context.Context, bool, bool)) *indexCoordinator {
 	return &indexCoordinator{start: start}
 }
 
 // Starts a new index run or requests cancellation-and-restart when one is already active.
-func (c *indexCoordinator) Request(restartIfRunning, clearFirst bool) {
+func (c *indexCoordinator) Request(restartIfRunning, clearFirst, fullPass bool) {
 	if c == nil || c.start == nil {
 		return
+	}
+	if clearFirst {
+		fullPass = true
 	}
 
 	c.mu.Lock()
@@ -53,6 +58,7 @@ func (c *indexCoordinator) Request(restartIfRunning, clearFirst bool) {
 		if restartIfRunning {
 			c.restartPending = true
 			c.clearPending = c.clearPending || clearFirst
+			c.fullPassPending = c.fullPassPending || fullPass
 			if c.cancel != nil {
 				c.cancel()
 			}
@@ -65,23 +71,28 @@ func (c *indexCoordinator) Request(restartIfRunning, clearFirst bool) {
 	c.running = true
 	c.restartPending = false
 	c.clearPending = false
+	c.fullPassPending = false
 	c.cancel = cancel
+	c.wg.Add(1)
 	c.mu.Unlock()
 
 	go func() {
-		c.start(ctx, clearFirst)
+		defer c.wg.Done()
+		c.start(ctx, clearFirst, fullPass)
 
 		c.mu.Lock()
 		c.running = false
 		c.cancel = nil
 		restart := c.restartPending
 		clearFirstNext := c.clearPending
+		fullPassNext := c.fullPassPending
 		c.restartPending = false
 		c.clearPending = false
+		c.fullPassPending = false
 		c.mu.Unlock()
 
 		if restart {
-			c.Request(false, clearFirstNext)
+			c.Request(false, clearFirstNext, fullPassNext)
 		}
 	}()
 }
@@ -95,12 +106,14 @@ func (c *indexCoordinator) Stop() {
 	c.mu.Lock()
 	c.restartPending = false
 	c.clearPending = false
+	c.fullPassPending = false
 	cancel := c.cancel
 	c.mu.Unlock()
 
 	if cancel != nil {
 		cancel()
 	}
+	c.wg.Wait()
 }
 
 // Trims the daemon log file when it grows past the threshold so a long-lived LaunchAgent keeps recent context without unbounded growth.
@@ -169,8 +182,7 @@ func runCore() {
 	fmt.Printf("Data directory: %s\n", dir)
 
 	running := map[string]context.CancelFunc{}
-	embedder := NewLazyEmbedder(filepath.Join(dir, "models"))
-	searchStore, err := NewSearchStore(dir, embedder)
+	searchStore, err := NewSearchStore(dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: search index unavailable: %v\n", err)
 	}
@@ -185,7 +197,17 @@ func runCore() {
 		}
 	}
 
-	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst bool) {
+	indexSourcesPool := []activeSource{}
+	closeIndexSources := func() {
+		for _, active := range indexSourcesPool {
+			if active.src != nil {
+				active.src.Close()
+			}
+		}
+		indexSourcesPool = nil
+	}
+
+	coordinator := newIndexCoordinator(func(ctx context.Context, clearFirst, fullPass bool) {
 		if searchStore == nil {
 			return
 		}
@@ -195,12 +217,7 @@ func runCore() {
 				return
 			}
 		}
-		sources := buildActiveSources(dir)
-		defer func() {
-			for _, s := range sources {
-				s.src.Close()
-			}
-		}()
+		indexSourcesPool = reconcileIndexSources(dir, indexSourcesPool)
 
 		bulkMode := false
 		if err := searchStore.BeginBulkIndex(); err != nil {
@@ -209,28 +226,21 @@ func runCore() {
 			bulkMode = true
 		}
 
-		completed := indexSources(ctx, searchStore, sources)
+		indexSources(ctx, searchStore, indexSourcesPool, fullPass)
 		if bulkMode {
 			if err := searchStore.EndBulkIndex(); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to finalize bulk FTS indexing: %v\n", err)
-				return
 			}
 		}
-		if !completed {
-			return
-		}
-		if err := searchStore.ComputePendingEmbeddingsContext(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			fmt.Fprintf(os.Stderr, "Warning: embedding pass failed: %v\n", err)
-		}
 	})
-	requestIndex := func(restartIfRunning, clearFirst bool) {
+	requestIndex := func(restartIfRunning, clearFirst, fullPass bool) {
 		if searchStore == nil {
 			return
 		}
-		coordinator.Request(restartIfRunning, clearFirst)
+		coordinator.Request(restartIfRunning, clearFirst, fullPass)
 	}
 
-	requestIndex(false, false)
+	requestIndex(false, false, true)
 
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -241,7 +251,10 @@ func runCore() {
 	for {
 		select {
 		case sig := <-sigCh:
-			if handleCoreSignal(sig, running, searchStore, embedder, coordinator.Stop, func() { requestIndex(true, true) }) {
+			if handleCoreSignal(sig, running, searchStore, func() {
+				coordinator.Stop()
+				closeIndexSources()
+			}, func() { requestIndex(true, false, true) }) {
 				return
 			}
 		case <-ticker.C:
@@ -279,13 +292,13 @@ func runCore() {
 			}
 			cfg = newCfg
 
-			requestIndex(false, false)
+			requestIndex(false, false, false)
 		}
 	}
 }
 
 // handleCoreSignal runs an immediate index pass for SIGUSR1 and otherwise performs daemon shutdown cleanup.
-func handleCoreSignal(sig os.Signal, running map[string]context.CancelFunc, searchStore *SearchStore, embedder EmbedderInterface, stopIndex func(), runIndex func()) bool {
+func handleCoreSignal(sig os.Signal, running map[string]context.CancelFunc, searchStore *SearchStore, stopIndex func(), runIndex func()) bool {
 	if sig == syscall.SIGUSR1 {
 		runIndex()
 		return false
@@ -298,9 +311,6 @@ func handleCoreSignal(sig os.Signal, running map[string]context.CancelFunc, sear
 	}
 	if searchStore != nil {
 		searchStore.Close()
-	}
-	if embedder != nil {
-		embedder.Close()
 	}
 	return true
 }

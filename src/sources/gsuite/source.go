@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"mcpyeahyouknowme/core"
 
@@ -32,6 +33,7 @@ type appDef struct {
 	syncFunc      func(ctx syncContext) error
 	registerTools func(src *Source, prefix string, s toolAdder)
 	searchEntries func(db *sql.DB, sourceName string) ([]core.SearchEntry, error)
+	streamEntries func(db *sql.DB, sourceName string, emit func([]core.SearchEntry) error) error
 	countRows     func(*sql.DB) (int, error)
 	tablesToDrop  []string
 }
@@ -142,9 +144,11 @@ func IsLoggedIn(dataDir string) bool {
 }
 
 // Name returns the source key used for config, registry lookup, and tool prefixes.
-func (g *Source) Name() string        { return "gsuite" }
+func (g *Source) Name() string { return "gsuite" }
+
 // Description returns the human label shown in CLI and status output.
 func (g *Source) Description() string { return "Google Suite" }
+
 // Close releases the gsuite database handle so callers do not leak SQLite connections.
 func (g *Source) Close() error {
 	if g.db != nil {
@@ -183,21 +187,66 @@ func (g *Source) ResetApp(appName string) error {
 
 // SearchEntries gathers indexable rows from enabled apps for global search, skipping per-app extraction failures rather than failing the whole source.
 func (g *Source) SearchEntries() ([]core.SearchEntry, error) {
-	if g.db == nil {
-		return nil, nil
-	}
 	var all []core.SearchEntry
+	err := g.StreamSearchEntries(func(entries []core.SearchEntry) error {
+		all = append(all, entries...)
+		return nil
+	})
+	return all, err
+}
+
+// StreamSearchEntries emits one app at a time so daemon indexing avoids
+// holding every Google Workspace app's entries in one combined slice.
+// Errors originating from the emit callback (e.g. context cancellation) are
+// propagated immediately; errors from app-internal logic (e.g. DB failures in
+// one app) are logged and skipped so the remaining apps are still indexed.
+func (g *Source) StreamSearchEntries(emit func([]core.SearchEntry) error) error {
+	if g.db == nil || emit == nil {
+		return nil
+	}
+	var emitErr error
+	wrappedEmit := func(batch []core.SearchEntry) error {
+		err := emit(batch)
+		if err != nil {
+			emitErr = err
+		}
+		return err
+	}
 	for _, app := range allApps {
 		if !g.apps.IsEnabled(app.name) {
 			continue
 		}
-		entries, err := app.searchEntries(g.db, g.Name())
-		if err != nil {
+		if app.streamEntries != nil {
+			if err := app.streamEntries(g.db, g.Name(), wrappedEmit); err != nil {
+				if emitErr != nil {
+					return emitErr
+				}
+				continue
+			}
 			continue
 		}
-		all = append(all, entries...)
+		entries, err := app.searchEntries(g.db, g.Name())
+		if err != nil || len(entries) == 0 {
+			continue
+		}
+		if err := wrappedEmit(entries); err != nil {
+			return err
+		}
 	}
-	return all, nil
+	return nil
+}
+
+// HasChangesSince checks the local GSuite SQLite files so incremental daemon
+// ticks can skip a full re-export when the synced cache did not change.
+func (g *Source) HasChangesSince(t time.Time) bool {
+	if t.IsZero() {
+		return true
+	}
+	latest := latestGSuiteDBModTime(g.dataDir)
+	if latest.IsZero() {
+		return true
+	}
+	return !latest.Before(t)
 }
 
 // loadAppsConfig reads per-app enablement from config.json so daemon polls and CLI toggles share one persisted source of truth.
@@ -228,7 +277,21 @@ func (g *Source) saveAppsConfig(apps AppsConfig) error {
 }
 
 // AppDefs returns the known app definitions (for use by CLI/info).
+//
 //revive:disable-next-line:unexported-return
 func AppDefs() []*appDef {
 	return allApps
+}
+
+// latestGSuiteDBModTime returns the newest modification time across the
+// GSuite SQLite files so WAL-backed writes still count as source changes.
+func latestGSuiteDBModTime(dataDir string) time.Time {
+	var latest time.Time
+	for _, name := range []string{"gsuite.db", "gsuite.db-wal", "gsuite.db-shm"} {
+		info, err := os.Stat(filepath.Join(dataDir, name))
+		if err == nil && info.ModTime().After(latest) {
+			latest = info.ModTime()
+		}
+	}
+	return latest
 }

@@ -38,6 +38,131 @@ func TestInitGSuiteDB(t *testing.T) {
 	}
 }
 
+// Verifies initCalendarSchema drops the legacy calendar_id column when upgrading existing databases.
+func TestInitCalendarSchema_dropsLegacyCalendarIdColumn(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)&cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`CREATE TABLE calendar_events (
+		id TEXT PRIMARY KEY,
+		calendar_name TEXT NOT NULL DEFAULT '',
+		summary TEXT NOT NULL DEFAULT '',
+		description TEXT NOT NULL DEFAULT '',
+		location TEXT NOT NULL DEFAULT '',
+		start_time TEXT NOT NULL DEFAULT '',
+		end_time TEXT NOT NULL DEFAULT '',
+		all_day INTEGER NOT NULL DEFAULT 0,
+		created_time TEXT NOT NULL DEFAULT '',
+		updated_time TEXT NOT NULL DEFAULT '',
+		organizer TEXT NOT NULL DEFAULT '',
+		attendees TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT '',
+		recurrence TEXT NOT NULL DEFAULT '',
+		html_link TEXT NOT NULL DEFAULT '',
+		last_synced TEXT NOT NULL DEFAULT '',
+		calendar_id TEXT
+	)`)
+	if err != nil {
+		t.Fatalf("create legacy calendar_events: %v", err)
+	}
+
+	if err := initCalendarSchema(db); err != nil {
+		t.Fatalf("initCalendarSchema: %v", err)
+	}
+
+	has, err := tableHasColumn(db, "calendar_events", "calendar_id")
+	if err != nil {
+		t.Fatalf("tableHasColumn: %v", err)
+	}
+	if has {
+		t.Error("expected calendar_id to be dropped after migration")
+	}
+}
+
+// Verifies initContactsSchema drops the legacy given_name, family_name, and addresses columns.
+func TestInitContactsSchema_dropsLegacyColumns(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)&cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`CREATE TABLE contacts_people (
+		resource_name TEXT PRIMARY KEY,
+		display_name TEXT NOT NULL DEFAULT '',
+		emails TEXT NOT NULL DEFAULT '',
+		phones TEXT NOT NULL DEFAULT '',
+		organizations TEXT NOT NULL DEFAULT '',
+		notes TEXT NOT NULL DEFAULT '',
+		updated_time TEXT NOT NULL DEFAULT '',
+		last_synced TEXT NOT NULL DEFAULT '',
+		given_name TEXT,
+		family_name TEXT,
+		addresses TEXT
+	)`)
+	if err != nil {
+		t.Fatalf("create legacy contacts_people: %v", err)
+	}
+
+	if err := initContactsSchema(db); err != nil {
+		t.Fatalf("initContactsSchema: %v", err)
+	}
+
+	for _, col := range []string{"given_name", "family_name", "addresses"} {
+		has, err := tableHasColumn(db, "contacts_people", col)
+		if err != nil {
+			t.Fatalf("tableHasColumn %s: %v", col, err)
+		}
+		if has {
+			t.Errorf("expected %s to be dropped after migration", col)
+		}
+	}
+}
+
+// Verifies initTasksSchema drops the legacy tasklist_id, completed, position, and parent columns.
+func TestInitTasksSchema_dropsLegacyColumns(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)&cache=shared")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`CREATE TABLE tasks_items (
+		id TEXT PRIMARY KEY,
+		tasklist_title TEXT NOT NULL DEFAULT '',
+		title TEXT NOT NULL DEFAULT '',
+		notes TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT '',
+		due TEXT NOT NULL DEFAULT '',
+		updated TEXT NOT NULL DEFAULT '',
+		last_synced TEXT NOT NULL DEFAULT '',
+		tasklist_id TEXT,
+		completed TEXT,
+		position TEXT,
+		parent TEXT
+	)`)
+	if err != nil {
+		t.Fatalf("create legacy tasks_items: %v", err)
+	}
+
+	if err := initTasksSchema(db); err != nil {
+		t.Fatalf("initTasksSchema: %v", err)
+	}
+
+	for _, col := range []string{"tasklist_id", "completed", "position", "parent"} {
+		has, err := tableHasColumn(db, "tasks_items", col)
+		if err != nil {
+			t.Fatalf("tableHasColumn %s: %v", col, err)
+		}
+		if has {
+			t.Errorf("expected %s to be dropped after migration", col)
+		}
+	}
+}
+
 // Verifies sources without a token are treated as unauthenticated.
 func TestIsAuthenticated_NoToken(t *testing.T) {
 	src := &Source{dataDir: t.TempDir()}
@@ -333,6 +458,151 @@ func TestSearchEntries_ContinuesOnAppError(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].SourceID != "ok" {
 		t.Fatalf("unexpected entries: %#v", entries)
+	}
+}
+
+// Verifies StreamSearchEntries tolerates nil emitters and keeps collecting healthy apps after a streamed app error.
+func TestStreamSearchEntries_nilEmitAndContinuesOnError(t *testing.T) {
+	src := newTestSource(t)
+	if err := src.StreamSearchEntries(nil); err != nil {
+		t.Fatalf("StreamSearchEntries(nil): %v", err)
+	}
+	src.db = nil
+	if err := src.StreamSearchEntries(func([]core.SearchEntry) error { return nil }); err != nil {
+		t.Fatalf("StreamSearchEntries(nil db): %v", err)
+	}
+	src.db = newTestDB(t)
+
+	originalApps := allApps
+	t.Cleanup(func() { allApps = originalApps })
+	allApps = []*appDef{
+		{
+			name:          "docs",
+			displayName:   "Docs",
+			streamEntries: func(*sql.DB, string, func([]core.SearchEntry) error) error { return errors.New("boom") },
+		},
+		{
+			name:        "gmail",
+			displayName: "Gmail",
+			searchEntries: func(_ *sql.DB, sourceName string) ([]core.SearchEntry, error) {
+				return []core.SearchEntry{{
+					Source:      sourceName,
+					SourceID:    "ok",
+					ContentType: "email_subject",
+					Title:       "ok",
+					Content:     "ok",
+				}}, nil
+			},
+		},
+	}
+	src.apps = allAppsEnabledConfig()
+
+	var entries []core.SearchEntry
+	if err := src.StreamSearchEntries(func(batch []core.SearchEntry) error {
+		entries = append(entries, batch...)
+		return nil
+	}); err != nil {
+		t.Fatalf("StreamSearchEntries: %v", err)
+	}
+	if len(entries) != 1 || entries[0].SourceID != "ok" {
+		t.Fatalf("unexpected streamed entries: %#v", entries)
+	}
+}
+
+// Verifies StreamSearchEntries returns emitter failures from non-streaming apps so daemon indexing can stop promptly.
+func TestStreamSearchEntries_emitError(t *testing.T) {
+	originalApps := allApps
+	t.Cleanup(func() { allApps = originalApps })
+
+	src := newTestSource(t)
+	allApps = []*appDef{{
+		name:        "docs",
+		displayName: "Docs",
+		searchEntries: func(_ *sql.DB, sourceName string) ([]core.SearchEntry, error) {
+			return []core.SearchEntry{{
+				Source:      sourceName,
+				SourceID:    "doc1",
+				ContentType: "document_title",
+				Title:       "Doc",
+				Content:     "Doc",
+			}}, nil
+		},
+	}}
+	src.apps = allAppsEnabledConfig()
+
+	if err := src.StreamSearchEntries(func([]core.SearchEntry) error {
+		return errors.New("stop")
+	}); err == nil {
+		t.Fatal("expected emit error")
+	}
+}
+
+// Verifies StreamSearchEntries propagates emit failures from streaming apps so daemon indexing can stop promptly.
+func TestStreamSearchEntries_streamingAppEmitError(t *testing.T) {
+	originalApps := allApps
+	t.Cleanup(func() { allApps = originalApps })
+
+	src := newTestSource(t)
+	allApps = []*appDef{{
+		name:        "docs",
+		displayName: "Docs",
+		streamEntries: func(_ *sql.DB, sourceName string, emit func([]core.SearchEntry) error) error {
+			batch := []core.SearchEntry{{
+				Source:      sourceName,
+				SourceID:    "doc1",
+				ContentType: "document_title",
+				Title:       "Doc",
+				Content:     "Doc",
+			}}
+			return emit(batch)
+		},
+	}}
+	src.apps = allAppsEnabledConfig()
+
+	err := src.StreamSearchEntries(func([]core.SearchEntry) error {
+		return errors.New("stop from emit")
+	})
+	if err == nil {
+		t.Fatal("expected emit error from streaming app to be propagated")
+	}
+	if err.Error() != "stop from emit" {
+		t.Fatalf("expected original emit error, got %v", err)
+	}
+}
+
+// Verifies HasChangesSince checks gsuite DB and WAL mtimes so incremental indexing can skip unchanged caches.
+func TestSource_HasChangesSince(t *testing.T) {
+	dataDir := t.TempDir()
+	src := &Source{dataDir: dataDir}
+	if !src.HasChangesSince(time.Time{}) {
+		t.Fatal("expected zero watermark to force indexing")
+	}
+	if !src.HasChangesSince(time.Now()) {
+		t.Fatal("expected missing gsuite files to trigger indexing")
+	}
+
+	dbPath := filepath.Join(dataDir, "gsuite.db")
+	walPath := filepath.Join(dataDir, "gsuite.db-wal")
+	if err := os.WriteFile(dbPath, []byte("db"), 0o644); err != nil {
+		t.Fatalf("write db: %v", err)
+	}
+	if err := os.WriteFile(walPath, []byte("wal"), 0o644); err != nil {
+		t.Fatalf("write wal: %v", err)
+	}
+	oldTime := time.Now().Add(-2 * time.Hour)
+	newTime := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(dbPath, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes db: %v", err)
+	}
+	if err := os.Chtimes(walPath, newTime, newTime); err != nil {
+		t.Fatalf("chtimes wal: %v", err)
+	}
+
+	if src.HasChangesSince(time.Now()) {
+		t.Fatal("expected future watermark to skip unchanged gsuite cache")
+	}
+	if !src.HasChangesSince(time.Now().Add(-90 * time.Minute)) {
+		t.Fatal("expected WAL change to trigger gsuite reindex")
 	}
 }
 

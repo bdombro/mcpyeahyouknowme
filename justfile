@@ -19,7 +19,6 @@
 #
 # Prerequisites:
 #   - Go 1.26+
-#   - Homebrew (for ONNX Runtime, macOS only)
 #   - macOS (for daemon features)
 
 # Default recipe shows help

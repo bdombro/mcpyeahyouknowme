@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/registry"
@@ -73,10 +72,7 @@ func runMcp() {
 		}
 	}()
 
-	embedder := NewLazyEmbedder(filepath.Join(dir, "models"))
-	defer embedder.Close()
-
-	searchStore, err := NewSearchStore(dir, embedder)
+	searchStore, err := NewSearchStore(dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: search index unavailable: %v\n", err)
 	}
