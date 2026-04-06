@@ -1,7 +1,6 @@
 package notebook
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/base64"
 	"os"
@@ -32,19 +31,12 @@ func extractMarkdown(path string) (title, content string, err error) {
 		return "", "", err
 	}
 	content = strings.ToValidUTF8(string(data), "")
-	title = extractMarkdownTitle(content, filepath.Base(path))
+	title = extractMarkdownTitle(filepath.Base(path))
 	return title, content, nil
 }
 
-// extractMarkdownTitle returns the first H1 heading from the markdown body, or the filename stem as a fallback.
-func extractMarkdownTitle(content, filename string) string {
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "# ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "# "))
-		}
-	}
+// extractMarkdownTitle returns the filename stem as the note title.
+func extractMarkdownTitle(filename string) string {
 	return stemName(filename)
 }
 

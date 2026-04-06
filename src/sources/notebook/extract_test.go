@@ -8,30 +8,22 @@ import (
 	"unicode/utf8"
 )
 
-// Verifies extractMarkdownTitle returns the first H1 heading when present.
-func TestExtractMarkdownTitle_h1(t *testing.T) {
-	content := "# My Project\n\nSome content here."
-	title := extractMarkdownTitle(content, "my-project.md")
-	if title != "My Project" {
-		t.Fatalf("expected 'My Project', got %q", title)
+// Verifies extractMarkdownTitle always returns the filename stem.
+func TestExtractMarkdownTitle_usesFilename(t *testing.T) {
+	tests := []struct {
+		filename string
+		want     string
+	}{
+		{"my-project.md", "my-project"},
+		{"meeting-notes.md", "meeting-notes"},
+		{"file.md", "file"},
+		{"AGENTS About Me.md", "AGENTS About Me"},
 	}
-}
-
-// Verifies extractMarkdownTitle falls back to the filename stem when no H1 is present.
-func TestExtractMarkdownTitle_fallback(t *testing.T) {
-	content := "## Section\n\nNo H1 here."
-	title := extractMarkdownTitle(content, "meeting-notes.md")
-	if title != "meeting-notes" {
-		t.Fatalf("expected 'meeting-notes', got %q", title)
-	}
-}
-
-// Verifies extractMarkdownTitle ignores H2 and deeper headings for the title.
-func TestExtractMarkdownTitle_ignoresDeepHeadings(t *testing.T) {
-	content := "## Section\n### Subsection\nNo H1."
-	title := extractMarkdownTitle(content, "file.md")
-	if title != "file" {
-		t.Fatalf("expected 'file', got %q", title)
+	for _, tt := range tests {
+		got := extractMarkdownTitle(tt.filename)
+		if got != tt.want {
+			t.Errorf("extractMarkdownTitle(%q) = %q, want %q", tt.filename, got, tt.want)
+		}
 	}
 }
 
@@ -46,7 +38,7 @@ func TestExtractMarkdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractMarkdown: %v", err)
 	}
-	if title != "Hello World" {
+	if title != "note" {
 		t.Fatalf("title = %q", title)
 	}
 	if !strings.Contains(body, "This is a note.") {
@@ -183,8 +175,8 @@ func TestExtractMarkdown_sanitizesInvalidUTF8(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractMarkdown: %v", err)
 	}
-	if title != "Title" {
-		t.Fatalf("expected title to survive sanitization, got %q", title)
+	if title != "broken" {
+		t.Fatalf("expected title to be filename stem, got %q", title)
 	}
 	if !utf8.ValidString(content) {
 		t.Fatalf("expected valid UTF-8 content, got %q", content)

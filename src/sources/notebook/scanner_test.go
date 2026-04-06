@@ -52,12 +52,12 @@ func TestScanOneDir_markdown(t *testing.T) {
 	}
 	var found bool
 	for _, e := range entries {
-		if e.ContentType == "note_title" && e.Title == "My Note" {
+		if e.ContentType == "note_title" && e.Title == "note" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("expected note_title entry for 'My Note', got %+v", entries)
+		t.Fatalf("expected note_title entry for 'note', got %+v", entries)
 	}
 }
 
@@ -118,12 +118,12 @@ func TestScanOneDir_cacheInvalidation(t *testing.T) {
 	}
 	var foundNew bool
 	for _, e := range entries {
-		if e.ContentType == "note_title" && e.Title == "New Title" {
+		if e.ContentType == "note_content" && strings.Contains(e.Content, "New content") {
 			foundNew = true
 		}
 	}
 	if !foundNew {
-		t.Fatalf("expected updated title 'New Title' after cache invalidation, got %+v", entries)
+		t.Fatalf("expected updated content after cache invalidation, got %+v", entries)
 	}
 }
 
