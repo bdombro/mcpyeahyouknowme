@@ -308,18 +308,22 @@ func (s *SearchStore) LastIndexed(source string) time.Time {
 }
 
 // Search runs BM25 keyword retrieval for query and returns weighted top results.
+// Recency boost is applied after BM25 retrieval, so truncation to limit happens
+// after loadResults re-sorts by the boosted score.
 func (s *SearchStore) Search(query string, limit int, sourceFilter, typeFilter string) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 
 	ranked := s.bm25SearchEntries(query, limit*5, sourceFilter, typeFilter)
-
-	if len(ranked) > limit {
-		ranked = ranked[:limit]
+	results, err := s.loadResults(ranked)
+	if err != nil {
+		return nil, err
 	}
-
-	return s.loadResults(ranked)
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
 }
 
 type rankedEntry struct {
@@ -399,8 +403,11 @@ func sanitizeFTSQuery(query string) string {
 }
 
 // recencyMultiplier returns a score boost factor based on how recently an entry was timestamped.
-// Uses a bi-exponential: 1 + 2*exp(-t/3.5) + 5*exp(-t/800) where t is age in days.
-// This gives today → ~8x, one week → ~6x, one year → ~4x, ten years → ~1x.
+// Uses a tri-exponential: 1 + 3*exp(-t/2.5) + 0.5*exp(-t/90) + 1.5*exp(-t/700) where t is age in days.
+// This gives today → ~6x, one week → ~3.1x, one month → ~2.8x, one year → ~1.9x, ten years → ~1x.
+// Three terms serve distinct roles: the 2.5-day term rewards very fresh content with a sharp
+// today-vs-last-week distinction; the 90-day term fades within a quarter; the 700-day term
+// ensures one-year-old content still ranks meaningfully above decade-old content.
 // Returns 1.0 when no timestamp is available so entries without timestamps are unaffected.
 func recencyMultiplier(ts *time.Time) float64 {
 	if ts == nil {
@@ -410,7 +417,7 @@ func recencyMultiplier(ts *time.Time) float64 {
 	if ageDays < 0 {
 		ageDays = 0
 	}
-	return 1.0 + 2.0*math.Exp(-ageDays/3.5) + 5.0*math.Exp(-ageDays/800.0)
+	return 1.0 + 3.0*math.Exp(-ageDays/2.5) + 0.5*math.Exp(-ageDays/90.0) + 1.5*math.Exp(-ageDays/700.0)
 }
 
 // loadResults hydrates ranked entry IDs, applies hierarchy weighting and recency boost, and returns ordered search results.

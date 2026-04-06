@@ -740,8 +740,9 @@ func TestCreateSearchFTSTriggers_updateError(t *testing.T) {
 
 // ---------- Recency boost ----------
 
-// Verifies recencyMultiplier returns 1.0 for nil, ~8x for very recent, ~4x for one year ago,
-// ~1x for ten years ago, and is clamped so future timestamps behave like "now".
+// Verifies recencyMultiplier returns 1.0 for nil, ~6x for very recent, ~3.1x for one week ago,
+// ~1.9x for one year ago (substantially above ~1x for ten years ago), and is clamped so future
+// timestamps behave like "now".
 func TestRecencyMultiplier(t *testing.T) {
 	now := time.Now()
 
@@ -750,23 +751,35 @@ func TestRecencyMultiplier(t *testing.T) {
 	}
 
 	recent := now.Add(-time.Minute)
-	if got := recencyMultiplier(&recent); got <= 7.9 {
-		t.Errorf("1 minute ago: got %.4f, want > 7.9 (near 8x)", got)
+	if got := recencyMultiplier(&recent); got <= 5.9 || got > 6.1 {
+		t.Errorf("1 minute ago: got %.4f, want ~6x (5.9–6.1)", got)
+	}
+
+	oneWeekAgo := now.Add(-7 * 24 * time.Hour)
+	if got := recencyMultiplier(&oneWeekAgo); got < 2.8 || got > 3.4 {
+		t.Errorf("1 week ago: got %.4f, want ~3.1x (2.8–3.4)", got)
 	}
 
 	oneYearAgo := now.Add(-365 * 24 * time.Hour)
-	if got := recencyMultiplier(&oneYearAgo); got < 3.5 || got > 4.5 {
-		t.Errorf("1 year ago: got %.4f, want ~4x (3.5–4.5)", got)
+	if got := recencyMultiplier(&oneYearAgo); got < 1.6 || got > 2.2 {
+		t.Errorf("1 year ago: got %.4f, want ~1.9x (1.6–2.2)", got)
 	}
 
 	tenYearsAgo := now.Add(-10 * 365 * 24 * time.Hour)
-	if got := recencyMultiplier(&tenYearsAgo); got >= 1.2 {
-		t.Errorf("10 years ago: got %.4f, want < 1.2 (~1x)", got)
+	if got := recencyMultiplier(&tenYearsAgo); got >= 1.1 {
+		t.Errorf("10 years ago: got %.4f, want < 1.1 (~1x)", got)
+	}
+
+	// One year must rank substantially above ten years.
+	yr := recencyMultiplier(&oneYearAgo)
+	tyr := recencyMultiplier(&tenYearsAgo)
+	if yr < tyr*1.5 {
+		t.Errorf("1 year (%.4f) should be at least 1.5x higher than 10 years (%.4f)", yr, tyr)
 	}
 
 	future := now.Add(24 * time.Hour)
-	if got := recencyMultiplier(&future); got < 7.9 {
-		t.Errorf("future ts (clamped to 0 days): got %.4f, want >= 7.9 (near 8x)", got)
+	if got := recencyMultiplier(&future); got < 5.9 {
+		t.Errorf("future ts (clamped to 0 days): got %.4f, want >= 5.9 (near 6x)", got)
 	}
 }
 
@@ -795,6 +808,46 @@ func TestSearchStore_RecencyBoost(t *testing.T) {
 	}
 	if results[0].Score <= results[1].Score {
 		t.Errorf("expected recent entry score %.4f > old entry score %.4f", results[0].Score, results[1].Score)
+	}
+}
+
+// Verifies a very recent entry with weaker BM25 relevance still outranks stale
+// entries that would otherwise displace it before the recency boost is applied.
+func TestSearchStore_RecencyBoost_BeatsBM25Cutoff(t *testing.T) {
+	store := newTestSearchStore(t)
+
+	now := time.Now()
+	old := now.Add(-5 * 365 * 24 * time.Hour)
+
+	// Fill limit=2 slots with old, high-BM25 entries (repeat keyword many times).
+	entries := []SearchEntry{
+		{Source: "test", SourceID: "old-1", ContentType: "note_content", Title: "Old High BM25 1",
+			Content: "mac cheese mac cheese mac cheese mac cheese mac cheese", Timestamp: &old},
+		{Source: "test", SourceID: "old-2", ContentType: "note_content", Title: "Old High BM25 2",
+			Content: "mac cheese mac cheese mac cheese mac cheese mac cheese", Timestamp: &old},
+		// Recent entry with weaker keyword match — should beat old entries via recency.
+		{Source: "test", SourceID: "new-weak", ContentType: "note_content", Title: "Recent Weak BM25",
+			Content: "mac cheese", Timestamp: &now},
+	}
+	store.IndexEntries(entries)
+
+	results, err := store.Search("mac cheese", 2, "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) < 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	found := false
+	for _, r := range results {
+		if r.Title == "Recent Weak BM25" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected recent entry to appear in top-2 after recency boost; got %q and %q",
+			results[0].Title, results[1].Title)
 	}
 }
 
