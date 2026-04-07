@@ -587,6 +587,7 @@ func TestRequiredArgs_Missing(t *testing.T) {
 		{"calendar_get_event", "gsuite_calendar_get_event", "event_id parameter is required"},
 		{"tasks_search", "gsuite_tasks_search", "query parameter is required"},
 		{"contacts_search", "gsuite_contacts_search", "query parameter is required"},
+		{"contacts_lookup_by_phone", "gsuite_contacts_lookup_by_phone", "phone parameter is required"},
 		{"slides_search", "gsuite_slides_search", "query parameter is required"},
 		{"slides_get_presentation", "gsuite_slides_get_presentation", "presentation_id parameter is required"},
 	}
@@ -941,6 +942,85 @@ func TestContactsSearch_NilDB(t *testing.T) {
 	text := callTool(t, s, "gsuite_contacts_search", map[string]interface{}{"query": "anything"})
 	if text == "" {
 		t.Fatal("expected non-empty response")
+	}
+}
+
+// --- Contacts lookup by phone tests ---
+
+// Verifies lookup returns a contact when the query is a partial digit-only substring of the stored phone.
+func TestContactsLookupByPhone_MatchPartial(t *testing.T) {
+	s := buildMCPServer(t)
+	text := callTool(t, s, "gsuite_contacts_lookup_by_phone", map[string]interface{}{"phone": "5550100"})
+	var result map[string]interface{}
+	json.Unmarshal([]byte(text), &result)
+	if result["count"].(float64) != 1 {
+		t.Errorf("expected 1 result, got %v — response: %s", result["count"], text)
+	}
+}
+
+// Verifies lookup matches when the query includes a country code prefix (e.g. +1).
+func TestContactsLookupByPhone_MatchWithCountryCode(t *testing.T) {
+	s := buildMCPServer(t)
+	text := callTool(t, s, "gsuite_contacts_lookup_by_phone", map[string]interface{}{"phone": "+15550100"})
+	var result map[string]interface{}
+	json.Unmarshal([]byte(text), &result)
+	if result["count"].(float64) != 1 {
+		t.Errorf("expected 1 result, got %v — response: %s", result["count"], text)
+	}
+}
+
+// Verifies lookup matches when the query contains dashes and parentheses.
+func TestContactsLookupByPhone_MatchWithFormatting(t *testing.T) {
+	s := buildMCPServer(t)
+	text := callTool(t, s, "gsuite_contacts_lookup_by_phone", map[string]interface{}{"phone": "(555) 010-0"})
+	var result map[string]interface{}
+	json.Unmarshal([]byte(text), &result)
+	if result["count"].(float64) != 1 {
+		t.Errorf("expected 1 result, got %v — response: %s", result["count"], text)
+	}
+}
+
+// Verifies lookup returns no results when no phone matches.
+func TestContactsLookupByPhone_NoMatch(t *testing.T) {
+	s := buildMCPServer(t)
+	text := callTool(t, s, "gsuite_contacts_lookup_by_phone", map[string]interface{}{"phone": "9999999"})
+	var result map[string]interface{}
+	json.Unmarshal([]byte(text), &result)
+	if result["count"].(float64) != 0 {
+		t.Errorf("expected 0 results, got %v", result["count"])
+	}
+}
+
+// Verifies lookup handles a nil DB without panicking.
+func TestContactsLookupByPhone_NilDB(t *testing.T) {
+	src := &Source{apps: allAppsEnabledConfig()}
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	src.RegisterTools(s)
+	text := callTool(t, s, "gsuite_contacts_lookup_by_phone", map[string]interface{}{"phone": "5555551234"})
+	if text == "" {
+		t.Fatal("expected non-empty response")
+	}
+}
+
+// --- normalizePhone unit tests ---
+
+// Verifies normalizePhone strips all non-digit characters correctly.
+func TestNormalizePhone(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"+1-555-0100", "15550100"},
+		{"(555) 555-1234", "5555551234"},
+		{"5555551234", "5555551234"},
+		{"+15555551234", "15555551234"},
+		{"+3532222222", "3532222222"},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		if got := normalizePhone(tc.input); got != tc.want {
+			t.Errorf("normalizePhone(%q) = %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }
 

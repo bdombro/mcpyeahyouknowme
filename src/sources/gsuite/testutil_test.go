@@ -128,7 +128,7 @@ func seedContacts(t *testing.T, db *sql.DB) {
 	_, err := db.Exec(`INSERT INTO contacts_people
 		(resource_name, display_name, emails, phones, organizations, notes, updated_time, last_synced)
 		VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-		"people/c1", "Alice Smith", "alice@example.com", "+1-555-0100",
+		"people/c1", "Alice Smith", "alice@example.com", "15550100",
 		"Acme Corp (Engineer)", "VIP customer", "2024-01-10T00:00:00Z")
 	if err != nil {
 		t.Fatalf("seed contact: %v", err)

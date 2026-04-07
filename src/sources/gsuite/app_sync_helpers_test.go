@@ -32,7 +32,7 @@ func TestBuildContactRecord(t *testing.T) {
 	if record.ResourceName != "people/123" || record.DisplayName != "Alice Example" {
 		t.Fatalf("unexpected contact record: %#v", record)
 	}
-	if record.Emails != "alice@example.com" || record.Phones != "555-0001" {
+	if record.Emails != "alice@example.com" || record.Phones != "5550001" {
 		t.Fatalf("expected flattened contact fields, got %#v", record)
 	}
 	if record.Organizations != "Acme (Manager)" {

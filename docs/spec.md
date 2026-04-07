@@ -425,6 +425,7 @@ Tool descriptions include compact example `arguments` payloads for common calls.
 | `gsuite_calendar_list_upcoming` | List upcoming synced Calendar events within a day window. |
 | `gsuite_calendar_search` | Search synced Google Calendar events using local FTS5 data. |
 | `gsuite_contacts_list` | List synced Google Contacts. |
+| `gsuite_contacts_lookup_by_phone` | Look up synced Google Contacts by phone number with partial matching. |
 | `gsuite_contacts_search` | Search synced Google Contacts using local FTS5 data. |
 | `gsuite_docs_get_document` | Full document body by ID. |
 | `gsuite_docs_list_recent` | Recently modified docs; optional `limit`. |
@@ -585,6 +586,7 @@ Metadata shapes per WhatsApp content type:
 |------|-------------|
 | `gsuite_contacts_search` | Full-text search across synced Google Contacts using FTS5 over names, emails, phones, organizations, and notes. Accepts `query` (required) and `limit` (default 10). |
 | `gsuite_contacts_list` | List synced contacts sorted by display name. Accepts `limit` (default 50). |
+| `gsuite_contacts_lookup_by_phone` | Reverse-lookup contacts by phone number using normalized partial matching (strips `+`, `-`, spaces, parentheses). Accepts `phone` (required). Matches e.g. `5550100` against stored `+1-555-0100`. |
 
 ### Google Slides Tools
 

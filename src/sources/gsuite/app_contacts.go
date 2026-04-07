@@ -157,7 +157,7 @@ func buildContactRecord(p *people.Person) contactRecord {
 		emails = append(emails, e.Value)
 	}
 	for _, ph := range p.PhoneNumbers {
-		phones = append(phones, ph.Value)
+		phones = append(phones, normalizePhone(ph.Value))
 	}
 	for _, o := range p.Organizations {
 		org := o.Name
@@ -198,6 +198,17 @@ func deleteOrphanedRowsByResourceName(db *sql.DB, table string, remoteIDs map[st
 	}
 }
 
+// normalizePhone strips all non-digit characters from a phone string so stored values and queries
+// can be compared without formatting differences causing mismatches.
+func normalizePhone(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, s)
+}
+
 // registerContactsTools wires the local-DB Contacts read tools into MCP so clients query synced people data without live API calls.
 func registerContactsTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"contacts_search",
@@ -212,6 +223,12 @@ func registerContactsTools(src *Source, prefix string, s toolAdder) {
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 50)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleContactsList(ctx, src, req)
+	})
+	s.AddTool(core.NewReadOnlyTool(prefix+"contacts_lookup_by_phone",
+		core.ToolDescription("Look up contacts by phone number with partial matching", `{"phone":"5555551234"}`),
+		mcp.WithString("phone", mcp.Required(), mcp.Description("Phone number to search for (partial match, ignores formatting like +, -, spaces, parentheses)")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
+		return handleContactsLookupByPhone(ctx, src, req)
 	})
 }
 
@@ -272,6 +289,46 @@ func handleContactsList(_ context.Context, src *Source, req mcp.CallToolRequest)
 		})
 	}
 	return core.JsonResult(map[string]interface{}{"contacts": results, "count": len(results)})
+}
+
+// handleContactsLookupByPhone finds contacts whose stored phone numbers contain the normalized query as a substring,
+// allowing partial matches and ignoring formatting characters like +, -, spaces, and parentheses.
+func handleContactsLookupByPhone(_ context.Context, src *Source, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	phone, errResult := core.RequireStringArgument(req, "phone", `{"phone":"5555551234"}`)
+	if errResult != nil {
+		return errResult, nil
+	}
+	if src.db == nil {
+		return core.JsonResult(map[string]interface{}{"phone": phone, "results": []interface{}{}, "count": 0})
+	}
+	normalizedQuery := normalizePhone(phone)
+	rows, err := src.db.Query(`SELECT resource_name, display_name, emails, phones, organizations, updated_time
+		FROM contacts_people`)
+	if err != nil { // nocov
+		return mcp.NewToolResultError(fmt.Sprintf("Lookup failed: %v", err)), nil
+	}
+	defer rows.Close()
+	var results []map[string]interface{}
+	for rows.Next() {
+		var rn, name, emails, phones, orgs, updated string
+		if err := rows.Scan(&rn, &name, &emails, &phones, &orgs, &updated); err != nil { // nocov
+			continue
+		}
+		matched := false
+		for _, token := range strings.Split(phones, ", ") {
+			if strings.Contains(normalizePhone(token), normalizedQuery) {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			results = append(results, map[string]interface{}{
+				"resource_name": rn, "display_name": name, "emails": emails,
+				"phones": phones, "organizations": orgs, "updated_time": updated,
+			})
+		}
+	}
+	return core.JsonResult(map[string]interface{}{"phone": phone, "results": results, "count": len(results)})
 }
 
 // contactsSearchEntries turns synced contact rows into global search entries keyed by People resource name.
