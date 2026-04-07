@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"mcpyeahyouknowme/core"
 
@@ -246,6 +247,7 @@ func handleTasksList(_ context.Context, src *Source, req mcp.CallToolRequest) (*
 }
 
 // tasksSearchEntries turns synced task rows into global search entries enriched with list, due-date, and status metadata.
+// Sets Timestamp from the due date when present, falling back to updated time, so ranking can apply future proximity boost.
 func tasksSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error) {
 	rows, err := db.Query(`SELECT id, title, notes, status, due, tasklist_title, updated FROM tasks_items`)
 	if err != nil { // nocov
@@ -265,9 +267,17 @@ func tasksSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, erro
 		if notes != "" {
 			content += "\n" + notes
 		}
+		var ts *time.Time
+		timeStr := due
+		if timeStr == "" {
+			timeStr = updated
+		}
+		if t, err := time.Parse(time.RFC3339, timeStr); err == nil {
+			ts = &t
+		}
 		entries = append(entries, core.SearchEntry{
 			Source: sourceName, SourceID: id, ContentType: "task",
-			Title: title, Content: content, Metadata: meta,
+			Title: title, Content: content, Metadata: meta, Timestamp: ts,
 		})
 	}
 	return entries, nil

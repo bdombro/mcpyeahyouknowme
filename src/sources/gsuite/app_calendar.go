@@ -382,6 +382,10 @@ func calendarSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, e
 		meta, _ := json.Marshal(map[string]interface{}{
 			"event_id": id, "start_time": start, "end_time": end, "updated_time": updated,
 		})
+		var startTS *time.Time
+		if t, err := time.Parse(time.RFC3339, start); err == nil {
+			startTS = &t
+		}
 		content := summary
 		if location != "" {
 			content += " @ " + location
@@ -389,9 +393,12 @@ func calendarSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, e
 		if organizer != "" {
 			content += " — " + organizer
 		}
+		if startTS != nil {
+			content += " | " + startTS.Format("2006-01-02 January 2006 Monday")
+		}
 		entries = append(entries, core.SearchEntry{
 			Source: sourceName, SourceID: id, ContentType: "calendar_event",
-			Title: summary, Content: content, Metadata: meta,
+			Title: summary, Content: content, Metadata: meta, Timestamp: startTS,
 		})
 		if desc != "" {
 			descMeta, _ := json.Marshal(map[string]interface{}{
@@ -399,7 +406,7 @@ func calendarSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, e
 			})
 			entries = append(entries, core.SearchEntry{
 				Source: sourceName, SourceID: id, ContentType: "calendar_event_description",
-				Title: summary, Content: desc, Metadata: descMeta,
+				Title: summary, Content: desc, Metadata: descMeta, Timestamp: startTS,
 			})
 		}
 	}

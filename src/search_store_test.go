@@ -148,7 +148,7 @@ func TestSearchStore_DeleteBySource(t *testing.T) {
 		t.Fatalf("expected notebook rows to remain, got %d", notebookCount)
 	}
 
-	results, err := store.Search("John Thomas", 10, "", "")
+	results, err := store.Search("John Thomas", 10, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestSearchStore_PruneSourceKeys_subset(t *testing.T) {
 	if count != len(current) {
 		t.Fatalf("expected %d notebook rows after prune, got %d", len(current), count)
 	}
-	results, err := store.Search("Old note", 10, "", "")
+	results, err := store.Search("Old note", 10, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestSearchStore_BM25Search(t *testing.T) {
 	store := newTestSearchStore(t)
 	store.IndexEntries(seedSearchEntries())
 
-	results, err := store.Search("Family", 10, "", "")
+	results, err := store.Search("Family", 10, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestSearchStore_BM25Search_multiWord(t *testing.T) {
 		t.Fatalf("IndexEntries: %v", err)
 	}
 
-	results, err := store.Search("John Thomas daughters", 10, "", "")
+	results, err := store.Search("John Thomas daughters", 10, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestSearchStore_BM25Search_noResults(t *testing.T) {
 	store := newTestSearchStore(t)
 	store.IndexEntries(seedSearchEntries())
 
-	results, err := store.Search("zzzznonexistent", 10, "", "")
+	results, err := store.Search("zzzznonexistent", 10, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestSearchStore_BM25Search_sourceFilter(t *testing.T) {
 	store := newTestSearchStore(t)
 	store.IndexEntries(seedSearchEntries())
 
-	results, err := store.Search("dinner", 10, "whatsapp", "")
+	results, err := store.Search("dinner", 10, "whatsapp", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestSearchStore_BM25Search_typeFilter(t *testing.T) {
 	store := newTestSearchStore(t)
 	store.IndexEntries(seedSearchEntries())
 
-	results, err := store.Search("Family", 10, "", "chat_name")
+	results, err := store.Search("Family", 10, "", "chat_name", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -395,7 +395,7 @@ func TestSearchStore_HierarchyWeighting(t *testing.T) {
 	}
 	store.IndexEntries(entries)
 
-	results, err := store.Search("Family", 10, "", "")
+	results, err := store.Search("Family", 10, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestSearchStore_DefaultLimit(t *testing.T) {
 	store := newTestSearchStore(t)
 	store.IndexEntries(seedSearchEntries())
 
-	results, err := store.Search("Family", 0, "", "")
+	results, err := store.Search("Family", 0, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -463,7 +463,7 @@ func TestSearchStore_Search_limitTruncates(t *testing.T) {
 	store := newTestSearchStore(t)
 	store.IndexEntries(seedSearchEntries())
 
-	results, err := store.Search("Family Chat", 1, "", "")
+	results, err := store.Search("Family Chat", 1, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestSearchStore_BM25Only(t *testing.T) {
 	store := newTestSearchStore(t)
 	store.IndexEntries(seedSearchEntries())
 
-	results, err := store.Search("dinner", 10, "", "")
+	results, err := store.Search("dinner", 10, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -495,7 +495,7 @@ func TestSearchStore_ResultMetadata(t *testing.T) {
 	store := newTestSearchStore(t)
 	store.IndexEntries(seedSearchEntries())
 
-	results, err := store.Search("Alice", 10, "", "participant")
+	results, err := store.Search("Alice", 10, "", "participant", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -602,7 +602,7 @@ func TestSearchStore_BulkIndex_rebuildsFTSAtEnd(t *testing.T) {
 		t.Fatalf("IndexEntries: %v", err)
 	}
 
-	beforeResults, err := store.Search("Family", 10, "", "")
+	beforeResults, err := store.Search("Family", 10, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search before EndBulkIndex: %v", err)
 	}
@@ -614,7 +614,7 @@ func TestSearchStore_BulkIndex_rebuildsFTSAtEnd(t *testing.T) {
 		t.Fatalf("EndBulkIndex: %v", err)
 	}
 
-	afterResults, err := store.Search("Family", 10, "", "")
+	afterResults, err := store.Search("Family", 10, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search after EndBulkIndex: %v", err)
 	}
@@ -627,7 +627,7 @@ func TestSearchStore_BulkIndex_rebuildsFTSAtEnd(t *testing.T) {
 		t.Fatalf("IndexEntries after bulk mode: %v", err)
 	}
 
-	finalResults, err := store.Search("after", 10, "", "")
+	finalResults, err := store.Search("after", 10, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search after restored triggers: %v", err)
 	}
@@ -797,7 +797,7 @@ func TestSearchStore_RecencyBoost(t *testing.T) {
 	}
 	store.IndexEntries(entries)
 
-	results, err := store.Search("mac cheese", 10, "", "")
+	results, err := store.Search("mac cheese", 10, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -832,7 +832,7 @@ func TestSearchStore_RecencyBoost_BeatsBM25Cutoff(t *testing.T) {
 	}
 	store.IndexEntries(entries)
 
-	results, err := store.Search("mac cheese", 2, "", "")
+	results, err := store.Search("mac cheese", 2, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -862,7 +862,7 @@ func TestSearchStore_loadResults_unknownContentType(t *testing.T) {
 	}
 	store.IndexEntries(entries)
 
-	results, err := store.Search("unique", 10, "", "")
+	results, err := store.Search("unique", 10, "", "", "", "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -947,7 +947,7 @@ func TestSearchStore_Search_closedDBReturnsError(t *testing.T) {
 	store.IndexEntries(seedSearchEntries())
 	store.Close()
 
-	_, err := store.Search("Family", 10, "", "")
+	_, err := store.Search("Family", 10, "", "", "", "")
 	if err == nil {
 		t.Fatal("expected error from Search on closed DB, got nil")
 	}
@@ -1048,5 +1048,202 @@ func TestReadOnlySearchIndexStats_withDB(t *testing.T) {
 	stats := ReadOnlySearchIndexStats(dir)
 	if stats.Entries == 0 {
 		t.Error("expected non-zero entries")
+	}
+}
+
+// ---------- Future Proximity Multiplier ----------
+
+// Verifies futureProximityMultiplier returns 1.0 for nil, gives future dates a higher boost
+// than equally-distant past dates, and decays with distance from now.
+func TestFutureProximityMultiplier(t *testing.T) {
+	now := time.Now()
+
+	if got := futureProximityMultiplier(nil); got != 1.0 {
+		t.Errorf("nil ts: got %.4f, want 1.0", got)
+	}
+
+	tomorrow := now.Add(24 * time.Hour)
+	yesterday := now.Add(-24 * time.Hour)
+	tomorrowVal := futureProximityMultiplier(&tomorrow)
+	yesterdayVal := futureProximityMultiplier(&yesterday)
+	if tomorrowVal <= yesterdayVal {
+		t.Errorf("future (%.4f) should be higher than equally-distant past (%.4f)", tomorrowVal, yesterdayVal)
+	}
+	if tomorrowVal < 6.0 {
+		t.Errorf("tomorrow: got %.4f, want >= 6x", tomorrowVal)
+	}
+	if yesterdayVal < 4.0 {
+		t.Errorf("yesterday: got %.4f, want >= 4x", yesterdayVal)
+	}
+
+	nextWeek := now.Add(7 * 24 * time.Hour)
+	lastWeek := now.Add(-7 * 24 * time.Hour)
+	if futureProximityMultiplier(&nextWeek) <= futureProximityMultiplier(&lastWeek) {
+		t.Error("next week should outrank last week")
+	}
+
+	nextMonth := now.Add(30 * 24 * time.Hour)
+	lastMonth := now.Add(-30 * 24 * time.Hour)
+	if futureProximityMultiplier(&nextMonth) <= futureProximityMultiplier(&lastMonth) {
+		t.Error("next month should outrank last month")
+	}
+
+	// Events far in the future still rank above distant past.
+	distantFuture := now.Add(365 * 24 * time.Hour)
+	distantPast := now.Add(-365 * 24 * time.Hour)
+	if futureProximityMultiplier(&distantFuture) <= futureProximityMultiplier(&distantPast) {
+		t.Error("distant future should outrank distant past")
+	}
+}
+
+// Verifies calendar entries use the future-biased proximity multiplier so upcoming events
+// outrank past events with identical BM25 relevance.
+func TestSearchStore_CalendarFutureBoost(t *testing.T) {
+	store := newTestSearchStore(t)
+	now := time.Now()
+	future := now.Add(48 * time.Hour)
+	past := now.Add(-30 * 24 * time.Hour)
+
+	entries := []SearchEntry{
+		{Source: "gsuite", SourceID: "past-event", ContentType: "calendar_event",
+			Title: "Past standup", Content: "Past standup daily meeting", Timestamp: &past},
+		{Source: "gsuite", SourceID: "future-event", ContentType: "calendar_event",
+			Title: "Future standup", Content: "Future standup daily meeting", Timestamp: &future},
+	}
+	store.IndexEntries(entries)
+
+	results, err := store.Search("standup", 10, "", "", "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) < 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if results[0].Title != "Future standup" {
+		t.Errorf("expected future event to rank first, got %q (scores: %.4f vs %.4f)",
+			results[0].Title, results[0].Score, results[1].Score)
+	}
+	if results[0].Score <= results[1].Score {
+		t.Errorf("future event score %.4f should exceed past event score %.4f",
+			results[0].Score, results[1].Score)
+	}
+}
+
+// ---------- Task Status Multiplier ----------
+
+// Verifies taskStatusMultiplier returns 1.5x for needsAction, 0.6x for completed, and 1.0 for others.
+func TestTaskStatusMultiplier(t *testing.T) {
+	cases := []struct {
+		name string
+		meta json.RawMessage
+		want float64
+	}{
+		{"needsAction", json.RawMessage(`{"status":"needsAction"}`), 1.5},
+		{"completed", json.RawMessage(`{"status":"completed"}`), 0.6},
+		{"other", json.RawMessage(`{"status":"someOtherStatus"}`), 1.0},
+		{"missing field", json.RawMessage(`{}`), 1.0},
+		{"nil", nil, 1.0},
+		{"invalid json", json.RawMessage(`{not json}`), 1.0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := taskStatusMultiplier(tc.meta)
+			if got != tc.want {
+				t.Errorf("taskStatusMultiplier(%s): got %.2f, want %.2f", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+// Verifies incomplete tasks outrank completed tasks with identical BM25 relevance via status multiplier.
+func TestSearchStore_TaskStatusBoost(t *testing.T) {
+	store := newTestSearchStore(t)
+	now := time.Now()
+	due := now.Add(24 * time.Hour)
+
+	entries := []SearchEntry{
+		{Source: "gsuite", SourceID: "done-task", ContentType: "task",
+			Title: "Completed report task", Content: "Submit report to manager completed",
+			Metadata: json.RawMessage(`{"task_id":"done","status":"completed"}`),
+			Timestamp: &due},
+		{Source: "gsuite", SourceID: "todo-task", ContentType: "task",
+			Title: "Pending report task", Content: "Submit report to manager pending",
+			Metadata: json.RawMessage(`{"task_id":"todo","status":"needsAction"}`),
+			Timestamp: &due},
+	}
+	store.IndexEntries(entries)
+
+	results, err := store.Search("report manager", 10, "", "", "", "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) < 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if results[0].Title != "Pending report task" {
+		t.Errorf("expected needsAction task to rank first, got %q (scores: %.4f vs %.4f)",
+			results[0].Title, results[0].Score, results[1].Score)
+	}
+	if results[0].Score <= results[1].Score {
+		t.Errorf("needsAction score %.4f should exceed completed score %.4f",
+			results[0].Score, results[1].Score)
+	}
+}
+
+// ---------- After/Before date filters ----------
+
+// Verifies the after/before filters narrow results to entries within the given timestamp range.
+func TestSearchStore_AfterBeforeFilter(t *testing.T) {
+	store := newTestSearchStore(t)
+
+	t1, _ := time.Parse(time.RFC3339, "2024-01-01T00:00:00Z")
+	t2, _ := time.Parse(time.RFC3339, "2024-06-01T00:00:00Z")
+	t3, _ := time.Parse(time.RFC3339, "2024-12-01T00:00:00Z")
+
+	entries := []SearchEntry{
+		{Source: "gsuite", SourceID: "early", ContentType: "note_content",
+			Title: "Early meeting notes", Content: "budget planning meeting early", Timestamp: &t1},
+		{Source: "gsuite", SourceID: "mid", ContentType: "note_content",
+			Title: "Mid meeting notes", Content: "budget planning meeting mid", Timestamp: &t2},
+		{Source: "gsuite", SourceID: "late", ContentType: "note_content",
+			Title: "Late meeting notes", Content: "budget planning meeting late", Timestamp: &t3},
+	}
+	store.IndexEntries(entries)
+
+	// after filter: only mid and late (early at 2024-01-01 excluded)
+	results, err := store.Search("meeting", 10, "", "", "2024-03-01T00:00:00Z", "")
+	if err != nil {
+		t.Fatalf("Search after: %v", err)
+	}
+	for _, r := range results {
+		if r.Title == "Early meeting notes" {
+			t.Errorf("after filter should exclude early entry")
+		}
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 results with after filter, got %d", len(results))
+	}
+
+	// before filter: only early and mid (late at 2024-12-01 excluded)
+	results, err = store.Search("meeting", 10, "", "", "", "2024-09-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("Search before: %v", err)
+	}
+	for _, r := range results {
+		if r.Title == "Late meeting notes" {
+			t.Errorf("before filter should exclude late entry")
+		}
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 results with before filter, got %d", len(results))
+	}
+
+	// combined after+before: only mid
+	results, err = store.Search("meeting", 10, "", "", "2024-03-01T00:00:00Z", "2024-09-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("Search after+before: %v", err)
+	}
+	if len(results) != 1 || results[0].Title != "Mid meeting notes" {
+		t.Errorf("expected only mid entry, got %d results: %v", len(results), results)
 	}
 }

@@ -4,13 +4,13 @@
 
 | File | Covered | Total | Coverage |
 |------|---------|-------|----------|
-| [`app_calendar.go`](#app_calendargo) | 122 | 173 | 70.5% |
+| [`app_calendar.go`](#app_calendargo) | 127 | 178 | 71.3% |
 | [`app_contacts.go`](#app_contactsgo) | 95 | 138 | 68.8% |
-| [`app_docs.go`](#app_docsgo) | 136 | 186 | 73.1% |
-| [`app_gmail.go`](#app_gmailgo) | 590 | 690 | 85.5% |
+| [`app_docs.go`](#app_docsgo) | 139 | 189 | 73.5% |
+| [`app_gmail.go`](#app_gmailgo) | 596 | 696 | 85.6% |
 | [`app_sheets.go`](#app_sheetsgo) | 86 | 135 | 63.7% |
 | [`app_slides.go`](#app_slidesgo) | 80 | 129 | 62.0% |
-| [`app_tasks.go`](#app_tasksgo) | 72 | 118 | 61.0% |
+| [`app_tasks.go`](#app_tasksgo) | 78 | 124 | 62.9% |
 | [`cli.go`](#cligo) | 238 | 488 | 48.8% |
 | [`client.go`](#clientgo) | 274 | 422 | 64.9% |
 | [`cmd.go`](#cmdgo) | 26 | 82 | 31.7% |
@@ -29,9 +29,9 @@
 | [`reset_cli.go`](#reset_cligo) | 30 | 31 | 96.8% |
 | [`runtime.go`](#runtimego) | 110 | 208 | 52.9% |
 | [`scanner.go`](#scannergo) | 99 | 106 | 93.4% |
-| `search_mcp.go` | 14 | 14 | 100.0% |
+| `search_mcp.go` | 16 | 16 | 100.0% |
 | [`search_reset.go`](#search_resetgo) | 21 | 23 | 91.3% |
-| [`search_store.go`](#search_storego) | 185 | 209 | 88.5% |
+| [`search_store.go`](#search_storego) | 213 | 237 | 89.9% |
 | [`search_store_init.go`](#search_store_initgo) | 33 | 42 | 78.6% |
 | [`service.go`](#servicego) | 401 | 420 | 95.5% |
 | [`source.go`](#sourcego) | 500 | 514 | 97.3% |
@@ -42,7 +42,7 @@
 | [`system.go`](#systemgo) | 24 | 27 | 88.9% |
 | [`utils.go`](#utilsgo) | 0 | 47 | 0.0% |
 | [`vision.go`](#visiongo) | 0 | 20 | 0.0% |
-| **Total** | **4516** | **6162** | **73.3%** |
+| **Total** | **4566** | **6212** | **73.5%** |
 
 ## Uncovered Blocks
 
@@ -108,35 +108,35 @@
 
 ### [`app_docs.go`](../src/app_docs.go)
 
-- Lines 44–46 (1 stmt)
-- Lines 69–71 (1 stmt)
-- Lines 77–83 (5 stmts)
-- Lines 83–85 (1 stmt)
-- Lines 86–87 (2 stmts)
-- Lines 87–89 (1 stmt)
-- Lines 91–94 (4 stmts)
-- Lines 94–101 (2 stmts)
-- Lines 101–103 (1 stmt)
-- Lines 104–105 (2 stmts)
-- Lines 105–107 (1 stmt)
-- Lines 108–108 (1 stmt)
-- Lines 108–112 (4 stmts)
-- Lines 112–113 (1 stmt)
-- Lines 115–116 (2 stmts)
-- Lines 116–118 (2 stmts)
-- Lines 120–127 (4 stmts)
-- Lines 129–130 (2 stmts)
-- Lines 130–131 (1 stmt)
-- Lines 134–136 (3 stmts)
-- Lines 220–222 (1 stmt)
-- Lines 227–228 (1 stmt)
-- Lines 253–255 (1 stmt)
-- Lines 270–272 (1 stmt)
-- Lines 277–278 (1 stmt)
-- Lines 290–292 (1 stmt)
-- Lines 297–298 (1 stmt)
-- Lines 402–404 (1 stmt)
-- Lines 409–410 (1 stmt)
+- Lines 45–47 (1 stmt)
+- Lines 70–72 (1 stmt)
+- Lines 78–84 (5 stmts)
+- Lines 84–86 (1 stmt)
+- Lines 87–88 (2 stmts)
+- Lines 88–90 (1 stmt)
+- Lines 92–95 (4 stmts)
+- Lines 95–102 (2 stmts)
+- Lines 102–104 (1 stmt)
+- Lines 105–106 (2 stmts)
+- Lines 106–108 (1 stmt)
+- Lines 109–109 (1 stmt)
+- Lines 109–113 (4 stmts)
+- Lines 113–114 (1 stmt)
+- Lines 116–117 (2 stmts)
+- Lines 117–119 (2 stmts)
+- Lines 121–128 (4 stmts)
+- Lines 130–131 (2 stmts)
+- Lines 131–132 (1 stmt)
+- Lines 135–137 (3 stmts)
+- Lines 221–223 (1 stmt)
+- Lines 228–229 (1 stmt)
+- Lines 254–256 (1 stmt)
+- Lines 271–273 (1 stmt)
+- Lines 278–279 (1 stmt)
+- Lines 291–293 (1 stmt)
+- Lines 298–299 (1 stmt)
+- Lines 407–409 (1 stmt)
+- Lines 414–415 (1 stmt)
 
 ### [`app_gmail.go`](../src/app_gmail.go)
 
@@ -187,34 +187,34 @@
 - Lines 713–714 (2 stmts)
 - Lines 714–716 (1 stmt)
 - Lines 717–722 (1 stmt)
-- Lines 800–802 (1 stmt)
-- Lines 812–814 (1 stmt)
-- Lines 831–832 (1 stmt)
-- Lines 836–838 (1 stmt)
-- Lines 841–843 (1 stmt)
-- Lines 872–874 (1 stmt)
-- Lines 878–880 (1 stmt)
-- Lines 924–926 (1 stmt)
-- Lines 937–939 (1 stmt)
-- Lines 953–955 (1 stmt)
-- Lines 963–965 (1 stmt)
-- Lines 976–978 (1 stmt)
-- Lines 980–982 (1 stmt)
-- Lines 998–1000 (1 stmt)
-- Lines 1009–1011 (1 stmt)
-- Lines 1027–1029 (1 stmt)
-- Lines 1031–1033 (1 stmt)
-- Lines 1041–1043 (1 stmt)
-- Lines 1086–1088 (1 stmt)
-- Lines 1096–1098 (1 stmt)
-- Lines 1100–1102 (1 stmt)
-- Lines 1108–1110 (1 stmt)
-- Lines 1120–1122 (1 stmt)
-- Lines 1132–1134 (1 stmt)
-- Lines 1145–1147 (1 stmt)
-- Lines 1150–1152 (1 stmt)
-- Lines 1175–1177 (1 stmt)
-- Lines 1181–1183 (1 stmt)
+- Lines 809–811 (1 stmt)
+- Lines 821–823 (1 stmt)
+- Lines 840–841 (1 stmt)
+- Lines 845–847 (1 stmt)
+- Lines 850–852 (1 stmt)
+- Lines 881–883 (1 stmt)
+- Lines 887–889 (1 stmt)
+- Lines 933–935 (1 stmt)
+- Lines 946–948 (1 stmt)
+- Lines 962–964 (1 stmt)
+- Lines 972–974 (1 stmt)
+- Lines 985–987 (1 stmt)
+- Lines 989–991 (1 stmt)
+- Lines 1007–1009 (1 stmt)
+- Lines 1018–1020 (1 stmt)
+- Lines 1036–1038 (1 stmt)
+- Lines 1040–1042 (1 stmt)
+- Lines 1050–1052 (1 stmt)
+- Lines 1095–1097 (1 stmt)
+- Lines 1105–1107 (1 stmt)
+- Lines 1109–1111 (1 stmt)
+- Lines 1117–1119 (1 stmt)
+- Lines 1129–1131 (1 stmt)
+- Lines 1141–1143 (1 stmt)
+- Lines 1154–1156 (1 stmt)
+- Lines 1159–1161 (1 stmt)
+- Lines 1184–1186 (1 stmt)
+- Lines 1190–1192 (1 stmt)
 
 ### [`app_sheets.go`](../src/app_sheets.go)
 
@@ -280,33 +280,33 @@
 
 ### [`app_tasks.go`](../src/app_tasks.go)
 
-- Lines 23–23 (1 stmt)
-- Lines 41–43 (1 stmt)
-- Lines 46–48 (1 stmt)
-- Lines 72–74 (1 stmt)
-- Lines 80–86 (5 stmts)
-- Lines 86–88 (1 stmt)
-- Lines 90–91 (2 stmts)
-- Lines 91–93 (1 stmt)
-- Lines 95–97 (3 stmts)
-- Lines 97–99 (2 stmts)
-- Lines 99–101 (2 stmts)
-- Lines 101–103 (1 stmt)
-- Lines 104–105 (2 stmts)
-- Lines 105–107 (2 stmts)
-- Lines 109–109 (1 stmt)
-- Lines 109–114 (5 stmts)
-- Lines 114–115 (1 stmt)
-- Lines 117–122 (2 stmts)
-- Lines 124–125 (2 stmts)
-- Lines 125–126 (1 stmt)
-- Lines 130–132 (3 stmts)
-- Lines 196–198 (1 stmt)
-- Lines 203–204 (1 stmt)
-- Lines 230–232 (1 stmt)
-- Lines 237–238 (1 stmt)
-- Lines 251–253 (1 stmt)
-- Lines 258–259 (1 stmt)
+- Lines 24–24 (1 stmt)
+- Lines 42–44 (1 stmt)
+- Lines 47–49 (1 stmt)
+- Lines 73–75 (1 stmt)
+- Lines 81–87 (5 stmts)
+- Lines 87–89 (1 stmt)
+- Lines 91–92 (2 stmts)
+- Lines 92–94 (1 stmt)
+- Lines 96–98 (3 stmts)
+- Lines 98–100 (2 stmts)
+- Lines 100–102 (2 stmts)
+- Lines 102–104 (1 stmt)
+- Lines 105–106 (2 stmts)
+- Lines 106–108 (2 stmts)
+- Lines 110–110 (1 stmt)
+- Lines 110–115 (5 stmts)
+- Lines 115–116 (1 stmt)
+- Lines 118–123 (2 stmts)
+- Lines 125–126 (2 stmts)
+- Lines 126–127 (1 stmt)
+- Lines 131–133 (3 stmts)
+- Lines 197–199 (1 stmt)
+- Lines 204–205 (1 stmt)
+- Lines 231–233 (1 stmt)
+- Lines 238–239 (1 stmt)
+- Lines 253–255 (1 stmt)
+- Lines 260–261 (1 stmt)
 
 ### [`cli.go`](../src/cli.go)
 
@@ -439,14 +439,14 @@
 
 ### [`client.go`](../src/client.go)
 
+- Lines 125–128 (1 stmt)
+- Lines 208–211 (1 stmt)
+- Lines 215–218 (1 stmt)
 - Lines 154–156 (1 stmt)
 - Lines 159–161 (1 stmt)
 - Lines 193–195 (1 stmt)
 - Lines 219–221 (1 stmt)
 - Lines 225–227 (1 stmt)
-- Lines 125–128 (1 stmt)
-- Lines 208–211 (1 stmt)
-- Lines 215–218 (1 stmt)
 - Lines 35–36 (1 stmt)
 - Lines 36–38 (1 stmt)
 - Lines 40–45 (4 stmts)
@@ -1021,13 +1021,13 @@
 - Lines 295–296 (1 stmt)
 - Lines 296–298 (1 stmt)
 - Lines 299–299 (1 stmt)
-- Lines 343–345 (1 stmt)
-- Lines 388–390 (2 stmts)
-- Lines 394–396 (1 stmt)
-- Lines 470–472 (1 stmt)
-- Lines 480–482 (2 stmts)
-- Lines 511–513 (1 stmt)
-- Lines 556–558 (1 stmt)
+- Lines 344–346 (1 stmt)
+- Lines 399–401 (2 stmts)
+- Lines 405–407 (1 stmt)
+- Lines 525–527 (1 stmt)
+- Lines 535–537 (2 stmts)
+- Lines 576–578 (1 stmt)
+- Lines 621–623 (1 stmt)
 
 ### [`search_store_init.go`](../src/search_store_init.go)
 

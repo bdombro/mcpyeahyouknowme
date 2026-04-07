@@ -19,7 +19,7 @@ type mockProfileStore struct {
 
 // Search returns seeded results for the given query, or an error if configured.
 // Per-query errors in the errors map take priority over the global err field.
-func (m *mockProfileStore) Search(query string, _ int, _, typeFilter string) ([]SearchResult, error) {
+func (m *mockProfileStore) Search(query string, _ int, _, typeFilter, _, _ string) ([]SearchResult, error) {
 	if m.errors != nil {
 		if e, ok := m.errors[query]; ok {
 			return nil, e
@@ -421,7 +421,7 @@ func TestFetchNote_exactTitleMatchBreaks(t *testing.T) {
 func TestFetchNote_chunkSearchError(t *testing.T) {
 	callCount := 0
 	store := &mockProfileStoreFunc{
-		searchFn: func(_ string, _ int, _, _ string) ([]SearchResult, error) {
+		searchFn: func(_ string, _ int, _, _, _, _ string) ([]SearchResult, error) {
 			callCount++
 			if callCount == 1 {
 				return []SearchResult{
@@ -469,12 +469,12 @@ func TestFetchNote_mismatchedChunkTitlesFiltered(t *testing.T) {
 
 // mockProfileStoreFunc is a profileToolStore backed by a function for fine-grained call control.
 type mockProfileStoreFunc struct {
-	searchFn func(query string, limit int, sourceFilter, typeFilter string) ([]SearchResult, error)
+	searchFn func(query string, limit int, sourceFilter, typeFilter, after, before string) ([]SearchResult, error)
 }
 
 // Search delegates to the injected function.
-func (m *mockProfileStoreFunc) Search(query string, limit int, sf, tf string) ([]SearchResult, error) {
-	return m.searchFn(query, limit, sf, tf)
+func (m *mockProfileStoreFunc) Search(query string, limit int, sf, tf, after, before string) ([]SearchResult, error) {
+	return m.searchFn(query, limit, sf, tf, after, before)
 }
 
 // Verifies fetchNote skips results whose content type is not a recognized title type.

@@ -735,7 +735,8 @@ func TestAllAppDefs(t *testing.T) {
 	}
 }
 
-// Verifies shared content-entry building preserves metadata needed for global search results.
+// Verifies shared content-entry building preserves metadata needed for global search results
+// and populates Timestamp from the modTime parameter.
 func TestBuildContentEntries(t *testing.T) {
 	entries := buildContentEntries("src", "id1", "My Title", "Some content here", "2024-01-01T00:00:00Z", "Owner A",
 		"title_type", "owner_type", "content_type", "doc_id")
@@ -744,6 +745,9 @@ func TestBuildContentEntries(t *testing.T) {
 	}
 	hasTitle, hasOwner, hasContent := false, false, false
 	for _, e := range entries {
+		if e.Timestamp == nil {
+			t.Errorf("expected Timestamp to be set on %s entry", e.ContentType)
+		}
 		switch e.ContentType {
 		case "title_type":
 			hasTitle = true

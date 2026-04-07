@@ -19,7 +19,7 @@ import (
 type failingSearchStore struct{}
 
 // Returns a fixed error so global-search MCP tests can verify tool error propagation.
-func (failingSearchStore) Search(_ string, _ int, _, _ string) ([]SearchResult, error) {
+func (failingSearchStore) Search(_ string, _ int, _, _, _, _ string) ([]SearchResult, error) {
 	return nil, errors.New("search failed")
 }
 
@@ -254,7 +254,7 @@ func TestMCP_GlobalSearch_withLimit(t *testing.T) {
 func TestMCP_GlobalSearch_missingQuery(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{})
-	want := `query parameter is required; retry with params.arguments: {"query":"birthday dinner 2024"}`
+	want := `query parameter is required; retry with params.arguments: {"query":"birthday dinner 2024","after":"2024-01-01T00:00:00Z","before":"2025-01-01T00:00:00Z"}`
 	if text != want {
 		t.Errorf("expected missing query error, got %q", text)
 	}
@@ -264,7 +264,7 @@ func TestMCP_GlobalSearch_missingQuery(t *testing.T) {
 func TestMCP_GlobalSearch_missingArgumentsObject(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchToolWithoutArguments(t, s)
-	want := `query parameter is required; retry with params.arguments: {"query":"birthday dinner 2024"}`
+	want := `query parameter is required; retry with params.arguments: {"query":"birthday dinner 2024","after":"2024-01-01T00:00:00Z","before":"2025-01-01T00:00:00Z"}`
 	if text != want {
 		t.Errorf("expected missing query error, got %q", text)
 	}
@@ -337,7 +337,7 @@ func TestMCP_ToolsListContainsSearchTool(t *testing.T) {
 			if len(tool.InputSchema.Required) != 1 || tool.InputSchema.Required[0] != "query" {
 				t.Fatalf("unexpected required fields: %#v", tool.InputSchema.Required)
 			}
-			for _, key := range []string{"query", "source", "content_type", "limit"} {
+			for _, key := range []string{"query", "source", "content_type", "limit", "after", "before"} {
 				if _, ok := tool.InputSchema.Properties[key]; !ok {
 					t.Fatalf("expected %q in inputSchema.properties", key)
 				}
@@ -356,5 +356,35 @@ func TestMCP_ToolsListContainsSearchTool(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected 'search' tool in tools list")
+	}
+}
+
+// Verifies the after/before MCP params are passed through to the store and filter results correctly.
+func TestMCP_GlobalSearch_afterBeforeFilter(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+
+	// The seeded fixtures use recent timestamps; querying with a far-future "after" should return nothing.
+	text := callSearchTool(t, s, map[string]interface{}{
+		"query": "Family",
+		"after": "2099-01-01T00:00:00Z",
+	})
+	if !strings.Contains(text, "No matches found") {
+		t.Errorf("expected no results for far-future after filter, got %q", text)
+	}
+
+	// Querying with a far-past "before" should also return nothing.
+	text = callSearchTool(t, s, map[string]interface{}{
+		"query":  "Family",
+		"before": "2000-01-01T00:00:00Z",
+	})
+	if !strings.Contains(text, "No matches found") {
+		t.Errorf("expected no results for far-past before filter, got %q", text)
+	}
+
+	// Normal query with no date filters still returns results.
+	text = callSearchTool(t, s, map[string]interface{}{"query": "Family"})
+	var results []SearchResult
+	if err := json.Unmarshal([]byte(text), &results); err != nil || len(results) == 0 {
+		t.Errorf("expected results without date filters, got %q", text)
 	}
 }

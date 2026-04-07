@@ -40,7 +40,7 @@ var mdLinkRe = regexp.MustCompile(`\[([^\]]+)\]\(([^)#]+)\)`)
 
 // profileToolStore abstracts the search store for profile tool usage.
 type profileToolStore interface {
-	Search(query string, limit int, sourceFilter, typeFilter string) ([]SearchResult, error)
+	Search(query string, limit int, sourceFilter, typeFilter, after, before string) ([]SearchResult, error)
 }
 
 // ProfileResult is returned by the profile_about_me tool.
@@ -122,7 +122,7 @@ func buildProfile(store profileToolStore) (*ProfileResult, error) {
 // its full content by collecting and sorting all indexed content chunks for that note.
 // Returns empty strings (no error) when no matching note is found.
 func fetchNote(store profileToolStore, query string) (title, content, source string, err error) {
-	titleResults, err := store.Search(query, 10, "", "")
+	titleResults, err := store.Search(query, 10, "", "", "", "")
 	if err != nil {
 		return "", "", "", err
 	}
@@ -151,7 +151,7 @@ func fetchNote(store profileToolStore, query string) (title, content, source str
 	contentType := titleToContentType[best.ContentType]
 
 	// Fetch up to 50 content chunks for this note and reconstruct in order.
-	chunkResults, err := store.Search(noteTitle, 50, noteSource, contentType)
+	chunkResults, err := store.Search(noteTitle, 50, noteSource, contentType, "", "")
 	if err != nil {
 		return "", "", "", err
 	}

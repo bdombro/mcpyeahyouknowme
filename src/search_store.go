@@ -328,14 +328,15 @@ func (s *SearchStore) LastIndexed(source string) time.Time {
 }
 
 // Search runs BM25 keyword retrieval for query and returns weighted top results.
-// Recency boost is applied after BM25 retrieval, so truncation to limit happens
-// after loadResults re-sorts by the boosted score.
-func (s *SearchStore) Search(query string, limit int, sourceFilter, typeFilter string) ([]SearchResult, error) {
+// A temporal multiplier is applied after BM25 retrieval; truncation to limit happens
+// after loadResults re-sorts by the final score. Optional after/before RFC3339 strings
+// filter results to entries whose stored timestamp falls within the given range.
+func (s *SearchStore) Search(query string, limit int, sourceFilter, typeFilter, after, before string) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 
-	ranked, err := s.bm25SearchEntries(query, limit*5, sourceFilter, typeFilter)
+	ranked, err := s.bm25SearchEntries(query, limit*5, sourceFilter, typeFilter, after, before)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +356,9 @@ type rankedEntry struct {
 }
 
 // bm25SearchEntries runs FTS keyword search for query, applies optional filters, and returns ranked entry IDs.
-func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, typeFilter string) ([]rankedEntry, error) {
+// after and before are optional RFC3339 timestamp strings; when non-empty they constrain results to entries
+// whose stored timestamp is >= after or <= before respectively.
+func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, typeFilter, after, before string) ([]rankedEntry, error) {
 	ftsQuery := sanitizeFTSQuery(query)
 
 	parts := []string{`
@@ -372,6 +375,14 @@ func (s *SearchStore) bm25SearchEntries(query string, limit int, sourceFilter, t
 	if typeFilter != "" {
 		parts = append(parts, "AND e.content_type = ?")
 		params = append(params, typeFilter)
+	}
+	if after != "" {
+		parts = append(parts, "AND e.timestamp >= ?")
+		params = append(params, after)
+	}
+	if before != "" {
+		parts = append(parts, "AND e.timestamp <= ?")
+		params = append(params, before)
 	}
 	parts = append(parts, "ORDER BY bm25(search_fts) LIMIT ?")
 	params = append(params, limit)
@@ -448,7 +459,51 @@ func recencyMultiplier(ts *time.Time) float64 {
 	return 1.0 + 3.0*math.Exp(-ageDays/2.5) + 0.5*math.Exp(-ageDays/90.0) + 1.5*math.Exp(-ageDays/700.0)
 }
 
-// loadResults hydrates ranked entry IDs, applies hierarchy weighting and recency boost, and returns ordered search results.
+// futureProximityMultiplier returns a score boost that peaks around "now" and decays by distance,
+// but gives future dates a +1.5 bias so upcoming events/tasks rank above equally-distant past ones.
+// Curve: 1 + futureBias + 4*exp(-|t|/3) + 1*exp(-|t|/30), where t is days from now.
+// Approximate values: tomorrow ~6.8x, yesterday ~5.3x, next week ~3.5x, last week ~2.3x,
+// next month ~1.5x, last month ~1.2x.
+// Returns 1.0 when no timestamp is available.
+func futureProximityMultiplier(ts *time.Time) float64 {
+	if ts == nil {
+		return 1.0
+	}
+	offsetDays := -time.Since(*ts).Hours() / 24 // positive = future
+	absDays := math.Abs(offsetDays)
+	futureBias := 0.0
+	if offsetDays > 0 {
+		futureBias = 1.5
+	}
+	return 1.0 + futureBias + 4.0*math.Exp(-absDays/3.0) + 1.0*math.Exp(-absDays/30.0)
+}
+
+// taskStatusMultiplier returns a score multiplier based on task completion status stored in entry metadata.
+// Incomplete tasks ("needsAction") get a 1.5x boost so they surface above completed ones.
+// Completed tasks get a 0.6x penalty. Missing or unrecognised status returns 1.0 (neutral).
+func taskStatusMultiplier(meta json.RawMessage) float64 {
+	if meta == nil {
+		return 1.0
+	}
+	var m struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(meta, &m); err != nil {
+		return 1.0
+	}
+	switch m.Status {
+	case "needsAction":
+		return 1.5
+	case "completed":
+		return 0.6
+	default:
+		return 1.0
+	}
+}
+
+// loadResults hydrates ranked entry IDs, applies hierarchy weighting and a content-type-aware temporal multiplier, and returns ordered search results.
+// Calendar entries use futureProximityMultiplier (future dates rank higher than past); tasks use the same plus a status multiplier (needsAction boosted, completed penalized).
+// All other entries use recencyMultiplier. The final score is |BM25| × hierarchyWeight × temporalMultiplier.
 func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) {
 	if len(ranked) == 0 {
 		return []SearchResult{}, nil
@@ -498,12 +553,22 @@ func (s *SearchStore) loadResults(ranked []rankedEntry) ([]SearchResult, error) 
 			meta = json.RawMessage(metadata.String)
 		}
 
+		var temporalMultiplier float64
+		switch {
+		case strings.HasPrefix(contentType, "calendar_"):
+			temporalMultiplier = futureProximityMultiplier(ts)
+		case contentType == "task":
+			temporalMultiplier = futureProximityMultiplier(ts) * taskStatusMultiplier(meta)
+		default:
+			temporalMultiplier = recencyMultiplier(ts)
+		}
+
 		resultMap[id] = SearchResult{
 			Source:       source,
 			ContentType:  contentType,
 			Title:        title,
 			Content:      content,
-			Score:        -scoreMap[id] * weight * recencyMultiplier(ts),
+			Score:        -scoreMap[id] * weight * temporalMultiplier,
 			Metadata:     meta,
 			MetadataHint: searchMetadataHint(source, contentType),
 		}

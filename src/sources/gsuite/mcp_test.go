@@ -679,7 +679,8 @@ func TestStoreGmailMessage(t *testing.T) {
 	}
 }
 
-// Verifies gmailSearchEntries emits message and thread entries with the expected searchable content.
+// Verifies gmailSearchEntries emits message and thread entries with the expected searchable content
+// and sets Timestamp on thread and content entries from the message dates.
 func TestGmailSearchEntries(t *testing.T) {
 	src := newTestSource(t)
 	seedGmail(t, src.db)
@@ -694,9 +695,15 @@ func TestGmailSearchEntries(t *testing.T) {
 	for _, e := range entries {
 		if e.ContentType == "email_thread_subject" {
 			hasSubject = true
+			if e.Timestamp == nil {
+				t.Error("expected Timestamp on email_thread_subject entry")
+			}
 		}
 		if e.ContentType == "email_thread_participants" {
 			hasParticipants = true
+			if e.Timestamp == nil {
+				t.Error("expected Timestamp on email_thread_participants entry")
+			}
 		}
 		if e.ContentType == "email_thread_content" {
 			hasBody = true
@@ -713,7 +720,8 @@ func TestGmailSearchEntries(t *testing.T) {
 	}
 }
 
-// Verifies calendarSearchEntries maps seeded calendar rows into global-search entries.
+// Verifies calendarSearchEntries maps seeded calendar rows into global-search entries
+// and sets Timestamp from start_time, with human-readable date appended to content.
 func TestCalendarSearchEntries(t *testing.T) {
 	src := newTestSource(t)
 	seedCalendar(t, src.db)
@@ -725,6 +733,17 @@ func TestCalendarSearchEntries(t *testing.T) {
 	for _, e := range entries {
 		if e.ContentType == "calendar_event" {
 			found = true
+			if e.Timestamp == nil {
+				t.Error("expected Timestamp to be set on calendar_event entry")
+			}
+			if e.Content == "" || !strings.Contains(e.Content, "|") {
+				t.Errorf("expected calendar content to contain human-readable date, got %q", e.Content)
+			}
+		}
+		if e.ContentType == "calendar_event_description" {
+			if e.Timestamp == nil {
+				t.Error("expected Timestamp to be set on calendar_event_description entry")
+			}
 		}
 	}
 	if !found {
@@ -732,7 +751,8 @@ func TestCalendarSearchEntries(t *testing.T) {
 	}
 }
 
-// Verifies tasksSearchEntries maps seeded task rows into global-search entries.
+// Verifies tasksSearchEntries maps seeded task rows into global-search entries
+// and sets Timestamp from the due date field.
 func TestTasksSearchEntries(t *testing.T) {
 	src := newTestSource(t)
 	seedTasks(t, src.db)
@@ -742,6 +762,40 @@ func TestTasksSearchEntries(t *testing.T) {
 	}
 	if len(entries) == 0 {
 		t.Error("expected task entries")
+	}
+	for _, e := range entries {
+		if e.ContentType == "task" && e.Timestamp == nil {
+			t.Error("expected Timestamp to be set on task entry")
+		}
+	}
+}
+
+// Verifies tasksSearchEntries falls back to updated time when due is empty.
+func TestTasksSearchEntries_noDue(t *testing.T) {
+	src := newTestSource(t)
+	_, err := src.db.Exec(`INSERT INTO tasks_items
+		(id, tasklist_title, title, notes, status, due, updated, last_synced)
+		VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		"taskNoDue", "My Tasks", "No due date task", "", "needsAction",
+		"", "2024-03-20T12:00:00Z")
+	if err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+	entries, err := tasksSearchEntries(src.db, "gsuite")
+	if err != nil {
+		t.Fatalf("tasksSearchEntries: %v", err)
+	}
+	var found bool
+	for _, e := range entries {
+		if e.ContentType == "task" {
+			found = true
+			if e.Timestamp == nil {
+				t.Error("expected Timestamp to fall back to updated when due is empty")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected task entry")
 	}
 }
 

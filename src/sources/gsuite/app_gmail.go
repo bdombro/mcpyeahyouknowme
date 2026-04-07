@@ -741,17 +741,21 @@ func gmailSearchEntriesForThread(sourceName string, summary gmailThreadSearchSum
 		"last_date":     summary.lastDate,
 		"participants":  summary.participants,
 	})
+	var threadTS *time.Time
+	if t := parseGmailMessageDate(summary.lastDate); !t.IsZero() {
+		threadTS = &t
+	}
 	var entries []core.SearchEntry
 	if summary.subject != "" {
 		entries = append(entries, core.SearchEntry{
 			Source: sourceName, SourceID: summary.threadID, ContentType: "email_thread_subject",
-			Title: summary.subject, Content: summary.subject, Metadata: meta,
+			Title: summary.subject, Content: summary.subject, Metadata: meta, Timestamp: threadTS,
 		})
 	}
 	if summary.participants != "" {
 		entries = append(entries, core.SearchEntry{
 			Source: sourceName, SourceID: summary.threadID, ContentType: "email_thread_participants",
-			Title: summary.subject, Content: summary.participants, Metadata: meta,
+			Title: summary.subject, Content: summary.participants, Metadata: meta, Timestamp: threadTS,
 		})
 	}
 	chunks := buildGmailThreadChunks(summary.subject, summary.participants, messages)
@@ -766,6 +770,10 @@ func gmailSearchEntriesForThread(sourceName string, summary gmailThreadSearchSum
 			"start_date":       chunk.StartDate,
 			"end_date":         chunk.EndDate,
 		})
+		var chunkTS *time.Time
+		if t := parseGmailMessageDate(chunk.EndDate); !t.IsZero() {
+			chunkTS = &t
+		}
 		entries = append(entries, core.SearchEntry{
 			Source:      sourceName,
 			SourceID:    fmt.Sprintf("%s#chunk:%03d", summary.threadID, i),
@@ -773,6 +781,7 @@ func gmailSearchEntriesForThread(sourceName string, summary gmailThreadSearchSum
 			Title:       summary.subject,
 			Content:     chunk.Content,
 			Metadata:    chunkMeta,
+			Timestamp:   chunkTS,
 		})
 	}
 	return entries

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"mcpyeahyouknowme/core"
@@ -304,7 +305,7 @@ func docsSearchEntries(db *sql.DB, sourceName string) ([]core.SearchEntry, error
 }
 
 // buildContentEntries creates title + owner + chunked content SearchEntries.
-// Shared by docs, sheets, and slides.
+// Shared by docs, sheets, and slides. Parses modTime as RFC3339 and sets Timestamp on all entries.
 func buildContentEntries(sourceName, id, title, content, modTime, owners,
 	titleType, ownerType, contentType, idField string) []core.SearchEntry {
 	title = strings.ToValidUTF8(title, "")
@@ -320,15 +321,19 @@ func buildContentEntries(sourceName, id, title, content, modTime, owners,
 		indexedTitle = owners + " — " + title
 	}
 	metadata, _ := json.Marshal(baseMeta)
+	var ts *time.Time
+	if t, err := time.Parse(time.RFC3339, modTime); err == nil {
+		ts = &t
+	}
 	entries = append(entries, core.SearchEntry{
 		Source: sourceName, SourceID: id, ContentType: titleType,
-		Title: title, Content: indexedTitle, Metadata: metadata,
+		Title: title, Content: indexedTitle, Metadata: metadata, Timestamp: ts,
 	})
 	if owners != "" {
 		ownerMeta, _ := json.Marshal(baseMeta)
 		entries = append(entries, core.SearchEntry{
 			Source: sourceName, SourceID: id, ContentType: ownerType,
-			Title: title, Content: owners, Metadata: ownerMeta,
+			Title: title, Content: owners, Metadata: ownerMeta, Timestamp: ts,
 		})
 	}
 	if len(content) > 0 {
@@ -346,7 +351,7 @@ func buildContentEntries(sourceName, id, title, content, modTime, owners,
 			})
 			entries = append(entries, core.SearchEntry{
 				Source: sourceName, SourceID: id, ContentType: contentType,
-				Title: title, Content: chunk, Metadata: chunkMeta,
+				Title: title, Content: chunk, Metadata: chunkMeta, Timestamp: ts,
 			})
 		}
 	}
