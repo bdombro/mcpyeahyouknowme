@@ -182,7 +182,7 @@ func extractDocumentText(doc *docs.Document) string {
 func registerDocsTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"docs_search",
 		core.ToolDescription("Search across all Google Docs", `{"query":"quarterly roadmap","limit":5}`),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
+		mcp.WithString("query", mcp.Required(), mcp.Description("2–4 keywords extracted from the question; drop filler words; include synonyms for better recall (e.g. 'roadmap planning strategy')")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleDocsSearch(ctx, src, req)

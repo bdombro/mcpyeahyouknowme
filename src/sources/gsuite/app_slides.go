@@ -187,7 +187,7 @@ func extractPresentationText(pres *slides.Presentation) string {
 func registerSlidesTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"slides_search",
 		core.ToolDescription("Search across all Google Slides presentations", `{"query":"launch deck","limit":5}`),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
+		mcp.WithString("query", mcp.Required(), mcp.Description("2–4 keywords extracted from the question; drop filler words; include synonyms for better recall (e.g. 'launch deck presentation')")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleSlidesSearch(ctx, src, req)

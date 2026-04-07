@@ -57,7 +57,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 
 	s.AddTool(core.NewReadOnlyTool(p+"get_chat",
 		core.ToolDescription("Get WhatsApp chat metadata by JID.", `{"chat_jid":"120363025246810101@g.us"}`),
-		mcp.WithString("chat_jid", mcp.Required(), mcp.Description("The JID of the chat to retrieve")),
+		mcp.WithString("chat_jid", mcp.Required(), mcp.Description("The JID of the chat to retrieve; obtain from whatsapp_list_chats or search result metadata")),
 		mcp.WithBoolean("include_last_message", mcp.Description("Whether to include the last message (default true)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		jid, errResult := core.RequireStringArgument(req, "chat_jid", `{"chat_jid":"120363025246810101@g.us"}`)
@@ -89,7 +89,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 
 	s.AddTool(core.NewReadOnlyTool(p+"get_contact_chats",
 		core.ToolDescription("Get all WhatsApp chats involving the contact.", `{"jid":"15551234567@s.whatsapp.net","limit":10}`),
-		mcp.WithString("jid", mcp.Required(), mcp.Description("The contact's JID to search for")),
+		mcp.WithString("jid", mcp.Required(), mcp.Description("The contact's JID; obtain from whatsapp_search_contacts or search result metadata")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of chats to return (default 20)")),
 		mcp.WithNumber("page", mcp.Description("Page number for pagination (default 0)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -111,11 +111,11 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 
 	s.AddTool(core.NewReadOnlyTool(p+"list_messages",
 		core.ToolDescription("Get WhatsApp messages matching specified criteria with optional context. When a query is provided, uses BM25 keyword search for relevance-ranked results.", `{"chat_jid":"15551234567@s.whatsapp.net","query":"dinner plans","limit":20}`),
-		mcp.WithString("after", mcp.Description("Optional ISO-8601 date to only return messages after")),
-		mcp.WithString("before", mcp.Description("Optional ISO-8601 date to only return messages before")),
+		mcp.WithString("after", mcp.Description("Optional RFC3339 timestamp to only return messages after (e.g. '2024-01-01T00:00:00Z')")),
+		mcp.WithString("before", mcp.Description("Optional RFC3339 timestamp to only return messages before (e.g. '2025-01-01T00:00:00Z')")),
 		mcp.WithString("sender_phone_number", mcp.Description("Optional phone number to filter by sender")),
-		mcp.WithString("chat_jid", mcp.Description("Optional chat JID to filter by chat")),
-		mcp.WithString("query", mcp.Description("Optional search term to filter messages by content")),
+		mcp.WithString("chat_jid", mcp.Description("Optional chat JID to filter by chat; obtain from whatsapp_list_chats or search result metadata")),
+		mcp.WithString("query", mcp.Description("Optional BM25 keyword search term; use 2–4 core keywords and include synonyms for better recall (e.g. 'dinner plans tonight')")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of messages to return (default 200)")),
 		mcp.WithNumber("page", mcp.Description("Page number for pagination (default 0)")),
 		mcp.WithBoolean("include_context", mcp.Description("Include messages before and after matches (default true)")),
@@ -162,7 +162,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 
 	s.AddTool(core.NewReadOnlyTool(p+"get_last_interaction",
 		core.ToolDescription("Get most recent WhatsApp message involving the contact.", `{"jid":"15551234567@s.whatsapp.net"}`),
-		mcp.WithString("jid", mcp.Required(), mcp.Description("The JID of the contact")),
+		mcp.WithString("jid", mcp.Required(), mcp.Description("The JID of the contact; obtain from whatsapp_search_contacts or search result metadata")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		jid, errResult := core.RequireStringArgument(req, "jid", `{"jid":"15551234567@s.whatsapp.net"}`)
 		if errResult != nil {

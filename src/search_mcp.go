@@ -35,7 +35,7 @@ func RegisterSearchTool(s *server.MCPServer, store searchToolStore) {
 		core.ToolDescription(searchToolDescription, searchToolExample),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Keywords extracted from the question. Include synonyms for better recall (e.g. 'invoice bill payment').")),
 		mcp.WithString("source", mcp.Description("Filter to a specific source (e.g. 'whatsapp')")),
-		mcp.WithString("content_type", mcp.Description("Filter by content type (e.g. 'chat_name', 'chat_content', 'document_title', 'email_thread_subject', 'note_content', 'browser_visit')")),
+		mcp.WithString("content_type", mcp.Description("Filter by content type. Values: chat_name, chat_content, participant, document_title, document_content, spreadsheet_title, spreadsheet_content, email_thread_subject, email_thread_participants, email_thread_content, calendar_event, calendar_event_description, task, contact, presentation_title, presentation_content, note_title, note_content, pdf_title, pdf_content, image, browser_visit")),
 		mcp.WithNumber("limit", mcp.Description("Maximum results to return (default 20)")),
 		mcp.WithString("after", mcp.Description("Return only entries with timestamp >= this RFC3339 value (e.g. '2024-01-01T00:00:00Z')")),
 		mcp.WithString("before", mcp.Description("Return only entries with timestamp <= this RFC3339 value (e.g. '2025-01-01T00:00:00Z')")),

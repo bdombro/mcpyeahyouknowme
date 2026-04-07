@@ -506,7 +506,7 @@ func primaryFolder(labelIDs []string) string {
 func registerGmailTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"gmail_search",
 		core.ToolDescription("Search across all Gmail messages (excluding trash)", `{"query":"invoice overdue","limit":5}`),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
+		mcp.WithString("query", mcp.Required(), mcp.Description("2–4 keywords extracted from the question; drop filler words; include synonyms for better recall (e.g. 'invoice bill payment')")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleGmailSearch(ctx, src, req)

@@ -4,7 +4,7 @@
 
 **Global search across everything.** A single `search` tool performs BM25 keyword search across every connected source at once — emails, chats, calendar events, documents, notes, browser history — ranked by relevance with follow-up metadata pointing to the right source-specific tool for deep reads.
 
-**Offline-first, privacy-preserving.** All data syncs into local SQLite databases. Every read tool queries local files directly — no network latency, nothing leaves your machine until you explicitly ask for it. The background daemon handles sync; the MCP server just reads.
+**Offline-first, privacy-preserving.** All data syncs into local SQLite databases. Every read tool queries local files directly — no network latency, nothing leaves your machine until you explicitly ask for it. The background daemon handles sync; the MCP server reads from local caches.
 
 > *Caution:* as with many MCP servers, this is subject to [the lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/). Prompt injection could lead to private data exfiltration.
 

@@ -213,7 +213,7 @@ func normalizePhone(s string) string {
 func registerContactsTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"contacts_search",
 		core.ToolDescription("Search across Google Contacts", `{"query":"Alice Smith","limit":5}`),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
+		mcp.WithString("query", mcp.Required(), mcp.Description("2–4 keywords extracted from the question; drop filler words; include synonyms for better recall (e.g. 'Alice Smith designer')")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleContactsSearch(ctx, src, req)

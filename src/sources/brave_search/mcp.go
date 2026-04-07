@@ -26,7 +26,7 @@ func registerTools(src *Source, s *server.MCPServer) {
 		mcp.WithString("search_lang", mcp.Description("Search language (ISO 639-1)")),
 		mcp.WithString("ui_lang", mcp.Description("UI language for response metadata")),
 		mcp.WithString("safesearch", mcp.Description("Safe search: off, moderate, or strict")),
-		mcp.WithString("freshness", mcp.Description("Freshness filter (e.g. pd, pw, pm, py, or custom range)")),
+		mcp.WithString("freshness", mcp.Description("Freshness filter: pd=past day, pw=past week, pm=past month, py=past year, or a custom date range as YYYY-MM-DDtoYYYY-MM-DD")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query, errResult := core.RequireStringArgument(req, "query", webExample)
 		if errResult != nil {

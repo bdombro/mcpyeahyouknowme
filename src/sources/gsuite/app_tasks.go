@@ -165,7 +165,7 @@ func buildTaskRecord(taskList *tasks.TaskList, task *tasks.Task) taskRecord {
 func registerTasksTools(src *Source, prefix string, s toolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"tasks_search",
 		core.ToolDescription("Search across Google Tasks", `{"query":"submit expense report","limit":5}`),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Search query")),
+		mcp.WithString("query", mcp.Required(), mcp.Description("2–4 keywords extracted from the question; drop filler words; include synonyms for better recall (e.g. 'expense report submit reimbursement')")),
 		mcp.WithNumber("limit", mcp.Description("Maximum number of results (default 10)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) { // nocov
 		return handleTasksSearch(ctx, src, req)
