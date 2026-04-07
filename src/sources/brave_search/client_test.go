@@ -1,6 +1,7 @@
 package brave_search
 
 import (
+	"compress/gzip"
 	"context"
 	"io"
 	"net/http"
@@ -55,6 +56,32 @@ func TestWebSearch_success(t *testing.T) {
 	}
 	if payload.Results[0].Title != "Coffee" || payload.Results[0].URL != "https://example.com/c" {
 		t.Fatalf("result: %+v", payload.Results[0])
+	}
+}
+
+// Verifies gzip-compressed JSON responses decode correctly (Brave returns gzip when the client negotiates it).
+func TestWebSearch_gzipResponseBody(t *testing.T) {
+	const jsonBody = `{"query":{"original":"q1","more_results_available":false},"web":{"results":[]}}`
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if ae := r.Header.Get("Accept-Encoding"); !strings.Contains(ae, "gzip") {
+			t.Fatalf("Accept-Encoding should negotiate gzip from transport, got %q", ae)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "gzip")
+		gz := gzip.NewWriter(w)
+		if _, err := io.WriteString(gz, jsonBody); err != nil {
+			t.Fatal(err)
+		}
+		if err := gz.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	payload, err := client.WebSearch(context.Background(), WebSearchOptions{Query: "q1", Count: 1})
+	if err != nil {
+		t.Fatalf("WebSearch(): %v", err)
+	}
+	if payload.Query != "q1" || len(payload.Results) != 0 {
+		t.Fatalf("payload: %+v", payload)
 	}
 }
 

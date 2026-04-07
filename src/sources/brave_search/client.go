@@ -127,7 +127,9 @@ func (c *BraveClient) WebSearch(ctx context.Context, opts WebSearchOptions) (*We
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Accept-Encoding", "gzip")
+	// Do not set Accept-Encoding: gzip here. net/http only transparently decompresses
+	// gzip responses when the Transport adds Accept-Encoding itself; a manual header
+	// leaves the body compressed and breaks json.Unmarshal (first byte 0x1f).
 	req.Header.Set("X-Subscription-Token", c.apiKey)
 
 	var wire webSearchWire
