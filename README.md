@@ -21,12 +21,30 @@ All reads hit local SQLite; the MCP server never calls external APIs directly. W
 
 See the [product spec](docs/spec.md) for full details.
 
+## Security
+
+Optional controls live in `~/.local/share/mcpyeahyouknowme/config.json` under a top-level **`mcp`** object (safe to omit; defaults apply at runtime without rewriting the file). Any ongoing MCP connections would need to be restarted/loaded to take effect. A **full annotated template** (all sources + `mcp` keys) is in [**config.json reference**](#configjson-reference) below.
+
+| Field | Default | What it does |
+|-------|---------|----------------|
+| `read_only` | `false` | When `true`, the MCP server registers **no** mutating tools (nothing that changes state or hits write paths). |
+| `disabled_tools` | `[]` | Tool names to omit entirely (e.g. `whatsapp_send_message`). |
+| `mutating_tools_per_min` | `10` | Per-tool sliding window: each **non–read-only** tool may run at most this many times per minute; further calls return a rate-limit tool error. |
+| `whatsapp_send_max_runes` | `1000` | Max Unicode characters allowed in one `whatsapp_send_message` body. Omit or set `≤ 0` to keep the default (`1000`). Set higher if you routinely send long texts via MCP. |
+
+**Audit log:** every MCP tool invocation appends one JSON line to `mcp-audit.log` in the same data directory. Sensitive argument keys (`message`, `query`, `path`, `body`, `base64`, `media_path`) are logged as length-only redactions. The file is trimmed like `core.log` when it grows past 5&nbsp;MiB (newest ~1&nbsp;MiB kept).
+
+**Untrusted content:** results from external or user-controlled sources (e.g. WhatsApp/Gmail message bodies, web search, browser history, notebook reads, and global `search` / `profile_about_me` when hits include those sources) are prefixed with a short security warning and include `_meta` hints where supported.
+
+**`whatsapp_send_message` size cap (complement to rate limits):** not a substitute for `mutating_tools_per_min`, but it bounds how much text one send can carry—useful when an automated agent might otherwise paste huge blobs (accidentally or via prompt injection). Default **1000** Unicode characters per call; override with `mcp.whatsapp_send_max_runes`.
+
+**2FA / OTP redaction (what gets censored):** before persisting to SQLite (and therefore before full-text indexing and MCP reads that come from the local DB), the server runs a **conservative heuristic** on message text to determine if it's a one-time password message and to censor if so.
+
 ## Prerequisites
 
 - **macOS** (Apple Silicon or Intel)
 - **Homebrew** (for installing dependencies)
 - **Go** (to build)
-- **FFmpeg** (*optional*) — only needed for automatic audio format conversion when sending voice messages
 
 ## Quick Start
 
@@ -198,3 +216,86 @@ This will:
 - **Session expired / 405 error**: Run `mcpyeahyouknowme whatsapp login --relogin` to clear the stale session and re-pair. The daemon will be restarted automatically.
 
 For additional Claude Desktop troubleshooting, see the [MCP documentation](https://modelcontextprotocol.io/quickstart/server#claude-for-desktop-integration-issues).
+
+## config.json reference
+
+**Path:** `~/.local/share/mcpyeahyouknowme/config.json` (same folder as the SQLite databases and `mcp-audit.log`).
+
+The daemon normalizes this file over time: every **registered source** gets a `sources.<name>` entry even when disabled, so keys may appear before you configure a source. The **`mcp`** block is optional and is read only by the **`mcpyeahyouknowme mcp`** subprocess.
+
+### Full reference (JSON with comments, tsconfig-style)
+
+**Important:** The Go runtime uses strict **JSON** — **`//` and `/* */` comments are not allowed** in the real file on disk. Treat the block below as documentation: copy the structure and values you need, **delete all comment lines**, then save. (Some editors can strip JSONC to JSON on export.)
+
+```jsonc
+{
+  // --- sources: one object per integration (names are fixed) ---
+  "sources": {
+    "brave_search": {
+      // Whether this source is turned on in config. Live Brave tools also need
+      // BRAVE_API_KEY at build time; there is no API key stored here.
+      "enabled": false,
+      // When true, the core daemon runs source Reset() on its next loop, then
+      // tooling normally clears this flag. You rarely set it by hand.
+      // "reset": false,
+      // No "auth" blob for brave_search.
+    },
+    "browser_history": {
+      "enabled": false,
+      // "auth" selects which Chromium profile DB to snapshot (macOS).
+      // Typical values: "chrome", "brave". Use: mcpyeahyouknowme browser_history set <browser>
+      "auth": {
+        "browser": "chrome"
+      }
+    },
+    "google_places": {
+      "enabled": false,
+      // Places needs GOOGLE_PLACE_API_KEY at build time; nothing stored under "auth".
+    },
+    "gsuite": {
+      "enabled": false,
+      // "auth" only holds per-app toggles. OAuth tokens live in gsuite_token.json
+      // next to this file (written by: mcpyeahyouknowme gsuite login).
+      "auth": {
+        "apps": {
+          "docs": false,
+          "sheets": false,
+          "gmail": false,
+          "calendar": false,
+          "tasks": false,
+          "contacts": false,
+          "slides": false
+        }
+      }
+    },
+    "notebook": {
+      "enabled": false,
+      // Local directories to index (markdown, PDF, images). Use:
+      // mcpyeahyouknowme notebook add <path>  (populates dirs for you)
+      "auth": {
+        "dirs": []
+      }
+    },
+    "whatsapp": {
+      "enabled": false
+      // Pairing/session files live under the data directory; login sets enabled.
+      // No "auth" object in config.json for WhatsApp.
+    }
+  },
+
+  // --- mcp: optional; used only by `mcpyeahyouknowme mcp` (restart MCP to apply) ---
+  "mcp": {
+    // When true, no mutating tools are registered (no sends, downloads, etc.).
+    "read_only": false,
+
+    // Exact tool names to hide entirely, e.g. "whatsapp_send_message".
+    "disabled_tools": [],
+
+    // Per mutating tool name: max calls per sliding minute (default 10 if omitted or <= 0).
+    "mutating_tools_per_min": 10,
+
+    // Max Unicode runes per whatsapp_send_message body (default 1000 if omitted or <= 0).
+    "whatsapp_send_max_runes": 1000
+  }
+}
+```

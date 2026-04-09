@@ -11,7 +11,6 @@ import (
 
 	"mcpyeahyouknowme/core"
 
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // init registers the notebook source name so config normalization keeps a stable entry for it.
@@ -89,7 +88,7 @@ func (s *Source) Reset(dataDir string) error {
 }
 
 // RegisterTools adds the notebook read tools to the MCP server.
-func (s *Source) RegisterTools(srv *server.MCPServer) {
+func (s *Source) RegisterTools(srv core.ToolAdder) {
 	registerTools(s, srv)
 }
 

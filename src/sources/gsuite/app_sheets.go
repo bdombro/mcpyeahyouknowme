@@ -188,7 +188,7 @@ func extractSpreadsheetText(ss *sheets.Spreadsheet) string {
 }
 
 // registerSheetsTools wires the local-DB Sheets read tools into MCP so clients can query synced spreadsheets without live API calls.
-func registerSheetsTools(src *Source, prefix string, s toolAdder) {
+func registerSheetsTools(src *Source, prefix string, s core.ToolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"sheets_search",
 		core.ToolDescription("Search across all Google Sheets", `{"query":"headcount","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("2–4 keywords extracted from the question; drop filler words; include synonyms for better recall (e.g. 'headcount budget employees')")),

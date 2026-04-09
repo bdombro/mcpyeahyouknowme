@@ -3,7 +3,6 @@ package google_places
 import (
 	"mcpyeahyouknowme/core"
 
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // init registers the google_places source name so config normalization keeps a stable entry for it.
@@ -38,6 +37,6 @@ func (g *Source) Reset(_ string) error {
 }
 
 // RegisterTools exposes the source's live-only lookup tools to MCP so clients can call Places without any local cache or sync step.
-func (g *Source) RegisterTools(s *server.MCPServer) {
+func (g *Source) RegisterTools(s core.ToolAdder) {
 	registerTools(g, s)
 }

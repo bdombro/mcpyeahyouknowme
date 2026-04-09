@@ -9,8 +9,6 @@ import (
 
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/registry"
-
-	"github.com/mark3labs/mcp-go/server"
 )
 
 type indexerTestSource struct {
@@ -55,7 +53,7 @@ func (s *indexerTestSource) Description() string {
 }
 
 // Registers nothing because indexer tests never exercise MCP tool exposure.
-func (s *indexerTestSource) RegisterTools(_ *server.MCPServer) {}
+func (s *indexerTestSource) RegisterTools(_ core.ToolAdder) {}
 
 // Returns the configured entries so indexer tests can drive indexing and pruning deterministically.
 func (s *indexerTestSource) SearchEntries() ([]core.SearchEntry, error) {
@@ -79,7 +77,7 @@ func (s *reuseTestSource) Name() string { return s.name }
 func (s *reuseTestSource) Description() string { return s.name }
 
 // Registers nothing because reconcile tests never exercise MCP tool exposure.
-func (s *reuseTestSource) RegisterTools(_ *server.MCPServer) {}
+func (s *reuseTestSource) RegisterTools(_ core.ToolAdder) {}
 
 // Returns no entries because reconcile tests only care about source reuse decisions.
 func (s *reuseTestSource) SearchEntries() ([]core.SearchEntry, error) { return nil, nil }
@@ -105,7 +103,7 @@ func (s *streamingIndexerTestSource) Name() string { return s.name }
 func (s *streamingIndexerTestSource) Description() string { return s.name }
 
 // Registers nothing because streaming indexer tests never exercise MCP tool exposure.
-func (s *streamingIndexerTestSource) RegisterTools(_ *server.MCPServer) {}
+func (s *streamingIndexerTestSource) RegisterTools(_ core.ToolAdder) {}
 
 // Returns no fallback entries because streaming indexer tests target the streaming path explicitly.
 func (s *streamingIndexerTestSource) SearchEntries() ([]core.SearchEntry, error) { return nil, nil }

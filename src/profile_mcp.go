@@ -13,7 +13,6 @@ import (
 	"mcpyeahyouknowme/core"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 const profileToolDescription = `Returns the MCP owner's personal profile — identity, hobbies, skills, preferences, and background. ` +
@@ -59,15 +58,34 @@ type ProfileSection struct {
 	Source  string `json:"source"`
 }
 
+// profileNeedsUntrustedWarning is true when any aggregated section may include externally influenced text.
+func profileNeedsUntrustedWarning(r *ProfileResult) bool {
+	if r == nil {
+		return false
+	}
+	if searchResultSourceMayCarryInjection(r.Source) {
+		return true
+	}
+	for _, sec := range r.Sections {
+		if searchResultSourceMayCarryInjection(sec.Source) {
+			return true
+		}
+	}
+	return false
+}
+
 // RegisterProfileTool registers the profile_about_me tool, which aggregates the owner's
 // "About Me" note and any notes it references into a single structured response.
-func RegisterProfileTool(s *server.MCPServer, store profileToolStore) {
+func RegisterProfileTool(s core.ToolAdder, store profileToolStore) {
 	s.AddTool(core.NewReadOnlyTool("profile_about_me",
 		core.ToolDescription(profileToolDescription, profileToolExample),
 	), func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		result, err := buildProfile(store)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
+		}
+		if profileNeedsUntrustedWarning(result) {
+			return core.UntrustedJSONResult(result, "profile_about_me")
 		}
 		return core.JsonResult(result)
 	})

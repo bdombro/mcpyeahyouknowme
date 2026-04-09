@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"mcpyeahyouknowme/core"
 )
 
 // Verifies notebook_list returns all files when no filters are applied.
@@ -22,7 +24,7 @@ func TestMCP_List_noFilter(t *testing.T) {
 		t.Fatalf("unexpected error: %s", text)
 	}
 	var results []FileInfo
-	if err := json.Unmarshal([]byte(text), &results); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &results); err != nil {
 		t.Fatalf("unmarshal: %v — raw: %s", err, text)
 	}
 	if len(results) < 2 {
@@ -44,7 +46,7 @@ func TestMCP_List_typeFilter(t *testing.T) {
 		t.Fatalf("unexpected error: %s", text)
 	}
 	var results []FileInfo
-	json.Unmarshal([]byte(text), &results)
+	core.UnmarshalToolResultTextPayload(text, &results)
 	for _, r := range results {
 		if r.Type != "md" {
 			t.Fatalf("expected only md files, got type %q", r.Type)
@@ -66,7 +68,7 @@ func TestMCP_List_queryFilter(t *testing.T) {
 		t.Fatalf("unexpected error: %s", text)
 	}
 	var results []FileInfo
-	json.Unmarshal([]byte(text), &results)
+	core.UnmarshalToolResultTextPayload(text, &results)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result for 'alpha', got %d: %s", len(results), text)
 	}
@@ -288,7 +290,7 @@ func TestMCP_List_unsupportedFile(t *testing.T) {
 		t.Fatalf("unexpected error: %s", text)
 	}
 	var results []FileInfo
-	json.Unmarshal([]byte(text), &results)
+	core.UnmarshalToolResultTextPayload(text, &results)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result (only the .md), got %d", len(results))
 	}
@@ -310,7 +312,7 @@ func TestMCP_List_hiddenDir(t *testing.T) {
 		t.Fatalf("unexpected error: %s", text)
 	}
 	var results []FileInfo
-	json.Unmarshal([]byte(text), &results)
+	core.UnmarshalToolResultTextPayload(text, &results)
 	for _, r := range results {
 		if strings.Contains(r.Path, ".hidden") {
 			t.Fatalf("expected hidden dir to be skipped, got %+v", r)

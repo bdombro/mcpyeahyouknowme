@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -16,8 +17,8 @@ type DataSource interface {
 	Name() string
 	// Description returns a human-readable label for the source.
 	Description() string
-	// RegisterTools adds the source's MCP tools to the server.
-	RegisterTools(s *server.MCPServer)
+	// RegisterTools adds the source's MCP tools to the adder (often a SecureToolAdder wrapping the real server).
+	RegisterTools(s ToolAdder)
 	// SearchEntries returns all indexable content for the global search index.
 	SearchEntries() ([]SearchEntry, error)
 	// Reset removes all data files owned by this source.
@@ -68,9 +69,42 @@ type SearchEntry struct {
 	Timestamp   *time.Time      `json:"timestamp,omitempty"`
 }
 
+// ToolAdder abstracts MCP tool registration so SecureToolAdder can wrap AddTool before it reaches the server.
+type ToolAdder interface {
+	AddTool(tool mcp.Tool, handler server.ToolHandlerFunc)
+}
+
+// DefaultWhatsAppSendMaxRunes is the max Unicode length for whatsapp_send_message when config omits whatsapp_send_max_runes.
+const DefaultWhatsAppSendMaxRunes = 1000
+
+// McpConfig holds MCP-server-only settings read from config.json under the "mcp" key.
+type McpConfig struct {
+	ReadOnly               bool     `json:"read_only,omitempty"`
+	DisabledTools          []string `json:"disabled_tools,omitempty"`
+	MutatingToolsPerMin    int      `json:"mutating_tools_per_min,omitempty"`
+	WhatsAppSendMaxRunes   int      `json:"whatsapp_send_max_runes,omitempty"`
+}
+
+// EffectiveMutatingToolsPerMin returns MutatingToolsPerMin when positive, otherwise 10.
+func (m McpConfig) EffectiveMutatingToolsPerMin() int {
+	if m.MutatingToolsPerMin <= 0 {
+		return 10
+	}
+	return m.MutatingToolsPerMin
+}
+
+// EffectiveWhatsAppSendMaxRunes returns WhatsAppSendMaxRunes when positive, otherwise DefaultWhatsAppSendMaxRunes.
+func (m McpConfig) EffectiveWhatsAppSendMaxRunes() int {
+	if m.WhatsAppSendMaxRunes <= 0 {
+		return DefaultWhatsAppSendMaxRunes
+	}
+	return m.WhatsAppSendMaxRunes
+}
+
 // Config is the daemon config stored at {DataDir()}/config.json.
 type Config struct {
 	Sources map[string]SourceConfig `json:"sources"`
+	Mcp     McpConfig               `json:"mcp,omitempty"`
 }
 
 // SourceConfig holds per-source state written by CLI commands and read by the daemon.

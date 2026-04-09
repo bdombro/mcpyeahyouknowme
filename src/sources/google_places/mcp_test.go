@@ -1,11 +1,12 @@
 package google_places
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+
+	"mcpyeahyouknowme/core"
 )
 
 // Verifies the MCP search tool returns mapped Places summaries on a successful upstream response.
@@ -33,7 +34,7 @@ func TestMCP_SearchPlaces_success(t *testing.T) {
 	}
 
 	var results []PlaceSummary
-	if err := json.Unmarshal([]byte(text), &results); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &results); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 	if len(results) != 1 || results[0].PlaceID != "place-1" {
@@ -60,7 +61,7 @@ func TestMCP_GetPlace_success(t *testing.T) {
 	}
 
 	var result PlaceDetails
-	if err := json.Unmarshal([]byte(text), &result); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &result); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 	if result.PlaceID != "place-1" {

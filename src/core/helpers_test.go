@@ -426,3 +426,111 @@ func TestSetSourceDisabled_preservesEntry(t *testing.T) {
 		t.Fatalf("ConfigPath() = %q", got)
 	}
 }
+
+// Verifies McpConfig.EffectiveMutatingToolsPerMin defaults to 10 when unset or non-positive.
+func TestMcpConfig_EffectiveMutatingToolsPerMin(t *testing.T) {
+	if got := (McpConfig{}).EffectiveMutatingToolsPerMin(); got != 10 {
+		t.Fatalf("zero config: got %d", got)
+	}
+	if got := (McpConfig{MutatingToolsPerMin: -1}).EffectiveMutatingToolsPerMin(); got != 10 {
+		t.Fatalf("negative: got %d", got)
+	}
+	if got := (McpConfig{MutatingToolsPerMin: 25}).EffectiveMutatingToolsPerMin(); got != 25 {
+		t.Fatalf("explicit: got %d", got)
+	}
+}
+
+// Verifies McpConfig.EffectiveWhatsAppSendMaxRunes defaults when unset or non-positive.
+func TestMcpConfig_EffectiveWhatsAppSendMaxRunes(t *testing.T) {
+	if got := (McpConfig{}).EffectiveWhatsAppSendMaxRunes(); got != DefaultWhatsAppSendMaxRunes {
+		t.Fatalf("zero config: got %d want %d", got, DefaultWhatsAppSendMaxRunes)
+	}
+	if got := (McpConfig{WhatsAppSendMaxRunes: -1}).EffectiveWhatsAppSendMaxRunes(); got != DefaultWhatsAppSendMaxRunes {
+		t.Fatalf("negative: got %d", got)
+	}
+	if got := (McpConfig{WhatsAppSendMaxRunes: 2500}).EffectiveWhatsAppSendMaxRunes(); got != 2500 {
+		t.Fatalf("explicit: got %d", got)
+	}
+}
+
+// Verifies config.json unmarshaling maps mcp.whatsapp_send_max_runes into McpConfig for MCP startup.
+func TestLoadConfig_mcpWhatsAppSendMaxRunesJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	raw := []byte(`{
+  "sources": {},
+  "mcp": { "whatsapp_send_max_runes": 2400 }
+}`)
+	if err := os.WriteFile(path, raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := LoadConfig(dir)
+	if cfg.Mcp.WhatsAppSendMaxRunes != 2400 {
+		t.Fatalf("WhatsAppSendMaxRunes: got %d", cfg.Mcp.WhatsAppSendMaxRunes)
+	}
+	if got := cfg.Mcp.EffectiveWhatsAppSendMaxRunes(); got != 2400 {
+		t.Fatalf("EffectiveWhatsAppSendMaxRunes: got %d", got)
+	}
+}
+
+// Verifies CheckStringMaxLen returns nil within the limit and an error result when runes exceed max.
+func TestCheckStringMaxLen(t *testing.T) {
+	if res := CheckStringMaxLen("hi", 10, "k"); res != nil {
+		t.Fatalf("expected nil, got %v", res)
+	}
+	res := CheckStringMaxLen("abcdefghijk", 10, "k")
+	if res == nil || !res.IsError {
+		t.Fatal("expected error result")
+	}
+}
+
+// Verifies UntrustedJSONResult prefixes text and sets _meta for clients.
+func TestUntrustedJSONResult_bannerAndMeta(t *testing.T) {
+	res, err := UntrustedJSONResult(map[string]int{"n": 1}, "src")
+	if err != nil {
+		t.Fatalf("UntrustedJSONResult: %v", err)
+	}
+	if res.Meta == nil || res.Meta.AdditionalFields == nil {
+		t.Fatal("expected Meta with AdditionalFields")
+	}
+	if res.Meta.AdditionalFields["untrusted"] != true {
+		t.Fatalf("meta untrusted: %#v", res.Meta.AdditionalFields)
+	}
+	txt := res.Content[0].(mcp.TextContent).Text
+	if !strings.HasPrefix(txt, "[SECURITY:") {
+		t.Fatalf("missing banner: %q", txt)
+	}
+	var m map[string]int
+	if err := UnmarshalToolResultTextPayload(txt, &m); err != nil || m["n"] != 1 {
+		t.Fatalf("payload decode: err=%v m=%v", err, m)
+	}
+}
+
+// Verifies UntrustedTextResult prefixes text and sets _meta like UntrustedJSONResult.
+func TestUntrustedTextResult_bannerAndMeta(t *testing.T) {
+	res := UntrustedTextResult("plain payload", "src")
+	if res.Meta == nil || res.Meta.AdditionalFields == nil {
+		t.Fatal("expected Meta with AdditionalFields")
+	}
+	if res.Meta.AdditionalFields["untrusted"] != true {
+		t.Fatalf("meta untrusted: %#v", res.Meta.AdditionalFields)
+	}
+	txt := res.Content[0].(mcp.TextContent).Text
+	if !strings.HasPrefix(txt, "[SECURITY:") {
+		t.Fatalf("missing banner: %q", txt)
+	}
+	if !strings.Contains(txt, "MCPSEC_END_HEADER") {
+		t.Fatalf("missing separator marker: %q", txt)
+	}
+	if TextAfterUntrustedBanner(txt) != "plain payload" {
+		t.Fatalf("after banner: %q", TextAfterUntrustedBanner(txt))
+	}
+}
+
+// Verifies TextAfterUntrustedBanner is a no-op when the separator is absent.
+func TestTextAfterUntrustedBanner_plainJSON(t *testing.T) {
+	s := `{"a":1}`
+	if got := TextAfterUntrustedBanner(s); got != s {
+		t.Fatalf("got %q", got)
+	}
+}

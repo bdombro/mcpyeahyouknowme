@@ -162,7 +162,7 @@ func buildTaskRecord(taskList *tasks.TaskList, task *tasks.Task) taskRecord {
 }
 
 // registerTasksTools wires the local-DB Tasks read tools into MCP so clients can inspect synced tasks without live API calls.
-func registerTasksTools(src *Source, prefix string, s toolAdder) {
+func registerTasksTools(src *Source, prefix string, s core.ToolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"tasks_search",
 		core.ToolDescription("Search across Google Tasks", `{"query":"submit expense report","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("2–4 keywords extracted from the question; drop filler words; include synonyms for better recall (e.g. 'expense report submit reimbursement')")),

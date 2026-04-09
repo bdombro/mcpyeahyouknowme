@@ -1,11 +1,12 @@
 package brave_search
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+
+	"mcpyeahyouknowme/core"
 )
 
 // Verifies the MCP web tool returns mapped search results on a successful upstream response.
@@ -25,7 +26,7 @@ func TestMCP_Web_success(t *testing.T) {
 		t.Fatalf("unexpected tool error: %s", text)
 	}
 	var payload WebSearchPayload
-	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &payload); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if payload.Query != "q" || len(payload.Results) != 1 || payload.Results[0].Title != "T" {
@@ -50,7 +51,7 @@ func TestMCP_URL_success_exact(t *testing.T) {
 		t.Fatalf("unexpected tool error: %s", text)
 	}
 	var payload URLLookupPayload
-	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &payload); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if !payload.ExactMatch || payload.Result.Title != "Page" {
@@ -75,7 +76,7 @@ func TestMCP_URL_success_fallback(t *testing.T) {
 		t.Fatalf("unexpected tool error: %s", text)
 	}
 	var payload URLLookupPayload
-	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &payload); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if payload.ExactMatch || payload.Result.Title != "Other" || payload.Result.URL != "https://other.example/" {

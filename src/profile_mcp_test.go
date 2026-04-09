@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mark3labs/mcp-go/server"
+	"mcpyeahyouknowme/core"
 )
 
 // mockProfileStore implements profileToolStore for testing.
@@ -291,7 +292,7 @@ func TestProfileTool_mcpRegistration(t *testing.T) {
 	text := callGlobalTool(t, s, "profile_about_me", map[string]interface{}{})
 
 	var result ProfileResult
-	if err := json.Unmarshal([]byte(text), &result); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &result); err != nil {
 		t.Fatalf("unmarshal result: %v\nraw: %s", err, text)
 	}
 	if result.Title != "About Me" {

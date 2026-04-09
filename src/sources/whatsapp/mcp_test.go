@@ -190,6 +190,31 @@ func TestMCP_SendMessage(t *testing.T) {
 	requireContains(t, text, "success")
 }
 
+// Verifies send-message rejects text longer than the default MCP cap without calling the daemon.
+func TestMCP_SendMessage_messageTooLong(t *testing.T) {
+	s, _ := buildTestMCPServer(t)
+	long := strings.Repeat("a", core.DefaultWhatsAppSendMaxRunes+1)
+	raw := callToolRaw(t, s, "whatsapp_send_message", map[string]interface{}{"recipient": "11111", "message": long})
+	requireContains(t, raw, "message exceeds maximum length")
+}
+
+// Verifies SetSendMessageMaxRunes raises the allowed outbound length for whatsapp_send_message.
+func TestMCP_SendMessage_respectsSetSendMessageMaxRunes(t *testing.T) {
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "sent"})
+	}))
+	t.Cleanup(apiSrv.Close)
+	store := newTestStoreWithContacts(t)
+	ws := NewSourceFromStore(store, apiSrv.URL)
+	ws.SetSendMessageMaxRunes(2000)
+	s := server.NewMCPServer("test", "1.0.0", server.WithToolCapabilities(false))
+	ws.RegisterTools(s)
+	msg := strings.Repeat("b", 1500)
+	text := callTool(t, s, "whatsapp_send_message", map[string]interface{}{"recipient": "11111", "message": msg})
+	requireContains(t, text, "success")
+}
+
 // Verifies the send-file tool reaches the mock backend and returns a success payload.
 func TestMCP_SendFile(t *testing.T) {
 	s, _ := buildTestMCPServer(t)

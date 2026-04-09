@@ -224,6 +224,10 @@ func buildGmailStoredRecord(msg *gmail.Message) gmailStoredRecord {
 // storeGmailMessage upserts one synced Gmail message row, keeping visible body text canonical for thread and search reads.
 func storeGmailMessage(db *sql.DB, msg *gmail.Message) {
 	rec := buildGmailStoredRecord(msg)
+	if core.Looks2FA(rec.BodyVisible + "\n" + rec.Snippet + "\n" + rec.Subject) {
+		rec.BodyVisible = core.TwoFARedactedPlaceholder
+		rec.Snippet = core.TwoFARedactedPlaceholder
+	}
 	db.Exec(`INSERT OR REPLACE INTO gmail_messages
 		(id, thread_id, labels, folder, subject, from_addr, to_addrs, cc_addrs, bcc_addrs,
 		 date, snippet, body_visible, has_attachments, size_estimate, last_synced)
@@ -503,7 +507,7 @@ func primaryFolder(labelIDs []string) string {
 }
 
 // registerGmailTools wires the SQLite-backed Gmail read tools plus the live attachment fetch path into MCP.
-func registerGmailTools(src *Source, prefix string, s toolAdder) {
+func registerGmailTools(src *Source, prefix string, s core.ToolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"gmail_search",
 		core.ToolDescription("Search across all Gmail messages (excluding trash)", `{"query":"invoice overdue","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("2–4 keywords extracted from the question; drop filler words; include synonyms for better recall (e.g. 'invoice bill payment')")),
@@ -573,7 +577,7 @@ func handleGmailSearch(_ context.Context, src *Source, req mcp.CallToolRequest) 
 			"has_attachments": hasAttach > 0,
 		})
 	}
-	return core.JsonResult(map[string]interface{}{"query": query, "results": results, "count": len(results)})
+	return core.UntrustedJSONResult(map[string]interface{}{"query": query, "results": results, "count": len(results)}, "gmail")
 }
 
 // handleGmailGetMessage looks up req `message_id` in SQLite and returns the stored headers, labels, folder, and canonical visible body.
@@ -597,11 +601,11 @@ func handleGmailGetMessage(_ context.Context, src *Source, req mcp.CallToolReque
 	if err != nil { // nocov
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to retrieve message: %v", err)), nil
 	}
-	return core.JsonResult(map[string]interface{}{
+	return core.UntrustedJSONResult(map[string]interface{}{
 		"id": msgID, "thread_id": threadID, "subject": subject, "from": from, "to": to, "cc": cc, "bcc": bcc,
 		"date": date, "folder": folder, "body": bodyVisible, "labels": labels,
 		"has_attachments": hasAttach > 0, "size_estimate": sizeEst,
-	})
+	}, "gmail")
 }
 
 // handleGmailGetThread loads req `thread_id`, returning reconstructed chronological messages with the stored visible bodies.
@@ -643,7 +647,7 @@ func handleGmailGetThread(_ context.Context, src *Source, req mcp.CallToolReques
 		}
 		resultMessages = append(resultMessages, entry)
 	}
-	return core.JsonResult(map[string]interface{}{
+	return core.UntrustedJSONResult(map[string]interface{}{
 		"thread_id":     meta.threadID,
 		"subject":       meta.Subject,
 		"participants":  meta.Participants,
@@ -651,7 +655,7 @@ func handleGmailGetThread(_ context.Context, src *Source, req mcp.CallToolReques
 		"first_date":    meta.FirstDate,
 		"last_date":     meta.LastDate,
 		"messages":      resultMessages,
-	})
+	}, "gmail")
 }
 
 // handleGmailListRecent returns recent synced Gmail messages for req `limit`, optionally narrowing to one stored folder.
@@ -687,7 +691,7 @@ func handleGmailListRecent(_ context.Context, src *Source, req mcp.CallToolReque
 			"has_attachments": hasAttach > 0,
 		})
 	}
-	return core.JsonResult(map[string]interface{}{"messages": results, "count": len(results)})
+	return core.UntrustedJSONResult(map[string]interface{}{"messages": results, "count": len(results)}, "gmail")
 }
 
 // handleGmailDownloadAttachment fetches an attachment on-demand via the Gmail API.
@@ -714,12 +718,12 @@ func handleGmailDownloadAttachment(ctx context.Context, src *Source, req mcp.Cal
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to download attachment: %v", err)), nil
 	}
-	return core.JsonResult(map[string]interface{}{
+	return core.UntrustedJSONResult(map[string]interface{}{
 		"message_id":    msgID,
 		"attachment_id": attachID,
 		"size":          att.Size,
 		"data_base64":   att.Data,
-	})
+	}, "gmail")
 }
 
 // gmailThreadSearchSummary is one row from gmail_threads used when building global search entries.

@@ -6,11 +6,10 @@ import (
 	"mcpyeahyouknowme/core"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // registerTools registers read-only live Places tools under the source prefix, surfacing network/API failures as tool errors.
-func registerTools(src *Source, s *server.MCPServer) {
+func registerTools(src *Source, s core.ToolAdder) {
 	prefix := src.Name() + "_"
 
 	s.AddTool(core.NewReadOnlyTool(prefix+"search_places",
@@ -27,7 +26,7 @@ func registerTools(src *Source, s *server.MCPServer) {
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return core.JsonResult(results)
+		return core.UntrustedJSONResult(results, "google_places")
 	})
 
 	s.AddTool(core.NewReadOnlyTool(prefix+"get_place",
@@ -42,6 +41,6 @@ func registerTools(src *Source, s *server.MCPServer) {
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return core.JsonResult(result)
+		return core.UntrustedJSONResult(result, "google_places")
 	})
 }

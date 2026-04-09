@@ -63,6 +63,8 @@ mcpyeahyouknowme mcp
 
 Starts the built-in MCP server over stdio transport. This is what Claude Desktop and Cursor invoke to interact with enabled local and live sources. It reads directly from the local SQLite databases for queries (including `search.db` for keyword search) and proxies write operations (send, download) through the core daemon's REST API at `127.0.0.1:8080`. The core daemon must be running for write operations. Search indexing is handled by the daemon, not the MCP server.
 
+Tool registration goes through `core.NewSecureToolAdder`, which wraps the underlying MCP server: it can drop tools listed in `config.json` → `mcp.disabled_tools`, omit all non–read-only tools when `mcp.read_only` is true, append one JSON audit line per invocation to `mcp-audit.log` (with sensitive argument keys redacted to lengths only; if that log cannot be opened, auditing is disabled and a warning is logged), and rate-limit mutating tools per tool name (default 10 calls per minute per tool, overridable via `mcp.mutating_tools_per_min`). Several read tools prefix responses with an untrusted-content banner and attach `_meta` hints for externally influenced payloads. Per-call argument size cap: `whatsapp_send_message` (default 1000 Unicode runes, overridable via `mcp.whatsapp_send_max_runes`).
+
 Configure in your AI client:
 
 ```json
@@ -154,7 +156,7 @@ The MCP server loads data sources via the `DataSource` interface defined in `cor
 type DataSource interface {
     Name() string                          // prefix for tool names (e.g. "whatsapp")
     Description() string                   // human label (e.g. "WhatsApp")
-    RegisterTools(s *server.MCPServer)     // register all tools
+    RegisterTools(s core.ToolAdder)          // register all tools (often wrapped by SecureToolAdder)
     SearchEntries() ([]SearchEntry, error) // provide indexable content for global search
     Reset(dataDir string) error            // remove all source data files
     Close() error                          // release resources
@@ -218,7 +220,9 @@ The daemon (`runCore()`) reads `{DataDir}/config.json` on each 5-minute loop and
 - Stops disabled sources
 - Handles `reset: true` by calling `source.Reset()`, then keeping the source entry in config with `enabled: false`
 
-`config.json` keeps a stable section for every known source, even when disabled or unauthenticated. Login commands (`whatsapp login`, `gsuite login`) mark the source `enabled: true` on success so the daemon picks it up on the next 5-minute loop without a restart. Sources that do not implement `RunsCore` are still available for MCP reads and global indexing when enabled/configured, but they do not start a background service.
+`config.json` keeps a stable section for every known source, even when disabled or unauthenticated, plus an optional top-level `mcp` object (`read_only`, `disabled_tools`, `mutating_tools_per_min`, `whatsapp_send_max_runes`) interpreted only by the MCP subprocess. Omitted `mcp` fields use built-in defaults at runtime; the file is not auto-rewritten to add them. Login commands (`whatsapp login`, `gsuite login`) mark the source `enabled: true` on success so the daemon picks it up on the next 5-minute loop without a restart. Sources that do not implement `RunsCore` are still available for MCP reads and global indexing when enabled/configured, but they do not start a background service.
+
+**OTP / 2FA hygiene:** when syncing WhatsApp messages into `messages.db` or Gmail rows into `gsuite.db`, bodies that match a conservative “verification code + short digit sequence” heuristic are stored with a fixed redaction placeholder instead of the raw text (for Gmail, visible body, snippet, and subject are concatenated for that check before redacting body and snippet), so those codes are not full-text indexed or returned verbatim from local reads. The digit check treats codes split by spaces, hyphens, newlines, or similar thin separators as one run (e.g. `1-2-3-4-5-6`) after an OTP keyword match.
 
 `sources/registry` is the single source of truth for available sources. To add a new source:
 
@@ -553,11 +557,11 @@ Metadata shapes per WhatsApp content type:
 
 | Tool | Description |
 |------|-------------|
-| `gsuite_gmail_search` | Full-text search across synced Gmail messages using FTS5 on `body_visible` (quoted reply text stripped pessimistically when possible). Returns message hits with `thread_id` so clients can pivot to the full conversation. |
+| `gsuite_gmail_search` | Full-text search across synced Gmail messages using FTS5 on `body_visible` (quoted reply text stripped pessimistically when possible). Returns message hits with `thread_id` so clients can pivot to the full conversation. Responses use the untrusted-content banner and `_meta` hints like other externally influenced Gmail reads. |
 | `gsuite_gmail_get_message` | Get the stored content of a specific Gmail message by ID. Returns headers, labels, folder, message body, and `thread_id`. |
 | `gsuite_gmail_get_thread` | Get a reconstructed Gmail thread by `thread_id`. Returns chronological messages using the stored `body_visible` text. |
-| `gsuite_gmail_list_recent` | List recent synced Gmail messages, sorted by stored date descending. Accepts optional `folder` and `limit` parameters. Each result includes `thread_id`. |
-| `gsuite_gmail_download_attachment` | Download a Gmail attachment on demand via the Gmail API using `message_id` and `attachment_id`. Attachments are not cached automatically during sync. |
+| `gsuite_gmail_list_recent` | List recent synced Gmail messages, sorted by stored date descending. Accepts optional `folder` and `limit` parameters. Each result includes `thread_id`. Uses the untrusted-content banner and `_meta` hints. |
+| `gsuite_gmail_download_attachment` | Download a Gmail attachment on demand via the Gmail API using `message_id` and `attachment_id`. Attachments are not cached automatically during sync. Returns base64 payload data with the untrusted-content banner and `_meta` hints. |
 
 ### Google Calendar Tools
 
@@ -730,6 +734,7 @@ All data is stored in `~/.local/share/mcpyeahyouknowme/`.
 | `gsuite_email.txt` | Cached Google account email (fetched during login via Drive API) |
 | `notebook.db` | Local notebook metadata and extracted-content cache for configured directories |
 | `search.db` | Global search index (FTS5/BM25 across all sources) |
+| `mcp-audit.log` | MCP-only append-only audit of tool calls; trimmed in place past 5 MiB like `core.log` |
 | `downloads/` | Downloaded WhatsApp media files |
 ### messages.db Schema
 

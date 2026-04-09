@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"mcpyeahyouknowme/core"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -153,6 +155,25 @@ func TestStoreMessage(t *testing.T) {
 
 	if content != "Hello world" {
 		t.Errorf("expected 'Hello world', got %q", content)
+	}
+}
+
+// Verifies OTP-style message bodies are replaced before persistence so codes are not stored or indexed.
+func TestStoreMessage_redacts2FA(t *testing.T) {
+	store := newTestMessageStore(t)
+	ts := time.Now()
+	store.StoreChat("11111@s.whatsapp.net", "Alice", ts)
+	otpText := "Your verification code is 123456"
+	err := store.StoreMessage("otp1", "11111@s.whatsapp.net", "11111@s.whatsapp.net", otpText, ts, false, "", "", "", nil, nil, nil, 0)
+	if err != nil {
+		t.Fatalf("StoreMessage: %v", err)
+	}
+	var content string
+	if err := store.db.QueryRow("SELECT content FROM messages WHERE id = ?", "otp1").Scan(&content); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if content != core.TwoFARedactedPlaceholder {
+		t.Fatalf("expected redacted placeholder, got %q", content)
 	}
 }
 

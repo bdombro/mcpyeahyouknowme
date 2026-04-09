@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"strings"
 	"time"
+
+	"mcpyeahyouknowme/core"
 )
 
 // Message is a raw row from the messages table.
@@ -45,6 +47,9 @@ func (store *MessageStore) StoreMessage(id, chatJID, sender, content string, tim
 	mediaType, filename, url string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error {
 	if content == "" && mediaType == "" {
 		return nil
+	}
+	if content != "" && core.Looks2FA(content) {
+		content = core.TwoFARedactedPlaceholder
 	}
 
 	_, err := store.db.Exec(

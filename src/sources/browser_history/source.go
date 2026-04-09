@@ -11,7 +11,6 @@ import (
 
 	"mcpyeahyouknowme/core"
 
-	"github.com/mark3labs/mcp-go/server"
 )
 
 var updateSourceConfig = core.UpdateSourceConfig
@@ -94,7 +93,7 @@ func (s *Source) Reset(dataDir string) error {
 }
 
 // RegisterTools adds browser history read tools to the MCP server.
-func (s *Source) RegisterTools(srv *server.MCPServer) {
+func (s *Source) RegisterTools(srv core.ToolAdder) {
 	registerTools(s, srv)
 }
 

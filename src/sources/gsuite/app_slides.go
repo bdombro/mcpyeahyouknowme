@@ -184,7 +184,7 @@ func extractPresentationText(pres *slides.Presentation) string {
 }
 
 // registerSlidesTools wires the local-DB Slides read tools into MCP so clients can query synced decks without live API calls.
-func registerSlidesTools(src *Source, prefix string, s toolAdder) {
+func registerSlidesTools(src *Source, prefix string, s core.ToolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"slides_search",
 		core.ToolDescription("Search across all Google Slides presentations", `{"query":"launch deck","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("2–4 keywords extracted from the question; drop filler words; include synonyms for better recall (e.g. 'launch deck presentation')")),

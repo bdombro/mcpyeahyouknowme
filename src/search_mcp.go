@@ -6,7 +6,6 @@ import (
 	"mcpyeahyouknowme/core"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // searchToolDescription tells callers that the search engine is BM25 keyword-based
@@ -29,8 +28,28 @@ type searchToolStore interface {
 	Search(query string, limit int, sourceFilter, typeFilter, after, before string) ([]SearchResult, error)
 }
 
+// searchResultSourceMayCarryInjection reports whether indexed rows from this source can contain untrusted external text.
+func searchResultSourceMayCarryInjection(source string) bool {
+	switch source {
+	case "whatsapp", "gsuite", "browser_history", "notebook":
+		return true
+	default:
+		return false
+	}
+}
+
+// searchResultsNeedUntrustedWarning is true when any hit may include attacker-controlled content worth flagging to the model.
+func searchResultsNeedUntrustedWarning(results []SearchResult) bool {
+	for _, r := range results {
+		if searchResultSourceMayCarryInjection(r.Source) {
+			return true
+		}
+	}
+	return false
+}
+
 // RegisterSearchTool centralizes global-search MCP wiring so startup can expose one BM25 search entrypoint backed by `store`.
-func RegisterSearchTool(s *server.MCPServer, store searchToolStore) {
+func RegisterSearchTool(s core.ToolAdder, store searchToolStore) {
 	s.AddTool(core.NewReadOnlyTool("search",
 		core.ToolDescription(searchToolDescription, searchToolExample),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Keywords extracted from the question. Include synonyms for better recall (e.g. 'invoice bill payment').")),
@@ -57,6 +76,9 @@ func RegisterSearchTool(s *server.MCPServer, store searchToolStore) {
 		}
 		if len(results) == 0 {
 			return mcp.NewToolResultText(noResultsHint), nil
+		}
+		if searchResultsNeedUntrustedWarning(results) {
+			return core.UntrustedJSONResult(results, "search")
 		}
 		return core.JsonResult(results)
 	})

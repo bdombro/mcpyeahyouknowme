@@ -13,11 +13,10 @@ import (
 	"mcpyeahyouknowme/core"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // registerTools registers all notebook read-only tools under the notebook_ prefix.
-func registerTools(src *Source, s *server.MCPServer) {
+func registerTools(src *Source, s core.ToolAdder) {
 	prefix := src.Name() + "_"
 	cfg := loadNotebookConfig(src.dataDir)
 
@@ -134,7 +133,7 @@ func handleRead(cfg NotebookConfig, req mcp.CallToolRequest) (*mcp.CallToolResul
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return mcp.NewToolResultText(string(data)), nil
+	return core.UntrustedTextResult(string(data), "notebook"), nil
 }
 
 // handleReadPDF extracts text from a PDF and returns it, using Vision OCR as a fallback for scanned documents.
@@ -152,9 +151,9 @@ func handleReadPDF(cfg NotebookConfig, req mcp.CallToolRequest) (*mcp.CallToolRe
 		return mcp.NewToolResultError(err.Error()), nil // nocov
 	} // nocov
 	if content == "" { // nocov
-		return mcp.NewToolResultText("(no extractable text found)"), nil // nocov
+		return core.UntrustedTextResult("(no extractable text found)", "notebook"), nil // nocov
 	} // nocov
-	return mcp.NewToolResultText(content), nil // nocov
+	return core.UntrustedTextResult(content, "notebook"), nil // nocov
 }
 
 // handleGetImage returns a base64-encoded image for the AI client to interpret directly.

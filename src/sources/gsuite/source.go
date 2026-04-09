@@ -10,8 +10,6 @@ import (
 
 	"mcpyeahyouknowme/core"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 	"golang.org/x/oauth2"
 )
 
@@ -20,18 +18,13 @@ func init() {
 	core.RegisterKnownSource("gsuite")
 }
 
-// toolAdder abstracts server.MCPServer.AddTool for testing.
-type toolAdder interface {
-	AddTool(tool mcp.Tool, handler server.ToolHandlerFunc)
-}
-
 // appDef describes a single Google Workspace app within the gsuite source.
 type appDef struct {
 	name          string
 	displayName   string
 	initSchema    func(*sql.DB) error
 	syncFunc      func(ctx syncContext) error
-	registerTools func(src *Source, prefix string, s toolAdder)
+	registerTools func(src *Source, prefix string, s core.ToolAdder)
 	searchEntries func(db *sql.DB, sourceName string) ([]core.SearchEntry, error)
 	streamEntries func(db *sql.DB, sourceName string, emit func([]core.SearchEntry) error) error
 	countRows     func(*sql.DB) (int, error)

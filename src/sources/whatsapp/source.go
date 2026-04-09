@@ -20,9 +20,10 @@ func init() {
 
 // Source implements core.DataSource and core.CoreService for WhatsApp.
 type Source struct {
-	store   *MessageStore
-	svc     *MCPService
-	dataDir string
+	store               *MessageStore
+	svc                 *MCPService
+	dataDir             string
+	sendMessageMaxRunes int // from mcp config; 0 means use default in RegisterTools
 }
 
 // NewSource builds the MCP/core WhatsApp source around dataDir, falling back to a degraded empty-result store if SQLite cannot open.
@@ -40,6 +41,14 @@ func NewSource(dataDir string) *Source {
 // Used by tests to inject in-memory databases and mock servers.
 func NewSourceFromStore(store *MessageStore, apiURL string) *Source {
 	return &Source{store: store, svc: NewMCPService(store, apiURL)}
+}
+
+// SetSendMessageMaxRunes sets the max rune length for whatsapp_send_message (from MCP config). Values <= 0 are ignored.
+func (w *Source) SetSendMessageMaxRunes(maxRunes int) {
+	if w == nil || maxRunes <= 0 {
+		return
+	}
+	w.sendMessageMaxRunes = maxRunes
 }
 
 // Name returns the source key used for config, registry lookup, and tool prefixes.

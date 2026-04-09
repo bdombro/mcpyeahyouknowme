@@ -210,7 +210,7 @@ func normalizePhone(s string) string {
 }
 
 // registerContactsTools wires the local-DB Contacts read tools into MCP so clients query synced people data without live API calls.
-func registerContactsTools(src *Source, prefix string, s toolAdder) {
+func registerContactsTools(src *Source, prefix string, s core.ToolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"contacts_search",
 		core.ToolDescription("Search across Google Contacts", `{"query":"Alice Smith","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("2–4 keywords extracted from the question; drop filler words; include synonyms for better recall (e.g. 'Alice Smith designer')")),

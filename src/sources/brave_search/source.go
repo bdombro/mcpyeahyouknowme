@@ -3,7 +3,6 @@ package brave_search
 import (
 	"mcpyeahyouknowme/core"
 
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // init registers the brave_search source name so config normalization keeps a stable entry for it.
@@ -41,6 +40,6 @@ func (s *Source) Reset(_ string) error {
 }
 
 // RegisterTools exposes the source's live-only search tools to MCP.
-func (s *Source) RegisterTools(srv *server.MCPServer) {
+func (s *Source) RegisterTools(srv core.ToolAdder) {
 	registerTools(s, srv)
 }

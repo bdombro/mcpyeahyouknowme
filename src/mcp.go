@@ -7,6 +7,7 @@ import (
 
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/registry"
+	"mcpyeahyouknowme/sources/whatsapp"
 
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -82,13 +83,17 @@ func runMcp() {
 		server.WithToolCapabilities(false),
 	)
 
+	adder := core.NewSecureToolAdder(s, cfg.Mcp, dir)
 	for _, active := range activeSources {
-		active.src.RegisterTools(s)
+		if ws, ok := active.src.(*whatsapp.Source); ok {
+			ws.SetSendMessageMaxRunes(cfg.Mcp.EffectiveWhatsAppSendMaxRunes())
+		}
+		active.src.RegisterTools(adder)
 	}
 
 	if searchStore != nil {
-		RegisterSearchTool(s, searchStore)
-		RegisterProfileTool(s, searchStore)
+		RegisterSearchTool(adder, searchStore)
+		RegisterProfileTool(adder, searchStore)
 	}
 
 	restoreStderr()

@@ -605,6 +605,34 @@ func TestStoreGmailMessage_direct(t *testing.T) {
 	}
 }
 
+// Verifies Gmail sync storage redacts OTP-looking bodies and snippets so they are not indexed verbatim.
+func TestStoreGmailMessage_redacts2FA(t *testing.T) {
+	db := newTestDB(t)
+	storeGmailMessage(db, &gmail.Message{
+		Id:       "otpmsg",
+		ThreadId: "t-otp",
+		LabelIds: []string{"INBOX"},
+		Snippet:  "Your verification code is 847291",
+		Payload: &gmail.MessagePart{
+			MimeType: "text/plain",
+			Body:     &gmail.MessagePartBody{Data: b64("Please use this one-time code: 847291")},
+			Headers: []*gmail.MessagePartHeader{
+				{Name: "Subject", Value: "Sign-in"},
+				{Name: "From", Value: "auth@example.com"},
+				{Name: "Date", Value: "Mon, 1 Apr 2024 10:00:00 +0000"},
+			},
+		},
+	})
+	var snippet, bodyVisible string
+	err := db.QueryRow(`SELECT snippet, body_visible FROM gmail_messages WHERE id = 'otpmsg'`).Scan(&snippet, &bodyVisible)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if snippet != core.TwoFARedactedPlaceholder || bodyVisible != core.TwoFARedactedPlaceholder {
+		t.Fatalf("expected redacted snippet and body, got snippet=%q body=%q", snippet, bodyVisible)
+	}
+}
+
 // Verifies Gmail record building returns nil for nil Gmail API messages.
 func TestBuildGmailStoredRecord_nil(t *testing.T) {
 	r := buildGmailStoredRecord(nil)

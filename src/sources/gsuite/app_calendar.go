@@ -244,7 +244,7 @@ func parseEventTimes(ev *calendar.Event) (start, end string, allDay int) {
 }
 
 // registerCalendarTools wires the local-DB Calendar read tools into MCP so clients query synced events instead of the live API.
-func registerCalendarTools(src *Source, prefix string, s toolAdder) {
+func registerCalendarTools(src *Source, prefix string, s core.ToolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"calendar_search",
 		core.ToolDescription("Search across Google Calendar events", `{"query":"dentist","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("2–4 keywords extracted from the question; drop filler words; include synonyms for better recall (e.g. 'dentist appointment doctor')")),

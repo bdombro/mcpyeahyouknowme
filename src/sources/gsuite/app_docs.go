@@ -179,7 +179,7 @@ func extractDocumentText(doc *docs.Document) string {
 }
 
 // registerDocsTools wires the local-DB Docs read tools into MCP so clients can search or fetch synced docs without live Google calls.
-func registerDocsTools(src *Source, prefix string, s toolAdder) {
+func registerDocsTools(src *Source, prefix string, s core.ToolAdder) {
 	s.AddTool(core.NewReadOnlyTool(prefix+"docs_search",
 		core.ToolDescription("Search across all Google Docs", `{"query":"quarterly roadmap","limit":5}`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("2–4 keywords extracted from the question; drop filler words; include synonyms for better recall (e.g. 'roadmap planning strategy')")),

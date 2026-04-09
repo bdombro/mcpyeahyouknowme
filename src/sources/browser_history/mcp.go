@@ -7,14 +7,13 @@ import (
 	"mcpyeahyouknowme/core"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 const historySearchExample = `{"query":"github","sort":"recent","limit":20,"offset":0}`
 const historyListExample = `{"sort":"recent","limit":20,"offset":0}`
 
 // registerTools wires read-only browser history tools without doing snapshot refreshes in MCP requests.
-func registerTools(src *Source, s *server.MCPServer) {
+func registerTools(src *Source, s core.ToolAdder) {
 	prefix := src.Name() + "_"
 	s.AddTool(core.NewReadOnlyTool(prefix+"search",
 		core.ToolDescription("Search browser history visits from the latest daemon snapshot.", historySearchExample),
@@ -71,7 +70,7 @@ func handleSearchTool(src *Source, req mcp.CallToolRequest, requireQuery bool) (
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return core.JsonResult(rows)
+	return core.UntrustedJSONResult(rows, "browser_history")
 }
 
 // Reads an optional string argument while trimming whitespace for predictable matching behavior.

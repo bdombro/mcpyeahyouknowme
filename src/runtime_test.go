@@ -16,7 +16,6 @@ import (
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/registry"
 
-	"github.com/mark3labs/mcp-go/server"
 	_ "modernc.org/sqlite"
 )
 
@@ -31,7 +30,7 @@ func (r *runtimeTestSource) Name() string { return "stub" }
 func (r *runtimeTestSource) Description() string { return "Stub" }
 
 // Registers no tools because runtime tests only exercise daemon lifecycle helpers.
-func (r *runtimeTestSource) RegisterTools(*server.MCPServer) {}
+func (r *runtimeTestSource) RegisterTools(core.ToolAdder) {}
 
 // Returns no entries because runtime tests are focused on reset/start behavior, not indexing.
 func (r *runtimeTestSource) SearchEntries() ([]core.SearchEntry, error) { return nil, nil }
@@ -341,7 +340,7 @@ func TestIndexCoordinator_stop(t *testing.T) {
 	}
 }
 
-// Verifies trimLogFilePath keeps only the newest newline-aligned tail once the file grows past the threshold.
+// Verifies core.TrimLogFilePath keeps only the newest newline-aligned tail once the file grows past the threshold.
 func TestTrimLogFilePath_keepsNewestTail(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "core.log")
 	content := []byte("old-a\nold-b\nkeep-1\nkeep-2\n")
@@ -349,8 +348,8 @@ func TestTrimLogFilePath_keepsNewestTail(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if err := trimLogFilePath(path, 20, 15); err != nil {
-		t.Fatalf("trimLogFilePath: %v", err)
+	if err := core.TrimLogFilePath(path, 20, 15); err != nil {
+		t.Fatalf("TrimLogFilePath: %v", err)
 	}
 
 	got, err := os.ReadFile(path)
@@ -358,11 +357,11 @@ func TestTrimLogFilePath_keepsNewestTail(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	if want := "keep-1\nkeep-2\n"; string(got) != want {
-		t.Fatalf("trimLogFilePath() = %q, want %q", string(got), want)
+		t.Fatalf("core.TrimLogFilePath() = %q, want %q", string(got), want)
 	}
 }
 
-// Verifies trimLogFilePath leaves smaller files untouched so short-lived logs keep their full context.
+// Verifies core.TrimLogFilePath leaves smaller files untouched so short-lived logs keep their full context.
 func TestTrimLogFilePath_belowThreshold(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "core.log")
 	content := []byte("keep-everything\n")
@@ -370,8 +369,8 @@ func TestTrimLogFilePath_belowThreshold(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if err := trimLogFilePath(path, int64(len(content)), 4); err != nil {
-		t.Fatalf("trimLogFilePath: %v", err)
+	if err := core.TrimLogFilePath(path, int64(len(content)), 4); err != nil {
+		t.Fatalf("core.TrimLogFilePath: %v", err)
 	}
 
 	got, err := os.ReadFile(path)
@@ -379,15 +378,15 @@ func TestTrimLogFilePath_belowThreshold(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	if string(got) != string(content) {
-		t.Fatalf("trimLogFilePath() modified file below threshold: got %q want %q", string(got), string(content))
+		t.Fatalf("core.TrimLogFilePath() modified file below threshold: got %q want %q", string(got), string(content))
 	}
 }
 
-// Verifies trimLogFilePath treats a missing log file as a no-op so first daemon startup does not emit an avoidable warning.
+// Verifies core.TrimLogFilePath treats a missing log file as a no-op so first daemon startup does not emit an avoidable warning.
 func TestTrimLogFilePath_missingFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "core.log")
-	if err := trimLogFilePath(path, 1, 1); err != nil {
-		t.Fatalf("trimLogFilePath: %v", err)
+	if err := core.TrimLogFilePath(path, 1, 1); err != nil {
+		t.Fatalf("core.TrimLogFilePath: %v", err)
 	}
 }
 
@@ -395,8 +394,8 @@ func TestTrimLogFilePath_missingFile(t *testing.T) {
 func TestTrimLogFile_keepsNewestTail(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "core.log")
-	oldChunk := bytes.Repeat([]byte("old-line\n"), (coreLogTrimThresholdBytes/9)+1)
-	keepChunk := bytes.Repeat([]byte("keep-line\n"), (coreLogKeepTailBytes/10)+1)
+	oldChunk := bytes.Repeat([]byte("old-line\n"), (core.LogTrimThresholdBytes/9)+1)
+	keepChunk := bytes.Repeat([]byte("keep-line\n"), (core.LogKeepTailBytes/10)+1)
 	content := append(oldChunk, keepChunk...)
 	if err := os.WriteFile(path, content, 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -414,8 +413,8 @@ func TestTrimLogFile_keepsNewestTail(t *testing.T) {
 	if !bytes.Contains(got, []byte("keep-line\n")) {
 		t.Fatal("expected newest log lines to remain")
 	}
-	if len(got) > int(coreLogKeepTailBytes) {
-		t.Fatalf("expected trimmed file to be at most %d bytes, got %d", coreLogKeepTailBytes, len(got))
+	if len(got) > int(core.LogKeepTailBytes) {
+		t.Fatalf("expected trimmed file to be at most %d bytes, got %d", core.LogKeepTailBytes, len(got))
 	}
 }
 
@@ -441,7 +440,7 @@ func TestTrimLogFile_reportsWarning(t *testing.T) {
 	}
 }
 
-// Verifies trimLogFilePath keeps the whole file when the requested tail is larger than the file itself.
+// Verifies core.TrimLogFilePath keeps the whole file when the requested tail is larger than the file itself.
 func TestTrimLogFilePath_keepTailLargerThanFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "core.log")
 	content := []byte("only-line\n")
@@ -449,8 +448,8 @@ func TestTrimLogFilePath_keepTailLargerThanFile(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if err := trimLogFilePath(path, 1, 1024); err != nil {
-		t.Fatalf("trimLogFilePath: %v", err)
+	if err := core.TrimLogFilePath(path, 1, 1024); err != nil {
+		t.Fatalf("core.TrimLogFilePath: %v", err)
 	}
 
 	got, err := os.ReadFile(path)
@@ -458,25 +457,25 @@ func TestTrimLogFilePath_keepTailLargerThanFile(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	if string(got) != string(content) {
-		t.Fatalf("trimLogFilePath() = %q, want %q", string(got), string(content))
+		t.Fatalf("core.TrimLogFilePath() = %q, want %q", string(got), string(content))
 	}
 }
 
-// Verifies trimLogFilePath returns stat errors that are not simple missing-file cases.
+// Verifies core.TrimLogFilePath returns stat errors that are not simple missing-file cases.
 func TestTrimLogFilePath_invalidPath(t *testing.T) {
-	if err := trimLogFilePath(string([]byte{0}), 1, 1); err == nil {
+	if err := core.TrimLogFilePath(string([]byte{0}), 1, 1); err == nil {
 		t.Fatal("expected invalid path error")
 	}
 }
 
-// Verifies trimLogFilePath returns read errors when the path is not a regular file despite existing on disk.
+// Verifies core.TrimLogFilePath returns read errors when the path is not a regular file despite existing on disk.
 func TestTrimLogFilePath_readError(t *testing.T) {
-	if err := trimLogFilePath(t.TempDir(), 0, 1); err == nil {
+	if err := core.TrimLogFilePath(t.TempDir(), 0, 1); err == nil {
 		t.Fatal("expected read error for directory path")
 	}
 }
 
-// Verifies trimLogFilePath returns open errors when the log file exists but cannot be read.
+// Verifies core.TrimLogFilePath returns open errors when the log file exists but cannot be read.
 func TestTrimLogFilePath_openError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "core.log")
 	content := []byte("line-one\nline-two\n")
@@ -484,12 +483,12 @@ func TestTrimLogFilePath_openError(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if err := trimLogFilePath(path, 1, 4); err == nil {
+	if err := core.TrimLogFilePath(path, 1, 4); err == nil {
 		t.Fatal("expected open error")
 	}
 }
 
-// Verifies trimLogFilePath returns rewrite errors when the log file cannot be reopened for truncation.
+// Verifies core.TrimLogFilePath returns rewrite errors when the log file cannot be reopened for truncation.
 func TestTrimLogFilePath_reopenForWriteError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "core.log")
 	content := []byte("line-one\nline-two\n")
@@ -497,12 +496,12 @@ func TestTrimLogFilePath_reopenForWriteError(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if err := trimLogFilePath(path, 1, 4); err == nil {
+	if err := core.TrimLogFilePath(path, 1, 4); err == nil {
 		t.Fatal("expected reopen-for-write error")
 	}
 }
 
-// Verifies trimLogFilePath returns write errors from the final in-place rewrite so callers can warn without corrupting the file.
+// Verifies core.TrimLogFilePath returns write errors from the final in-place rewrite so callers can warn without corrupting the file.
 func TestTrimLogFilePath_writeError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "core.log")
 	content := []byte("old-a\nold-b\nkeep-1\nkeep-2\n")
@@ -510,15 +509,12 @@ func TestTrimLogFilePath_writeError(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	originalWrite := trimLogWrite
-	trimLogWrite = func(*os.File, []byte) error {
+	restore := core.SetTrimLogWriteForTest(func(*os.File, []byte) error {
 		return errors.New("write failed")
-	}
-	t.Cleanup(func() {
-		trimLogWrite = originalWrite
 	})
+	t.Cleanup(restore)
 
-	if err := trimLogFilePath(path, 20, 15); err == nil {
+	if err := core.TrimLogFilePath(path, 20, 15); err == nil {
 		t.Fatal("expected write error")
 	}
 }

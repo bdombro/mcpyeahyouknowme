@@ -2,9 +2,10 @@ package browser_history
 
 import (
 	"database/sql"
-	"encoding/json"
 	"path/filepath"
 	"testing"
+
+	"mcpyeahyouknowme/core"
 )
 
 // Verifies MCP tool returns configuration guidance when browser_history is not enabled/configured.
@@ -86,7 +87,7 @@ func TestMCP_Search_success(t *testing.T) {
 	}
 
 	var rows []VisitRow
-	if err := json.Unmarshal([]byte(text), &rows); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &rows); err != nil {
 		t.Fatalf("unmarshal tool result: %v text=%s", err, text)
 	}
 	if len(rows) != 1 || rows[0].VisitID != 21 {
@@ -113,7 +114,7 @@ func TestMCP_List_success(t *testing.T) {
 	}
 
 	var rows []VisitRow
-	if err := json.Unmarshal([]byte(text), &rows); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &rows); err != nil {
 		t.Fatalf("unmarshal tool result: %v text=%s", err, text)
 	}
 	if len(rows) != 1 || rows[0].VisitID != 22 {

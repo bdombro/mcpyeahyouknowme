@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/server"
+	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/whatsapp"
 	_ "modernc.org/sqlite"
 )
@@ -148,7 +149,7 @@ func TestMCP_GlobalSearch_metadataHint(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Family"})
 	var results []SearchResult
-	if err := json.Unmarshal([]byte(text), &results); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &results); err != nil {
 		t.Fatalf("unmarshal search results: %v", err)
 	}
 	if len(results) == 0 {
@@ -164,8 +165,21 @@ func TestMCP_GlobalSearch_chatContent(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "dinner"})
 	var results []SearchResult
-	if err := json.Unmarshal([]byte(text), &results); err != nil || len(results) == 0 {
+	if err := core.UnmarshalToolResultTextPayload(text, &results); err != nil || len(results) == 0 {
 		t.Errorf("expected search results for 'dinner', got %q", text)
+	}
+}
+
+// Verifies global search prefixes externally sourced hits with the untrusted SECURITY banner.
+func TestMCP_GlobalSearch_untrustedBanner(t *testing.T) {
+	s := buildTestMCPServerWithSearch(t)
+	text := callSearchTool(t, s, map[string]interface{}{"query": "dinner"})
+	if !strings.Contains(text, "[SECURITY:") || !strings.Contains(text, "MCPSEC_END_HEADER") {
+		t.Fatalf("expected untrusted banner on search results, got %q", text)
+	}
+	var results []SearchResult
+	if err := core.UnmarshalToolResultTextPayload(text, &results); err != nil || len(results) == 0 {
+		t.Fatalf("decode after banner: err=%v len=%d text=%q", err, len(results), text)
 	}
 }
 
@@ -174,7 +188,7 @@ func TestMCP_GlobalSearch_participant(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Alice"})
 	var results []SearchResult
-	if err := json.Unmarshal([]byte(text), &results); err != nil || len(results) == 0 {
+	if err := core.UnmarshalToolResultTextPayload(text, &results); err != nil || len(results) == 0 {
 		t.Errorf("expected search results for 'Alice', got %q", text)
 	}
 }
@@ -184,7 +198,7 @@ func TestMCP_GlobalSearch_sourceFilter(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Family", "source": "whatsapp"})
 	var results []SearchResult
-	if err := json.Unmarshal([]byte(text), &results); err != nil || len(results) == 0 {
+	if err := core.UnmarshalToolResultTextPayload(text, &results); err != nil || len(results) == 0 {
 		t.Errorf("expected results for whatsapp source filter, got %q", text)
 	}
 }
@@ -194,7 +208,7 @@ func TestMCP_GlobalSearch_typeFilter(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Family", "content_type": "chat_name"})
 	var results []SearchResult
-	if err := json.Unmarshal([]byte(text), &results); err != nil || len(results) == 0 {
+	if err := core.UnmarshalToolResultTextPayload(text, &results); err != nil || len(results) == 0 {
 		t.Errorf("expected results for chat_name type filter, got %q", text)
 	}
 }
@@ -204,7 +218,7 @@ func TestMCP_GlobalSearch_chatContentTypeFilter(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "dinner", "content_type": "chat_content"})
 	var results []SearchResult
-	if err := json.Unmarshal([]byte(text), &results); err != nil || len(results) == 0 {
+	if err := core.UnmarshalToolResultTextPayload(text, &results); err != nil || len(results) == 0 {
 		t.Errorf("expected results for chat_content type filter, got %q", text)
 	}
 }
@@ -244,7 +258,7 @@ func TestMCP_GlobalSearch_withLimit(t *testing.T) {
 	s := buildTestMCPServerWithSearch(t)
 	text := callSearchTool(t, s, map[string]interface{}{"query": "Family", "limit": float64(1)})
 	var results []SearchResult
-	json.Unmarshal([]byte(text), &results)
+	core.UnmarshalToolResultTextPayload(text, &results)
 	if len(results) > 1 {
 		t.Errorf("expected at most 1 result with limit=1, got %d", len(results))
 	}
@@ -384,7 +398,7 @@ func TestMCP_GlobalSearch_afterBeforeFilter(t *testing.T) {
 	// Normal query with no date filters still returns results.
 	text = callSearchTool(t, s, map[string]interface{}{"query": "Family"})
 	var results []SearchResult
-	if err := json.Unmarshal([]byte(text), &results); err != nil || len(results) == 0 {
+	if err := core.UnmarshalToolResultTextPayload(text, &results); err != nil || len(results) == 0 {
 		t.Errorf("expected results without date filters, got %q", text)
 	}
 }

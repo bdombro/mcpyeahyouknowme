@@ -6,11 +6,13 @@ import (
 	"mcpyeahyouknowme/core"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
+// defaultWhatsAppSendMessageRunes caps outbound text when MCP config does not set whatsapp_send_max_runes.
+const defaultWhatsAppSendMessageRunes = core.DefaultWhatsAppSendMaxRunes
+
 // RegisterTools wires WhatsApp's SQLite-backed read tools and REST-backed write tools into the MCP server under the source prefix.
-func (w *Source) RegisterTools(s *server.MCPServer) {
+func (w *Source) RegisterTools(s core.ToolAdder) {
 	svc := w.svc
 	p := w.Name() + "_"
 
@@ -137,7 +139,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return mcp.NewToolResultText(result), nil
+		return core.UntrustedTextResult(result, "whatsapp"), nil
 	})
 
 	s.AddTool(core.NewReadOnlyTool(p+"get_message_context",
@@ -157,7 +159,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return core.JsonResult(result)
+		return core.UntrustedJSONResult(result, "whatsapp")
 	})
 
 	s.AddTool(core.NewReadOnlyTool(p+"get_last_interaction",
@@ -172,7 +174,7 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return mcp.NewToolResultText(result), nil
+		return core.UntrustedTextResult(result, "whatsapp"), nil
 	})
 
 	// ---- Sending ----
@@ -189,6 +191,13 @@ func (w *Source) RegisterTools(s *server.MCPServer) {
 		message, errResult := core.RequireStringArgument(req, "message", `{"recipient":"15551234567","message":"On my way"}`)
 		if errResult != nil {
 			return errResult, nil
+		}
+		limit := defaultWhatsAppSendMessageRunes
+		if w != nil && w.sendMessageMaxRunes > 0 {
+			limit = w.sendMessageMaxRunes
+		}
+		if tooLong := core.CheckStringMaxLen(message, limit, "message"); tooLong != nil {
+			return tooLong, nil
 		}
 		success, msg, err := svc.SendMessage(recipient, message)
 		if err != nil {

@@ -10,8 +10,6 @@ import (
 
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/registry"
-
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // fakeResetSource simulates source reset behavior so reset tests can cover success and warning paths without depending on real source implementations.
@@ -32,7 +30,7 @@ func (f *fakeResetSource) Description() string {
 }
 
 // RegisterTools satisfies the core.DataSource interface for reset CLI tests that never exercise MCP registration.
-func (f *fakeResetSource) RegisterTools(_ *server.MCPServer) {}
+func (f *fakeResetSource) RegisterTools(_ core.ToolAdder) {}
 
 // SearchEntries returns no entries because reset CLI tests only care about reset and close side effects.
 func (f *fakeResetSource) SearchEntries() ([]core.SearchEntry, error) {

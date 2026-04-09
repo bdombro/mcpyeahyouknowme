@@ -11,8 +11,6 @@ import (
 
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/registry"
-
-	"github.com/mark3labs/mcp-go/server"
 )
 
 type testMCPSource struct {
@@ -30,7 +28,7 @@ func (s *testMCPSource) Name() string { return s.name }
 func (s *testMCPSource) Description() string { return s.name }
 
 // Exposes no tools because this indexing test double only exercises SearchEntries behavior.
-func (s *testMCPSource) RegisterTools(*server.MCPServer) {}
+func (s *testMCPSource) RegisterTools(core.ToolAdder) {}
 
 // Returns seeded search entries and increments a call counter so the test can verify indexing eligibility.
 func (s *testMCPSource) SearchEntries() ([]core.SearchEntry, error) {
@@ -101,7 +99,7 @@ func (s *streamingTestSource) Name() string { return s.name }
 func (s *streamingTestSource) Description() string { return s.name }
 
 // Registers no tools because streaming tests never exercise MCP tool exposure.
-func (s *streamingTestSource) RegisterTools(*server.MCPServer) {}
+func (s *streamingTestSource) RegisterTools(core.ToolAdder) {}
 
 // Returns no fallback entries because streaming tests should hit the batch emitter path.
 func (s *streamingTestSource) SearchEntries() ([]core.SearchEntry, error) { return nil, nil }

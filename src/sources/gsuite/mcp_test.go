@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"mcpyeahyouknowme/core"
+
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -68,7 +70,7 @@ func TestDocsSearch_Found(t *testing.T) {
 		t.Fatal("expected non-empty result")
 	}
 	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(text), &result); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &result); err != nil {
 		t.Fatalf("parse result: %v\ntext: %s", err, text)
 	}
 	count, _ := result["count"].(float64)
@@ -93,7 +95,7 @@ func TestDocsGetDocument_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_docs_get_document", map[string]interface{}{"document_id": "doc1"})
 	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(text), &result); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &result); err != nil {
 		t.Fatalf("parse result: %v\ntext: %s", err, text)
 	}
 	if result["title"] != "Project Proposal" {
@@ -132,7 +134,7 @@ func TestDocsListRecent(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_docs_list_recent", map[string]interface{}{})
 	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(text), &result); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &result); err != nil {
 		t.Fatalf("parse: %v text: %s", err, text)
 	}
 	count, _ := result["count"].(float64)
@@ -148,7 +150,7 @@ func TestSheetsSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_sheets_search", map[string]interface{}{"query": "Budget"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	count, _ := result["count"].(float64)
 	if count == 0 {
 		t.Error("expected budget sheet in results")
@@ -160,7 +162,7 @@ func TestSheetsGetSpreadsheet_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_sheets_get_spreadsheet", map[string]interface{}{"spreadsheet_id": "sheet1"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["title"] != "Budget 2024" {
 		t.Errorf("expected 'Budget 2024', got %v", result["title"])
 	}
@@ -197,7 +199,7 @@ func TestSheetsListRecent(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_sheets_list_recent", map[string]interface{}{})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["count"].(float64) != 1 {
 		t.Errorf("expected 1 spreadsheet, got %v", result["count"])
 	}
@@ -209,8 +211,11 @@ func TestSheetsListRecent(t *testing.T) {
 func TestGmailSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_search", map[string]interface{}{"query": "meeting"})
+	if !strings.Contains(text, "[SECURITY:") || !strings.Contains(text, "MCPSEC_END_HEADER") {
+		t.Fatalf("expected untrusted banner on gmail search, got %q", text)
+	}
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	count, _ := result["count"].(float64)
 	if count == 0 {
 		t.Error("expected message in search results")
@@ -222,7 +227,7 @@ func TestGmailGetMessage_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_get_message", map[string]interface{}{"message_id": "msg1"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["subject"] != "Meeting Tomorrow" {
 		t.Errorf("expected subject 'Meeting Tomorrow', got %v", result["subject"])
 	}
@@ -265,7 +270,7 @@ func TestGmailGetThread_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_get_thread", map[string]interface{}{"thread_id": "thread1"})
 	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(text), &result); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &result); err != nil {
 		t.Fatalf("parse result: %v\ntext: %s", err, text)
 	}
 	if result["thread_id"] != "thread1" {
@@ -309,7 +314,7 @@ func TestGmailGetThread_NoThreadMetadata(t *testing.T) {
 	src.RegisterTools(s)
 	text := callTool(t, s, "gsuite_gmail_get_thread", map[string]interface{}{"thread_id": "orphan_thread"})
 	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(text), &result); err != nil {
+	if err := core.UnmarshalToolResultTextPayload(text, &result); err != nil {
 		t.Fatalf("parse: %v\ntext: %s", err, text)
 	}
 	if result["subject"] != "Orphan" {
@@ -337,8 +342,11 @@ func TestGmailGetThread_NilDB(t *testing.T) {
 func TestGmailListRecent(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_list_recent", map[string]interface{}{})
+	if !strings.Contains(text, "[SECURITY:") || !strings.Contains(text, "MCPSEC_END_HEADER") {
+		t.Fatalf("expected untrusted banner on gmail list_recent, got %q", text)
+	}
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["count"].(float64) != 2 {
 		t.Errorf("expected 2 messages, got %v", result["count"])
 	}
@@ -354,13 +362,13 @@ func TestGmailListRecent_FilterByFolder(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_gmail_list_recent", map[string]interface{}{"folder": "INBOX"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["count"].(float64) != 2 {
 		t.Errorf("expected 2 INBOX messages, got %v", result["count"])
 	}
 	text2 := callTool(t, s, "gsuite_gmail_list_recent", map[string]interface{}{"folder": "SENT"})
 	var result2 map[string]interface{}
-	json.Unmarshal([]byte(text2), &result2)
+	core.UnmarshalToolResultTextPayload(text2, &result2)
 	if result2["count"].(float64) != 0 {
 		t.Errorf("expected 0 SENT messages, got %v", result2["count"])
 	}
@@ -373,7 +381,7 @@ func TestCalendarSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_calendar_search", map[string]interface{}{"query": "standup"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	count, _ := result["count"].(float64)
 	if count == 0 {
 		t.Error("expected calendar event in results")
@@ -385,7 +393,7 @@ func TestCalendarGetEvent_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_calendar_get_event", map[string]interface{}{"event_id": "cal1|ev1"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["summary"] != "Team Standup" {
 		t.Errorf("expected 'Team Standup', got %v", result["summary"])
 	}
@@ -425,7 +433,7 @@ func TestCalendarListUpcoming(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_calendar_list_upcoming", map[string]interface{}{"days": 7})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	// Event is 48h in future, should appear in 7-day window
 	count, _ := result["count"].(float64)
 	if count == 0 {
@@ -440,7 +448,7 @@ func TestTasksSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_tasks_search", map[string]interface{}{"query": "unit tests"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	count, _ := result["count"].(float64)
 	if count == 0 {
 		t.Error("expected task in results")
@@ -452,7 +460,7 @@ func TestTasksList_All(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_tasks_list", map[string]interface{}{})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	count, _ := result["count"].(float64)
 	if count == 0 {
 		t.Error("expected tasks in result")
@@ -464,7 +472,7 @@ func TestTasksList_FilterByStatus(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_tasks_list", map[string]interface{}{"status": "needsAction"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["count"].(float64) != 1 {
 		t.Errorf("expected 1 needsAction task, got %v", result["count"])
 	}
@@ -477,7 +485,7 @@ func TestContactsSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_contacts_search", map[string]interface{}{"query": "Alice"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	count, _ := result["count"].(float64)
 	if count == 0 {
 		t.Error("expected contact in search results")
@@ -489,7 +497,7 @@ func TestContactsList(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_contacts_list", map[string]interface{}{})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["count"].(float64) != 1 {
 		t.Errorf("expected 1 contact, got %v", result["count"])
 	}
@@ -513,7 +521,7 @@ func TestSlidesSearch_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_slides_search", map[string]interface{}{"query": "revenue"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	count, _ := result["count"].(float64)
 	if count == 0 {
 		t.Error("expected presentation in search results")
@@ -525,7 +533,7 @@ func TestSlidesGetPresentation_Found(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_slides_get_presentation", map[string]interface{}{"presentation_id": "pres1"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["title"] != "Q1 Review" {
 		t.Errorf("expected 'Q1 Review', got %v", result["title"])
 	}
@@ -562,7 +570,7 @@ func TestSlidesListRecent(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_slides_list_recent", map[string]interface{}{})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["count"].(float64) != 1 {
 		t.Errorf("expected 1 presentation, got %v", result["count"])
 	}
@@ -952,7 +960,7 @@ func TestContactsLookupByPhone_MatchPartial(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_contacts_lookup_by_phone", map[string]interface{}{"phone": "5550100"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["count"].(float64) != 1 {
 		t.Errorf("expected 1 result, got %v — response: %s", result["count"], text)
 	}
@@ -963,7 +971,7 @@ func TestContactsLookupByPhone_MatchWithCountryCode(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_contacts_lookup_by_phone", map[string]interface{}{"phone": "+15550100"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["count"].(float64) != 1 {
 		t.Errorf("expected 1 result, got %v — response: %s", result["count"], text)
 	}
@@ -974,7 +982,7 @@ func TestContactsLookupByPhone_MatchWithFormatting(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_contacts_lookup_by_phone", map[string]interface{}{"phone": "(555) 010-0"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["count"].(float64) != 1 {
 		t.Errorf("expected 1 result, got %v — response: %s", result["count"], text)
 	}
@@ -985,7 +993,7 @@ func TestContactsLookupByPhone_NoMatch(t *testing.T) {
 	s := buildMCPServer(t)
 	text := callTool(t, s, "gsuite_contacts_lookup_by_phone", map[string]interface{}{"phone": "9999999"})
 	var result map[string]interface{}
-	json.Unmarshal([]byte(text), &result)
+	core.UnmarshalToolResultTextPayload(text, &result)
 	if result["count"].(float64) != 0 {
 		t.Errorf("expected 0 results, got %v", result["count"])
 	}

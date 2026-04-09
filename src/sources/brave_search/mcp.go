@@ -6,7 +6,6 @@ import (
 	"mcpyeahyouknowme/core"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 const webExample = `{"query":"golang sqlite orm","count":10,"offset":0}`
@@ -14,7 +13,7 @@ const webExample = `{"query":"golang sqlite orm","count":10,"offset":0}`
 const urlExample = `{"url":"https://pkg.go.dev/database/sql"}`
 
 // registerTools registers read-only Brave Search tools under the source prefix, surfacing network/API failures as tool errors.
-func registerTools(src *Source, s *server.MCPServer) {
+func registerTools(src *Source, s core.ToolAdder) {
 	prefix := src.Name() + "_"
 
 	s.AddTool(core.NewReadOnlyTool(prefix+"web",
@@ -47,7 +46,7 @@ func registerTools(src *Source, s *server.MCPServer) {
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return core.JsonResult(payload)
+		return core.UntrustedJSONResult(payload, "brave_search")
 	})
 
 	s.AddTool(core.NewReadOnlyTool(prefix+"get_meta",
@@ -62,6 +61,6 @@ func registerTools(src *Source, s *server.MCPServer) {
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return core.JsonResult(payload)
+		return core.UntrustedJSONResult(payload, "brave_search")
 	})
 }
