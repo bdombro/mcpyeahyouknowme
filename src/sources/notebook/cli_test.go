@@ -356,3 +356,24 @@ func assertSearchSourceCount(t *testing.T, dataDir, source string, want int) {
 		t.Fatalf("search row count for %s = %d, want %d", source, got, want)
 	}
 }
+
+// Verifies RunEnable sets notebook source enabled in config.
+func TestRunEnable(t *testing.T) {
+	dir := t.TempDir()
+	RunEnable(dir)
+	if !core.LoadConfig(dir).Sources["notebook"].Enabled {
+		t.Fatal("expected notebook enabled")
+	}
+}
+
+// Verifies RunDisable sets notebook source disabled in config.
+func TestRunDisable(t *testing.T) {
+	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "notebook", true); err != nil {
+		t.Fatal(err)
+	}
+	RunDisable(dir)
+	if core.LoadConfig(dir).Sources["notebook"].Enabled {
+		t.Fatal("expected notebook disabled")
+	}
+}

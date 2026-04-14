@@ -19,22 +19,60 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-// IsLoggedIn checks whether whatsapp.db currently contains a non-empty paired-device JID, which is the CLI's cheap auth gate.
-func IsLoggedIn(dataDir string) bool {
+// pairedWhatsAppJID returns the stored device JID when whatsmeow has a non-empty session row, else ("", err) for missing DB, query errors, or empty JID.
+func pairedWhatsAppJID(dataDir string) (string, error) {
 	waDB := filepath.Join(dataDir, "whatsapp.db")
 	if _, err := os.Stat(waDB); err != nil {
-		return false
+		return "", err
 	}
 	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(30000)", waDB))
 	if err != nil {
-		return false
+		return "", err // nocov: sqlite open failures are environment-specific and not asserted in CI
 	}
 	defer db.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
 	var jid string
 	err = db.QueryRowContext(ctx, "SELECT jid FROM whatsmeow_device WHERE jid != '' LIMIT 1").Scan(&jid)
+	if err != nil {
+		return "", err
+	}
+	return jid, nil
+}
+
+// IsLoggedIn checks whether whatsapp.db currently contains a non-empty paired-device JID, which is the CLI's cheap auth gate.
+func IsLoggedIn(dataDir string) bool {
+	jid, err := pairedWhatsAppJID(dataDir)
 	return err == nil && jid != ""
+}
+
+// SessionAuthDisplay returns the paired WhatsApp JID for status when logged in, or "no" when there is no usable session.
+func SessionAuthDisplay(dataDir string) string {
+	jid, err := pairedWhatsAppJID(dataDir)
+	if err != nil || jid == "" {
+		return "no"
+	}
+	return jid
+}
+
+// RunEnable sets WhatsApp syncing enabled in config without touching session data.
+func RunEnable(dataDir string) {
+	if err := core.SetSourceEnabled(dataDir, "whatsapp", true); err != nil {
+		// nocov
+		fmt.Fprintf(os.Stderr, "Error: could not enable whatsapp: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("whatsapp: enabled")
+}
+
+// RunDisable sets WhatsApp syncing disabled in config without touching session data.
+func RunDisable(dataDir string) {
+	if err := core.SetSourceEnabled(dataDir, "whatsapp", false); err != nil {
+		// nocov
+		fmt.Fprintf(os.Stderr, "Error: could not disable whatsapp: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("whatsapp: disabled")
 }
 
 // RunLogin performs the WhatsApp QR login flow.

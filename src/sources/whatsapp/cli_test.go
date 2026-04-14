@@ -13,25 +13,38 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Verifies WhatsApp info output reports an empty disabled state before any session or message DB exists.
+// Verifies WhatsApp info output reports an empty state before any session or message DB exists.
 func TestInfoLines_emptyDir(t *testing.T) {
 	dir := t.TempDir()
 	lines := InfoLines(dir)
-	if len(lines) != 3 {
-		t.Fatalf("want 2 lines, got %d: %q", len(lines), lines)
+	if len(lines) != 1 {
+		t.Fatalf("want 1 line, got %d: %q", len(lines), lines)
 	}
-	if !strings.Contains(lines[0], "disabled") {
+	if !strings.Contains(lines[0], "no database yet") {
 		t.Errorf("first line: %q", lines[0])
-	}
-	if !strings.Contains(lines[1], "no session") {
-		t.Errorf("second line: %q", lines[1])
-	}
-	if !strings.Contains(lines[2], "no database yet") {
-		t.Errorf("third line: %q", lines[2])
 	}
 }
 
-// Verifies WhatsApp info output reports session identity, DB sizes, and message/chat counts when local data exists.
+// Verifies WhatsApp info output includes a login hint when enabled but not logged in.
+func TestInfoLines_enabledNotLoggedIn(t *testing.T) {
+	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "whatsapp", true); err != nil {
+		t.Fatalf("SetSourceEnabled: %v", err)
+	}
+	lines := InfoLines(dir)
+	found := false
+	for _, l := range lines {
+		if strings.Contains(l, "Hint:") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected Hint line, got %q", lines)
+	}
+}
+
+// Verifies WhatsApp info output reports session DB sizes and message/chat counts when local data exists.
 func TestInfoLines_withSessionAndMessages(t *testing.T) {
 	dir := t.TempDir()
 	if err := core.SetSourceEnabled(dir, "whatsapp", true); err != nil {
@@ -62,23 +75,17 @@ func TestInfoLines_withSessionAndMessages(t *testing.T) {
 	msgDB.Close()
 
 	lines := InfoLines(dir)
-	if len(lines) != 5 {
-		t.Fatalf("want 5 lines, got %d: %q", len(lines), lines)
+	if len(lines) != 2 {
+		t.Fatalf("want 2 lines, got %d: %q", len(lines), lines)
 	}
-	if !strings.Contains(lines[0], "enabled") {
-		t.Errorf("status line: %q", lines[0])
+	if !strings.Contains(lines[0], "DB:") || !strings.Contains(lines[0], "MB") {
+		t.Errorf("db size line: %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "Session DB:") || !strings.Contains(lines[1], "MB") {
-		t.Errorf("session size line: %q", lines[1])
+	if !strings.Contains(lines[1], "3 across 2 chats") {
+		t.Errorf("counts line: %q", lines[1])
 	}
-	if !strings.Contains(lines[2], "user@s.whatsapp.net") {
-		t.Errorf("jid line: %q", lines[2])
-	}
-	if !strings.Contains(lines[3], "Message DB:") || !strings.Contains(lines[3], "MB") {
-		t.Errorf("message size line: %q", lines[3])
-	}
-	if !strings.Contains(lines[4], "3 across 2 chats") {
-		t.Errorf("counts line: %q", lines[4])
+	if got := SessionAuthDisplay(dir); got != "user@s.whatsapp.net" {
+		t.Fatalf("SessionAuthDisplay = %q", got)
 	}
 }
 
@@ -105,8 +112,36 @@ func TestInfoLines_messagesDBUnreadable(t *testing.T) {
 	}
 
 	lines := InfoLines(dir)
-	if len(lines) != 5 || !strings.Contains(lines[4], "unable to read database") {
+	if len(lines) != 2 || !strings.Contains(lines[1], "unable to read database") {
 		t.Fatalf("lines: %q", lines)
+	}
+}
+
+// Verifies SessionAuthDisplay returns no without a session database.
+func TestSessionAuthDisplay_empty(t *testing.T) {
+	if got := SessionAuthDisplay(t.TempDir()); got != "no" {
+		t.Fatalf("SessionAuthDisplay = %q", got)
+	}
+}
+
+// Verifies pairedWhatsAppJID returns an error when whatsapp.db is absent so callers can distinguish missing DB from empty JID.
+func TestPairedWhatsAppJID_missingDB(t *testing.T) {
+	if _, err := pairedWhatsAppJID(t.TempDir()); err == nil {
+		t.Fatal("expected error when whatsapp.db is missing")
+	}
+}
+
+// Verifies pairedWhatsAppJID returns an error when whatsapp.db exists but is not a readable SQLite session store.
+func TestPairedWhatsAppJID_invalidDB(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "whatsapp.db"), []byte("not a sqlite database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pairedWhatsAppJID(dir); err == nil {
+		t.Fatal("expected error for invalid sqlite file")
+	}
+	if got := SessionAuthDisplay(dir); got != "no" {
+		t.Fatalf("SessionAuthDisplay = %q", got)
 	}
 }
 
@@ -198,6 +233,29 @@ func seedWhatsAppSearchIndex(t *testing.T, dataDir string) {
 			('notebook', 'note-1', 'note_title', 'John Thomas', 'John Thomas');
 	`); err != nil {
 		t.Fatalf("seed search db: %v", err)
+	}
+}
+
+// Verifies RunEnable sets whatsapp source enabled in config.
+func TestRunEnable(t *testing.T) {
+	dir := t.TempDir()
+	RunEnable(dir)
+	cfg := core.LoadConfig(dir)
+	if !cfg.Sources["whatsapp"].Enabled {
+		t.Fatal("expected whatsapp to be enabled")
+	}
+}
+
+// Verifies RunDisable sets whatsapp source disabled in config.
+func TestRunDisable(t *testing.T) {
+	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "whatsapp", true); err != nil {
+		t.Fatal(err)
+	}
+	RunDisable(dir)
+	cfg := core.LoadConfig(dir)
+	if cfg.Sources["whatsapp"].Enabled {
+		t.Fatal("expected whatsapp to be disabled")
 	}
 }
 

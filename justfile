@@ -22,7 +22,7 @@
 #   - macOS (for daemon features)
 
 # Default recipe shows help
-default:
+_:
     @just --list
 
 # Build mcpyeahyouknowme into mcpyeahyouknowme.bin at repo root

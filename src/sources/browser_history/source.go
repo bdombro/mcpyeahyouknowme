@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -137,22 +136,16 @@ func (s *Source) HasChangesSince(t time.Time) bool {
 func InfoLines(dataDir string) []string {
 	sc := core.LoadConfig(dataDir).Sources["browser_history"]
 	if !sc.Enabled {
-		return []string{"   Status:     disabled"}
+		return nil
 	}
 	cfg := loadBrowserHistoryConfig(dataDir)
 	if normalizeBrowser(cfg.Browser) == "" {
 		return []string{
-			"   Status:     enabled (browser not configured)",
 			"   Hint:       run 'mcpyeahyouknowme browser_history enable <chrome|brave>'",
 		}
 	}
 	lines := []string{
-		"   Status:     enabled",
 		fmt.Sprintf("   Browser:    %s", cfg.Browser),
-	}
-	size := core.FileGroupSizeBytes(filepath.Join(dataDir, "browser_history.db"))
-	if size > 0 {
-		lines = append(lines, "   Snapshot:   "+core.FormatSizeMB(size))
 	}
 	return lines
 }

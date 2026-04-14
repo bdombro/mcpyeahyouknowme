@@ -31,27 +31,26 @@ var daemonSignalProcess = func(pid int, signal syscall.Signal) error {
 	return syscall.Kill(pid, signal)
 }
 
-// RunEnable enables browser_history and stores the selected browser for daemon-owned indexing.
+// RunEnable enables browser_history. If a browser argument is provided (chrome or brave) it also stores that
+// browser choice. Without an argument, the previously configured browser is kept and the source is simply enabled.
 func RunEnable(dataDir string, args []string) {
-	if len(args) == 0 {
-		// nocov
-		fmt.Fprintln(os.Stderr, "Error: browser argument required")
-		fmt.Fprintln(os.Stderr, "Usage: mcpyeahyouknowme browser_history enable <chrome|brave>")
-		os.Exit(1)
-	}
-
-	browser := normalizeBrowser(args[0])
-	if browser == "" {
-		// nocov
-		slog.Error("unsupported browser", "browser", args[0], "supported", "chrome, brave")
-		os.Exit(1)
-	}
-
-	cfg := BrowserHistoryConfig{Browser: browser}
-	if err := saveBrowserHistoryConfig(dataDir, cfg); err != nil {
-		// nocov
-		slog.Error("could not save browser_history config", "err", err)
-		os.Exit(1)
+	if len(args) > 0 {
+		browser := normalizeBrowser(args[0])
+		if browser == "" {
+			// nocov
+			slog.Error("unsupported browser", "browser", args[0], "supported", "chrome, brave")
+			os.Exit(1)
+		}
+		if err := saveBrowserHistoryConfig(dataDir, BrowserHistoryConfig{Browser: browser}); err != nil {
+			// nocov
+			slog.Error("could not save browser_history config", "err", err)
+			os.Exit(1)
+		}
+	} else {
+		if loadBrowserHistoryConfig(dataDir).Browser == "" {
+			fmt.Fprintln(os.Stderr, "Error: no browser configured; run: browser_history enable <chrome|brave>")
+			os.Exit(1)
+		}
 	}
 	if err := updateSourceConfig(dataDir, "browser_history", func(sc *core.SourceConfig) {
 		sc.Enabled = true
@@ -62,7 +61,8 @@ func RunEnable(dataDir string, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Enabled browser_history for %s.\n", browser)
+	browser := loadBrowserHistoryConfig(dataDir).Browser
+	fmt.Printf("browser_history: enabled (%s)\n", browser)
 	pid := daemonPID()
 	switch {
 	case pid <= 0:
@@ -72,6 +72,18 @@ func RunEnable(dataDir string, args []string) {
 	default:
 		fmt.Println("The daemon is running and will pick up browser_history on its next refresh cycle.")
 	}
+}
+
+// RunDisable sets browser_history disabled in config without wiping data or browser selection.
+func RunDisable(dataDir string) {
+	if err := updateSourceConfig(dataDir, "browser_history", func(sc *core.SourceConfig) {
+		sc.Enabled = false
+	}); err != nil {
+		// nocov
+		slog.Error("could not disable browser_history", "err", err)
+		os.Exit(1)
+	}
+	fmt.Println("browser_history: disabled")
 }
 
 // RunReset clears browser_history config and deletes local snapshot files after explicit confirmation.

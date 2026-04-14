@@ -623,47 +623,32 @@ func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, 
 func InfoLines(dDir string) []string {
 	var lines []string
 	sc := core.LoadConfig(dDir).Sources["whatsapp"]
-	switch {
-	case !sc.Enabled:
-		lines = append(lines, "   Status:     disabled")
-	case !IsLoggedIn(dDir):
-		lines = append(lines, "   Status:     enabled (not authenticated)")
-	default:
-		lines = append(lines, "   Status:     enabled")
+	if sc.Enabled && !IsLoggedIn(dDir) {
+		lines = append(lines, "   Hint:       run 'mcpyeahyouknowme whatsapp login'")
 	}
+
+	var dbSize int64
 	waDB := filepath.Join(dDir, "whatsapp.db")
 	if _, err := os.Stat(waDB); err == nil {
-		if sizeBytes := core.FileGroupSizeBytes(waDB); sizeBytes > 0 {
-			lines = append(lines, fmt.Sprintf("   Session DB: %s", core.FormatSizeMB(sizeBytes)))
-		}
-		db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(30000)", waDB))
-		if err == nil {
-			defer db.Close()
-			ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
-			defer cancel()
-			var jid string
-			err = db.QueryRowContext(ctx, "SELECT jid FROM whatsmeow_device WHERE jid != '' LIMIT 1").Scan(&jid)
-			if err == nil && jid != "" {
-				lines = append(lines, fmt.Sprintf("   Logged in:  %s", jid))
-			} else {
-				lines = append(lines, "   Logged in:  no")
-			}
-		} else {
-			lines = append(lines, "   Logged in:  unable to read session db")
-		}
-	} else {
-		lines = append(lines, "   Logged in:  no session (run 'mcpyeahyouknowme whatsapp login')")
+		dbSize += core.FileGroupSizeBytes(waDB)
 	}
 
 	msgDB := filepath.Join(dDir, "messages.db")
-	if _, err := os.Stat(msgDB); err != nil {
+	hasMsgDB := false
+	if _, err := os.Stat(msgDB); err == nil {
+		hasMsgDB = true
+		dbSize += core.FileGroupSizeBytes(msgDB)
+	}
+
+	if dbSize > 0 {
+		lines = append(lines, fmt.Sprintf("   DB:         %s", core.FormatSizeMB(dbSize)))
+	}
+
+	if !hasMsgDB {
 		lines = append(lines, "   Messages:   no database yet")
 	} else {
-		if sizeBytes := core.FileGroupSizeBytes(msgDB); sizeBytes > 0 {
-			lines = append(lines, fmt.Sprintf("   Message DB: %s", core.FormatSizeMB(sizeBytes)))
-		}
 		db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(30000)", msgDB))
-		if err != nil {
+		if err != nil { // nocov
 			lines = append(lines, "   Messages:   unable to read database")
 		} else {
 			defer db.Close()

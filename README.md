@@ -294,7 +294,7 @@ The daemon normalizes this file over time: every **registered source** gets a `s
     // Per mutating tool name: max calls per sliding minute (default 10 if omitted or <= 0).
     "mutating_tools_per_min": 10,
 
-    // Max Unicode runes per whatsapp_send_message body (default 1000 if omitted or <= 0).
+    // Max Unicode runes/words per whatsapp_send_message body (default 1000 if omitted or <= 0).
     "whatsapp_send_max_runes": 1000
   }
 }

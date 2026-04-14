@@ -33,7 +33,7 @@ func TestCommandsListCompleteness(t *testing.T) {
 	expected := map[string]bool{
 		"mcp":             true,
 		"status":          true,
-		"completions":     true,
+		"completion":      true,
 		"core":            true,
 		"start":           true,
 		"stop":            true,
@@ -44,7 +44,6 @@ func TestCommandsListCompleteness(t *testing.T) {
 		"gsuite":          true,
 		"browser_history": true,
 		"notebook":        true,
-		"login":           true,
 		"reset":           true,
 	}
 
@@ -104,12 +103,12 @@ func TestPlistName(t *testing.T) {
 func TestPrintBashCompletions_ContainsBrowserHistoryOptions(t *testing.T) {
 	out := captureStdout(t, printBashCompletions)
 	for _, want := range []string{
+		`completion)`,
+		`compgen -W "bash zsh"`,
 		`browser_history)`,
-		`compgen -W "enable reset"`,
+		`compgen -W "enable disable reset"`,
 		`browser_history:enable)`,
 		`compgen -W "chrome brave"`,
-		`completions)`,
-		`compgen -W "bash zsh"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("printBashCompletions() missing %q in output:\n%s", want, out)
@@ -122,11 +121,13 @@ func TestPrintZshCompletions_ContainsBrowserHistoryOptions(t *testing.T) {
 	out := captureStdout(t, printZshCompletions)
 	for _, want := range []string{
 		`browser_history)`,
-		`'enable:Enable history indexing for chrome or brave'`,
+		`'enable:Enable browser history indexing'`,
+		`'disable:Disable browser history indexing'`,
 		`browser_history:enable)`,
 		`'chrome:Google Chrome history'`,
 		`'brave:Brave Browser history'`,
-		`'bash:Bash completions'`,
+		`'bash:Generate the autocompletion script for bash'`,
+		`'zsh:Generate the autocompletion script for zsh'`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("printZshCompletions() missing %q in output:\n%s", want, out)

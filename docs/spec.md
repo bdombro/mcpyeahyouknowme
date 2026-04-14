@@ -271,11 +271,19 @@ mcpyeahyouknowme notebook reset
 
 | Command | Description |
 |---------|-------------|
-| `status` | Shows build metadata; core daemon install/running status including network state and optional RSS; global data directory status; a Search Index section with entry/indexed counts and DB size; and per-source sections sorted alphabetically, including unavailable reasons when a source is not built/configured. Pass `--json` to return the same status snapshot as pretty-printed JSON instead of the human-readable report. Pass `--live` to redraw the human-readable report in place every 10 seconds until interrupted. `--live` cannot be combined with `--json`. The core daemon prints the same human-readable report on startup. |
+| `status` | Shows build metadata; core daemon install/running status; a Search Index section; then per-source sections showing **Config** (on/off toggle from `config.json`), **Auth** (WhatsApp JID or Google email when signed in, else `no`), and source-specific details (DB sizes, counts, hints). Plist, Logs, Directory, and notebook Dir paths display with `~` in place of `$HOME`. Unavailable sources show **Config** then `Status: unavailable`. Pass `--json` for the same snapshot as JSON. Pass `--live` to redraw every 10 seconds. `--live` and `--json` are mutually exclusive. The core daemon prints the same human-readable report on startup. |
 | `reset` | Prompts for confirmation, resets every registered source connection and its local data, clears the global search index, rewrites `config.json` to a fully disabled normalized state, and restarts the daemon when it is running so daemon-owned SQLite handles reopen against the clean on-disk state. It preserves the installed daemon, logs, and binary. |
+| `whatsapp enable` | Enables WhatsApp syncing in `config.json` without touching session data. |
+| `whatsapp disable` | Disables WhatsApp syncing in `config.json` without touching session data. |
 | `whatsapp reset` | Removes WhatsApp auth/session data, clears local synced data, removes WhatsApp rows from the global search index, and leaves the source disabled in config until the user logs in again. |
+| `gsuite enable [all\|<app>]` | Enables the Google Suite source and all apps (no arg or `all`), or just a single app (`docs`, `sheets`, `gmail`, `calendar`, `tasks`, `contacts`, `slides`). Sets source `enabled: true` in either case. |
+| `gsuite disable [all\|<app>]` | Disables the Google Suite source entirely (no arg or `all`), or just a single app by name. |
 | `gsuite reset` | Prompts for confirmation, removes the Google Suite token and local synced data, removes Google Suite rows from the global search index, and leaves the source disabled in config until the user logs in again. |
+| `browser_history enable [<chrome\|brave>]` | Enables browser history indexing. With a browser argument, also stores that browser choice. Without an argument, enables using the previously configured browser (fails if none configured). |
+| `browser_history disable` | Disables browser history indexing in `config.json` without wiping data or browser selection. |
 | `browser_history reset` | Prompts for confirmation, removes local browser history snapshot files, removes browser-history rows from the global search index, and leaves the source disabled in config until re-enabled. |
+| `notebook enable` | Enables notebook indexing in `config.json` without affecting directory configuration. |
+| `notebook disable` | Disables notebook indexing in `config.json` without affecting directory configuration. |
 | `notebook reset` | Prompts for confirmation, removes notebook cache/config state, removes notebook rows from the global search index, and leaves the source disabled in config until notebook directories are added again. |
 
 **Uninstalling:** For complete removal of the application, use `./scripts/uninstall.sh` from the repository root. This kills all processes, removes the daemon, wipes all data, removes shell completions, and deletes the binary from `/usr/local/bin`. See the [README](../README.md) for details.

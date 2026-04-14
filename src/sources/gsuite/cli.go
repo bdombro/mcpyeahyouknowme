@@ -155,6 +155,91 @@ func RunLogin(dataDir string) {
 	srv.Shutdown(shutdownCtx)
 }
 
+// RunEnable enables the Google Suite source or a specific app without requiring re-login.
+// args[0] may be an app name (docs, sheets, gmail, calendar, tasks, contacts, slides) or "all".
+// With "all", every app is enabled and the source is set enabled. With a specific app, only that app is enabled
+// and the source is set enabled. With no args, the source is set enabled (app states unchanged).
+func RunEnable(dataDir string, args []string) {
+	src := NewSource(dataDir)
+	defer src.Close()
+
+	if len(args) == 0 || strings.EqualFold(args[0], "all") {
+		for _, app := range allApps {
+			src.apps.SetEnabled(app.name, true)
+		}
+		if err := src.saveAppsConfig(src.apps); err != nil {
+			// nocov
+			fmt.Fprintf(os.Stderr, "Error: could not save gsuite apps config: %v\n", err)
+			os.Exit(1)
+		}
+		if err := core.SetSourceEnabled(dataDir, "gsuite", true); err != nil {
+			// nocov
+			fmt.Fprintf(os.Stderr, "Error: could not enable gsuite: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("gsuite: enabled (all apps)")
+		return
+	}
+
+	appName := strings.ToLower(args[0])
+	if !isValidAppName(appName) {
+		fmt.Fprintf(os.Stderr, "Error: unknown app %q; valid: all, docs, sheets, gmail, calendar, tasks, contacts, slides\n", args[0])
+		os.Exit(1)
+	}
+	src.apps.SetEnabled(appName, true)
+	if err := src.saveAppsConfig(src.apps); err != nil {
+		// nocov
+		fmt.Fprintf(os.Stderr, "Error: could not save gsuite apps config: %v\n", err)
+		os.Exit(1)
+	}
+	if err := core.SetSourceEnabled(dataDir, "gsuite", true); err != nil {
+		// nocov
+		fmt.Fprintf(os.Stderr, "Error: could not enable gsuite: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("gsuite: enabled (%s)\n", appName)
+}
+
+// RunDisable disables the Google Suite source or a specific app.
+// With "all" or no args, the source is fully disabled. With a specific app name, only that app is disabled.
+func RunDisable(dataDir string, args []string) {
+	src := NewSource(dataDir)
+	defer src.Close()
+
+	if len(args) == 0 || strings.EqualFold(args[0], "all") {
+		if err := core.SetSourceEnabled(dataDir, "gsuite", false); err != nil {
+			// nocov
+			fmt.Fprintf(os.Stderr, "Error: could not disable gsuite: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("gsuite: disabled")
+		return
+	}
+
+	appName := strings.ToLower(args[0])
+	if !isValidAppName(appName) {
+		fmt.Fprintf(os.Stderr, "Error: unknown app %q; valid: all, docs, sheets, gmail, calendar, tasks, contacts, slides\n", args[0])
+		os.Exit(1)
+	}
+	src.apps.SetEnabled(appName, false)
+	if err := src.saveAppsConfig(src.apps); err != nil {
+		// nocov
+		fmt.Fprintf(os.Stderr, "Error: could not save gsuite apps config: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("gsuite: disabled (%s)\n", appName)
+}
+
+// isValidAppName reports whether name matches a known gsuite app.
+func isValidAppName(name string) bool {
+	for _, app := range allApps {
+		if app.name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // promptAppSelection asks the user which apps to enable after login.
 func promptAppSelection() AppsConfig {
 	apps := DefaultAppsConfig()
@@ -282,28 +367,30 @@ func RunReset(dataDir string) {
 	fmt.Println("Run 'mcpyeahyouknowme gsuite login' to re-authenticate")
 }
 
+// SessionAuthDisplay returns the cached Google account email for status when a token exists, "signed in" when the token exists but no email file is present, or "no" when not signed in.
+func SessionAuthDisplay(dataDir string) string {
+	if !IsLoggedIn(dataDir) {
+		return "no"
+	}
+	if b, err := os.ReadFile(filepath.Join(dataDir, "gsuite_email.txt")); err == nil {
+		if s := strings.TrimSpace(string(b)); s != "" {
+			return s
+		}
+	}
+	return "signed in"
+}
+
 // InfoLines returns indented lines for the `info` command Google Suite section.
 func InfoLines(dataDir string) []string {
 	var lines []string
 	sc := core.LoadConfig(dataDir).Sources["gsuite"]
 	tokenPath := filepath.Join(dataDir, "gsuite_token.json")
-	if !sc.Enabled {
-		lines = append(lines, "   Status:     disabled")
-		for _, app := range allApps {
-			lines = append(lines, fmt.Sprintf("   %-11s disabled", cliAppName(app)+":"))
+	if sc.Enabled {
+		if _, err := os.Stat(tokenPath); err != nil {
+			return []string{"   Hint:       run 'mcpyeahyouknowme gsuite login'"}
 		}
-		return lines
-	}
-	if _, err := os.Stat(tokenPath); err != nil {
-		lines = append(lines, "   Status:     enabled (not authenticated)")
-		lines = append(lines, "   Logged in:  no (run 'mcpyeahyouknowme gsuite login')")
-		return lines
-	}
-	lines = append(lines, "   Status:     enabled")
-	if email, err := os.ReadFile(filepath.Join(dataDir, "gsuite_email.txt")); err == nil && len(email) > 0 {
-		lines = append(lines, fmt.Sprintf("   Logged in:  %s", string(email)))
 	} else {
-		lines = append(lines, "   Logged in:  yes")
+		return nil
 	}
 	if dbSize := core.FileGroupSizeBytes(filepath.Join(dataDir, "gsuite.db")); dbSize > 0 {
 		lines = append(lines, fmt.Sprintf("   Database:   %s", core.FormatSizeMB(dbSize)))

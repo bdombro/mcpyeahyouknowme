@@ -50,20 +50,26 @@ func commandTree() []Command {
 			},
 		},
 		{
-			Name:    "completions",
-			Summary: "Print shell completions (bash or zsh)",
-			Usage:   "completions [shell]",
+			Name:    "completion",
+			Summary: "Generate the autocompletion script for shell",
 			Section: "General",
-			ArgChoices: []Choice{
-				{Value: "bash", Summary: "Bash completions"},
-				{Value: "zsh", Summary: "Zsh completions"},
-			},
-			Run: func(args []string) {
-				shell := "zsh"
-				if len(args) > 0 {
-					shell = args[0]
-				}
-				runCompletions(shell)
+			Subcommands: []Command{
+				{
+					Name:    "bash",
+					Summary: "Generate the autocompletion script for bash",
+					Usage:   "completions bash",
+					Run: func(_ []string) {
+						runCompletions("bash")
+					},
+				},
+				{
+					Name:    "zsh",
+					Summary: "Generate the autocompletion script for zsh",
+					Usage:   "completions zsh",
+					Run: func(_ []string) {
+						runCompletions("zsh")
+					},
+				},
 			},
 		},
 		{
@@ -135,6 +141,22 @@ func commandTree() []Command {
 			Section: "WhatsApp",
 			Subcommands: []Command{
 				{
+					Name:    "enable",
+					Summary: "Enable WhatsApp syncing",
+					Usage:   "whatsapp enable",
+					Run: func(_ []string) {
+						whatsapp.RunEnable(dataDir)
+					},
+				},
+				{
+					Name:    "disable",
+					Summary: "Disable WhatsApp syncing",
+					Usage:   "whatsapp disable",
+					Run: func(_ []string) {
+						whatsapp.RunDisable(dataDir)
+					},
+				},
+				{
 					Name:    "login",
 					Summary: "Log in to WhatsApp (scan QR code)",
 					Usage:   "whatsapp login [--relogin]",
@@ -157,6 +179,42 @@ func commandTree() []Command {
 			Summary: "Google Suite commands",
 			Section: "Google Suite",
 			Subcommands: []Command{
+				{
+					Name:    "enable",
+					Summary: "Enable Google Suite or a specific app",
+					Usage:   "gsuite enable <all|app>",
+					ArgChoices: []Choice{
+						{Value: "all", Summary: "Enable all apps"},
+						{Value: "docs", Summary: "Google Docs"},
+						{Value: "sheets", Summary: "Google Sheets"},
+						{Value: "gmail", Summary: "Gmail"},
+						{Value: "calendar", Summary: "Google Calendar"},
+						{Value: "tasks", Summary: "Google Tasks"},
+						{Value: "contacts", Summary: "Google Contacts"},
+						{Value: "slides", Summary: "Google Slides"},
+					},
+					Run: func(args []string) {
+						gsuite.RunEnable(dataDir, args)
+					},
+				},
+				{
+					Name:    "disable",
+					Summary: "Disable Google Suite or a specific app",
+					Usage:   "gsuite disable <all|app>",
+					ArgChoices: []Choice{
+						{Value: "all", Summary: "Disable all apps and the source"},
+						{Value: "docs", Summary: "Google Docs"},
+						{Value: "sheets", Summary: "Google Sheets"},
+						{Value: "gmail", Summary: "Gmail"},
+						{Value: "calendar", Summary: "Google Calendar"},
+						{Value: "tasks", Summary: "Google Tasks"},
+						{Value: "contacts", Summary: "Google Contacts"},
+						{Value: "slides", Summary: "Google Slides"},
+					},
+					Run: func(args []string) {
+						gsuite.RunDisable(dataDir, args)
+					},
+				},
 				{
 					Name:    "login",
 					Summary: "Authenticate with Google and choose apps",
@@ -190,14 +248,22 @@ func commandTree() []Command {
 			Subcommands: []Command{
 				{
 					Name:    "enable",
-					Summary: "Enable history indexing for chrome or brave",
-					Usage:   "browser_history enable <chrome|brave>",
+					Summary: "Enable browser history indexing",
+					Usage:   "browser_history enable [chrome|brave]",
 					ArgChoices: []Choice{
 						{Value: "chrome", Summary: "Google Chrome history"},
 						{Value: "brave", Summary: "Brave Browser history"},
 					},
 					Run: func(args []string) {
 						browser_history.RunEnable(dataDir, args)
+					},
+				},
+				{
+					Name:    "disable",
+					Summary: "Disable browser history indexing",
+					Usage:   "browser_history disable",
+					Run: func(_ []string) {
+						browser_history.RunDisable(dataDir)
 					},
 				},
 				{
@@ -215,6 +281,22 @@ func commandTree() []Command {
 			Summary: "Notebook commands",
 			Section: "Notebook",
 			Subcommands: []Command{
+				{
+					Name:    "enable",
+					Summary: "Enable notebook indexing",
+					Usage:   "notebook enable",
+					Run: func(_ []string) {
+						notebook.RunEnable(dataDir)
+					},
+				},
+				{
+					Name:    "disable",
+					Summary: "Disable notebook indexing",
+					Usage:   "notebook disable",
+					Run: func(_ []string) {
+						notebook.RunDisable(dataDir)
+					},
+				},
 				{
 					Name:    "add",
 					Summary: "Add a directory to the notebook index",
@@ -247,15 +329,6 @@ func commandTree() []Command {
 						notebook.RunReset(dataDir)
 					},
 				},
-			},
-		},
-		{
-			Name:    "login",
-			Summary: "Legacy WhatsApp login alias (deprecated)",
-			Usage:   "login",
-			Section: "Legacy (deprecated)",
-			Run: func(args []string) {
-				whatsapp.RunLogin(dataDir, args)
 			},
 		},
 	}
@@ -378,5 +451,5 @@ func choiceValues(choices []Choice) []string {
 
 // shellCompletionWords returns the supported shell names in the space-delimited format bash completion generation expects.
 func shellCompletionWords() string {
-	return strings.Join(choiceValues(findCommand(commandTree(), "completions").ArgChoices), " ")
+	return strings.Join(commandNames(findCommand(commandTree(), "completion").Subcommands), " ")
 }

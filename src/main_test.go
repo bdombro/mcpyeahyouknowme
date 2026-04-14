@@ -35,8 +35,8 @@ func TestDispatchCommands(t *testing.T) {
 // Verifies the root command-name list matches the expected public CLI commands.
 func TestCommandNames(t *testing.T) {
 	expected := []string{
-		"mcp", "status", "completions", "core", "start", "stop",
-		"restart", "reindex", "reset", "uninstall", "whatsapp", "gsuite", "browser_history", "notebook", "login",
+		"mcp", "status", "completion", "core", "start", "stop",
+		"restart", "reindex", "reset", "uninstall", "whatsapp", "gsuite", "browser_history", "notebook",
 	}
 	if got := commandNames(topLevelCommands()); !reflect.DeepEqual(got, expected) {
 		t.Errorf("commandNames() = %v, want %v", got, expected)
@@ -49,10 +49,11 @@ func TestSubcommandNames(t *testing.T) {
 		command string
 		want    []string
 	}{
-		{"whatsapp", []string{"login", "reset"}},
-		{"gsuite", []string{"login", "apps", "reset"}},
-		{"browser_history", []string{"enable", "reset"}},
-		{"notebook", []string{"add", "remove", "list", "reset"}},
+		{"completion", []string{"bash", "zsh"}},
+		{"whatsapp", []string{"enable", "disable", "login", "reset"}},
+		{"gsuite", []string{"enable", "disable", "login", "apps", "reset"}},
+		{"browser_history", []string{"enable", "disable", "reset"}},
+		{"notebook", []string{"enable", "disable", "add", "remove", "list", "reset"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.command, func(t *testing.T) {

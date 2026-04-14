@@ -83,6 +83,7 @@ var infoFileGroupSizeBytes = core.FileGroupSizeBytes
 var infoIsNetworkAvailable = core.IsNetworkAvailable
 var infoSearchIndexStats = ReadOnlySearchIndexStats
 var infoSourceAvailability = registry.IsAvailable
+var infoHomeDir = os.UserHomeDir
 var infoPlistPath = plistPath
 var infoDaemonRSSBytes = daemonRSSBytes
 var infoLaunchctlOutput = func(ctx context.Context) ([]byte, error) {
@@ -222,10 +223,10 @@ func renderStatusSnapshot(snapshot infoSnapshot) string {
 	writeLine("   Network:    %s", snapshot.CoreDaemon.Network)
 	writeLine("   Status:     %s", snapshot.CoreDaemon.Status)
 	if snapshot.CoreDaemon.Plist != "" {
-		writeLine("   Plist:      %s", snapshot.CoreDaemon.Plist)
+		writeLine("   Plist:      %s", tildeHome(snapshot.CoreDaemon.Plist))
 	}
 	if snapshot.CoreDaemon.Logs != "" {
-		writeLine("   Logs:       %s", snapshot.CoreDaemon.Logs)
+		writeLine("   Logs:       %s", tildeHome(snapshot.CoreDaemon.Logs))
 	}
 	if snapshot.CoreDaemon.RAM != "" {
 		writeLine("   RAM:        %s", snapshot.CoreDaemon.RAM)
@@ -233,7 +234,7 @@ func renderStatusSnapshot(snapshot infoSnapshot) string {
 	writeLine("")
 
 	writeLine("\U0001f4c1 Data")
-	writeLine("   Directory:  %s", snapshot.Data.Directory)
+	writeLine("   Directory:  %s", tildeHome(snapshot.Data.Directory))
 	writeLine("   Status:     %s", snapshot.Data.Status)
 	writeLine("")
 
@@ -331,6 +332,7 @@ func buildInfoSearchIndexSnapshot(dataDir string, _ bool) infoSearchIndexSnapsho
 
 // buildInfoSourceSnapshots keeps source ordering stable while attaching availability metadata to each section.
 func buildInfoSourceSnapshots(dataDir string) []infoSourceSnapshot {
+	cfg := core.LoadConfig(dataDir)
 	sources := make([]infoSourceSnapshot, 0, len(infoSourceDefs))
 	for _, def := range infoSourceDefs {
 		source := infoSourceSnapshot{
@@ -338,16 +340,73 @@ func buildInfoSourceSnapshots(dataDir string) []infoSourceSnapshot {
 			Title:     def.Title,
 			Available: true,
 		}
+		configLine := sourceConfigLine(cfg, def.Key)
 		if available, reason := infoSourceAvailability(def.Key); !available {
 			source.Available = false
 			source.Reason = reason
+			source.Lines = []string{configLine}
 			sources = append(sources, source)
 			continue
 		}
-		source.Lines = def.InfoLines(dataDir)
+		out := []string{configLine}
+		if authLine := sourceSessionAuthLine(def.Key, dataDir); authLine != "" {
+			out = append(out, authLine)
+		}
+		source.Lines = append(out, def.InfoLines(dataDir)...)
 		sources = append(sources, source)
 	}
 	return sources
+}
+
+// sourceSessionAuthLine prints WhatsApp JID or Google account email (or "no") aligned with Config for the status snapshot.
+func sourceSessionAuthLine(key, dataDir string) string {
+	switch key {
+	case "whatsapp":
+		return formatSourceStatusKV("Auth:", whatsapp.SessionAuthDisplay(dataDir))
+	case "gsuite":
+		return formatSourceStatusKV("Auth:", gsuite.SessionAuthDisplay(dataDir))
+	default:
+		return ""
+	}
+}
+
+// formatSourceStatusKV pads label so values line up with the Config column (first value character at column 15).
+func formatSourceStatusKV(label, value string) string {
+	const leadingSpaces = 3
+	const valueColumn = 15
+	padLen := valueColumn - leadingSpaces - len(label)
+	if padLen < 1 {
+		padLen = 1
+	}
+	return fmt.Sprintf("   %s%s%s", label, strings.Repeat(" ", padLen), value)
+}
+
+// sourceConfigLine prints sources.<key>.enabled from config.json so status output matches the daemon/MCP toggle (default false when unset).
+func sourceConfigLine(cfg core.Config, key string) string {
+	sc, ok := cfg.Sources[key]
+	on := ok && sc.Enabled
+	label := "disabled"
+	if on {
+		label = "enabled"
+	}
+	return formatSourceStatusKV("Config:", label)
+}
+
+// sourceLiveOnlyMCPNote is kept for build compatibility; it always returns empty now that MCP note lines are removed from status output.
+
+// tildeHome replaces the home directory prefix with ~ for shorter display paths.
+func tildeHome(path string) string {
+	home, err := infoHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if strings.HasPrefix(path, home+"/") {
+		return "~" + path[len(home):]
+	}
+	if path == home {
+		return "~"
+	}
+	return path
 }
 
 // writeSearchIndexSection appends search index status lines from a precomputed snapshot to the human report.
@@ -360,7 +419,7 @@ func writeSearchIndexSection(b *strings.Builder, snapshot infoSearchIndexSnapsho
 	}
 	fmt.Fprintf(b, "   Entries:    %d\n", snapshot.Entries)
 	if snapshot.DBSize != "" {
-		fmt.Fprintf(b, "   DB Size:    %s\n", snapshot.DBSize)
+		fmt.Fprintf(b, "   DB:         %s\n", snapshot.DBSize)
 	}
 	if snapshot.Status != "" {
 		fmt.Fprintf(b, "   Status:     %s\n", snapshot.Status)
@@ -372,6 +431,9 @@ func writeSearchIndexSection(b *strings.Builder, snapshot infoSearchIndexSnapsho
 func writeSourceSection(b *strings.Builder, snapshot infoSourceSnapshot) {
 	fmt.Fprintln(b, snapshot.Title)
 	if !snapshot.Available {
+		for _, line := range snapshot.Lines {
+			fmt.Fprintln(b, line)
+		}
 		fmt.Fprintln(b, "   Status:     unavailable")
 		if snapshot.Reason != "" {
 			fmt.Fprintf(b, "   Reason:     %s\n", snapshot.Reason)

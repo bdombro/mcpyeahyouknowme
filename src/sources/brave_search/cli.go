@@ -1,14 +1,6 @@
 package brave_search
 
-// InfoLines reports whether the binary was built with a Brave API key; there is no per-user data directory state.
-func InfoLines(dataDir string) []string {
-	_ = dataDir
-	if !IsConfigured() {
-		return []string{
-			"   Status:     disabled",
-		}
-	}
-	return []string{
-		"   Status:     enabled",
-	}
+// InfoLines returns nothing; Brave Search availability is shown via the unavailable path when no API key is built in.
+func InfoLines(_ string) []string {
+	return nil
 }

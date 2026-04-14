@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"mcpyeahyouknowme/sources/brave_search"
 )
 
 type errWriter struct{}
@@ -57,6 +59,7 @@ func restoreStatusTestGlobals(t *testing.T) func() {
 	oldTicker := statusTicker
 	oldVersion := BuildVersion
 	oldTime := BuildTime
+	oldHomeDir := infoHomeDir
 
 	return func() {
 		infoDataDir = oldDataDir
@@ -79,6 +82,7 @@ func restoreStatusTestGlobals(t *testing.T) func() {
 		statusTicker = oldTicker
 		BuildVersion = oldVersion
 		BuildTime = oldTime
+		infoHomeDir = oldHomeDir
 	}
 }
 
@@ -179,7 +183,7 @@ func TestWriteStatus_json(t *testing.T) {
 			Title: "Alpha",
 			Key:   "alpha",
 			InfoLines: func(string) []string {
-				return []string{"   Status:     enabled"}
+				return []string{"   Detail:     stub"}
 			},
 		},
 	}
@@ -205,6 +209,9 @@ func TestWriteStatus_json(t *testing.T) {
 	}
 	if len(got.Sources) != 1 || got.Sources[0].Key != "alpha" {
 		t.Fatalf("expected alpha source in JSON, got %#v", got.Sources)
+	}
+	if len(got.Sources[0].Lines) != 2 || got.Sources[0].Lines[0] != "   Config:     disabled" || got.Sources[0].Lines[1] != "   Detail:     stub" {
+		t.Fatalf("expected config + detail lines in JSON source, got %#v", got.Sources[0].Lines)
 	}
 }
 
@@ -393,8 +400,8 @@ func TestRenderStatusSnapshot_rendersOptionalFields(t *testing.T) {
 			DBSize:  "3.0 MB",
 		},
 		Sources: []infoSourceSnapshot{
-			{Title: "Alpha", Available: true, Lines: []string{"   Status:     enabled"}},
-			{Title: "Beta", Available: false, Reason: "missing credentials"},
+			{Title: "Alpha", Available: true, Lines: []string{"   Config:     enabled", "   Detail:     stub"}},
+			{Title: "Beta", Available: false, Lines: []string{"   Config:     disabled"}, Reason: "missing credentials"},
 		},
 	}
 
@@ -404,7 +411,7 @@ func TestRenderStatusSnapshot_rendersOptionalFields(t *testing.T) {
 		"Plist:      /tmp/test.plist",
 		"Logs:       /tmp/core.log",
 		"RAM:        2.0 MB RSS",
-		"DB Size:    3.0 MB",
+		"DB:         3.0 MB",
 		"Alpha",
 		"Beta",
 		"Reason:     missing credentials",
@@ -441,7 +448,7 @@ func TestBuildInfoSnapshot_runningDaemon(t *testing.T) {
 			Title: "Alpha",
 			Key:   "alpha",
 			InfoLines: func(string) []string {
-				return []string{"   Status:     enabled"}
+				return []string{"   Detail:     stub"}
 			},
 		},
 		{
@@ -476,11 +483,147 @@ func TestBuildInfoSnapshot_runningDaemon(t *testing.T) {
 	if len(got.Sources) != 2 {
 		t.Fatalf("expected two sources, got %#v", got.Sources)
 	}
-	if got.Sources[0].Key != "alpha" || len(got.Sources[0].Lines) != 1 {
-		t.Fatalf("expected available alpha source, got %#v", got.Sources[0])
+	if got.Sources[0].Key != "alpha" || len(got.Sources[0].Lines) != 2 {
+		t.Fatalf("expected available alpha source with config + status lines, got %#v", got.Sources[0])
+	}
+	if got.Sources[0].Lines[0] != "   Config:     disabled" || got.Sources[0].Lines[1] != "   Detail:     stub" {
+		t.Fatalf("unexpected alpha lines: %#v", got.Sources[0].Lines)
+	}
+	// Alpha is not WhatsApp/GSuite; no Auth line between Config and InfoLines.
+	if len(got.Sources[0].Lines) != 2 {
+		t.Fatalf("expected exactly config + detail for non-session source, got %#v", got.Sources[0].Lines)
 	}
 	if got.Sources[1].Key != "beta" || got.Sources[1].Available || got.Sources[1].Reason != "missing credentials" {
 		t.Fatalf("expected unavailable beta source, got %#v", got.Sources[1])
+	}
+	if len(got.Sources[1].Lines) != 1 || got.Sources[1].Lines[0] != "   Config:     disabled" {
+		t.Fatalf("expected beta config-only line, got %#v", got.Sources[1].Lines)
+	}
+}
+
+// Verifies buildInfoSourceSnapshots does not add MCP note lines for Brave even when keys are present.
+func TestBuildInfoSnapshot_braveMCPNote(t *testing.T) {
+	restore := restoreStatusTestGlobals(t)
+	defer restore()
+
+	dataDir := t.TempDir()
+	oldKey := brave_search.BraveAPIKey
+	brave_search.BraveAPIKey = "build-time-key"
+	t.Cleanup(func() { brave_search.BraveAPIKey = oldKey })
+
+	infoDataDir = func() string { return dataDir }
+	infoSourceDefs = []infoSourceDef{
+		{Title: "Brave Search", Key: "brave_search", InfoLines: brave_search.InfoLines},
+	}
+	infoSourceAvailability = func(string) (bool, string) { return true, "" }
+
+	got := buildInfoSourceSnapshots(dataDir)
+	if len(got) != 1 {
+		t.Fatalf("expected one source, got %#v", got)
+	}
+	for _, line := range got[0].Lines {
+		if strings.Contains(line, "MCP note") || strings.Contains(line, "Live tools") {
+			t.Fatalf("unexpected live/MCP line in snapshot: %q", line)
+		}
+	}
+}
+
+// Verifies formatSourceStatusKV lines up Auth and Config value columns.
+func TestFormatSourceStatusKV_alignsColumn(t *testing.T) {
+	cfg := formatSourceStatusKV("Config:", "enabled")
+	auth := formatSourceStatusKV("Auth:", "no")
+	if i := strings.Index(cfg, "enabled"); i != strings.Index(auth, "no") {
+		t.Fatalf("value columns differ: %q vs %q", cfg, auth)
+	}
+	if auth != "   Auth:       no" {
+		t.Fatalf("unexpected auth line: %q", auth)
+	}
+}
+
+// Verifies formatSourceStatusKV uses at least one space after very long labels so output never collides with the value.
+func TestFormatSourceStatusKV_longLabel(t *testing.T) {
+	got := formatSourceStatusKV("ABCDEFGHIJKLMNOPQRSTUVWXYZ:", "x")
+	if !strings.HasPrefix(got, "   ABCDEFGHIJKLMNOPQRSTUVWXYZ:") || !strings.HasSuffix(got, "x") {
+		t.Fatalf("unexpected line: %q", got)
+	}
+	if idx := strings.LastIndex(got, ":"); idx < 0 || idx >= len(got)-2 {
+		t.Fatalf("expected separator before value: %q", got)
+	}
+}
+
+// Verifies tildeHome replaces the home directory prefix with ~ and leaves unrelated paths unchanged.
+func TestTildeHome(t *testing.T) {
+	restore := restoreStatusTestGlobals(t)
+	defer restore()
+
+	infoHomeDir = func() (string, error) { return "/home/user", nil }
+
+	if got := tildeHome("/home/user/docs/file.txt"); got != "~/docs/file.txt" {
+		t.Fatalf("expected tilde path, got %q", got)
+	}
+	if got := tildeHome("/home/user"); got != "~" {
+		t.Fatalf("expected bare tilde, got %q", got)
+	}
+	if got := tildeHome("/other/path"); got != "/other/path" {
+		t.Fatalf("expected unchanged, got %q", got)
+	}
+}
+
+// Verifies tildeHome returns the original path when os.UserHomeDir returns an error.
+func TestTildeHome_homeErr(t *testing.T) {
+	restore := restoreStatusTestGlobals(t)
+	defer restore()
+
+	infoHomeDir = func() (string, error) { return "", errors.New("no home") }
+
+	if got := tildeHome("/some/path"); got != "/some/path" {
+		t.Fatalf("expected unchanged path on error, got %q", got)
+	}
+}
+
+// Verifies sourceSessionAuthLine returns empty for sources without session auth rows.
+func TestSourceSessionAuthLine_nonSessionSources(t *testing.T) {
+	if got := sourceSessionAuthLine("notebook", "/tmp"); got != "" {
+		t.Fatalf("expected empty line, got %q", got)
+	}
+}
+
+// Verifies sourceSessionAuthLine covers the Google Suite branch with the same formatting as WhatsApp.
+func TestSourceSessionAuthLine_gsuite(t *testing.T) {
+	if got := sourceSessionAuthLine("gsuite", t.TempDir()); got != "   Auth:       no" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// Verifies buildInfoSourceSnapshots inserts an Auth line for WhatsApp when the source is available, using the real session probe.
+func TestBuildInfoSourceSnapshots_whatsappAuthLine(t *testing.T) {
+	restore := restoreStatusTestGlobals(t)
+	defer restore()
+
+	dataDir := t.TempDir()
+	infoSourceDefs = []infoSourceDef{
+		{
+			Title: "WhatsApp",
+			Key:   "whatsapp",
+			InfoLines: func(string) []string {
+				return []string{"   Status:     stub"}
+			},
+		},
+	}
+	infoSourceAvailability = func(string) (bool, string) { return true, "" }
+
+	got := buildInfoSourceSnapshots(dataDir)
+	if len(got) != 1 || len(got[0].Lines) != 3 {
+		t.Fatalf("expected config + auth + one info line, got %#v", got[0].Lines)
+	}
+	if got[0].Lines[0] != "   Config:     disabled" {
+		t.Fatalf("unexpected config line: %q", got[0].Lines[0])
+	}
+	if got[0].Lines[1] != "   Auth:       no" {
+		t.Fatalf("empty dataDir should not be logged in, got %q", got[0].Lines[1])
+	}
+	if got[0].Lines[2] != "   Status:     stub" {
+		t.Fatalf("unexpected info line: %q", got[0].Lines[2])
 	}
 }
 
@@ -584,8 +727,8 @@ func TestWriteSearchIndexSection_indexed(t *testing.T) {
 	if !strings.Contains(got, "Entries:") {
 		t.Fatalf("expected Entries label in output, got %q", got)
 	}
-	if !strings.Contains(got, "DB Size:") {
-		t.Fatalf("expected DB Size label in output, got %q", got)
+	if !strings.Contains(got, "DB:") {
+		t.Fatalf("expected DB label in output, got %q", got)
 	}
 	if !strings.Contains(got, "indexing in progress") {
 		t.Fatalf("expected status in output, got %q", got)

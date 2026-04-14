@@ -44,20 +44,18 @@ func TestSourceMethods(t *testing.T) {
 	}
 }
 
-// Verifies info output reflects build-time Places availability without depending on on-disk source state.
+// Verifies InfoLines returns nil regardless of build-time key presence.
 func TestInfoLines(t *testing.T) {
 	old := GooglePlaceAPIKey
 	defer func() { GooglePlaceAPIKey = old }()
 
 	GooglePlaceAPIKey = ""
-	lines := InfoLines(t.TempDir())
-	if len(lines) != 1 || lines[0] != "   Status:     disabled" {
-		t.Fatalf("disabled InfoLines() = %v", lines)
+	if lines := InfoLines(t.TempDir()); len(lines) != 0 {
+		t.Fatalf("expected empty InfoLines, got %v", lines)
 	}
 
 	GooglePlaceAPIKey = "configured"
-	lines = InfoLines(t.TempDir())
-	if len(lines) != 1 || lines[0] != "   Status:     enabled" {
-		t.Fatalf("enabled InfoLines() = %v", lines)
+	if lines := InfoLines(t.TempDir()); len(lines) != 0 {
+		t.Fatalf("expected empty InfoLines, got %v", lines)
 	}
 }

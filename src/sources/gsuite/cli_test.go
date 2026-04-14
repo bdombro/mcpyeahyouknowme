@@ -27,20 +27,31 @@ func TestIsLoggedIn(t *testing.T) {
 	}
 }
 
-// Verifies info output defaults to a disabled status when the gsuite source has not been enabled.
-func TestInfoLines_NotLoggedIn_CLI(t *testing.T) {
+// Verifies SessionAuthDisplay returns no without a token and signed in when only the token exists.
+func TestSessionAuthDisplay_states(t *testing.T) {
 	dir := t.TempDir()
-	lines := InfoLines(dir)
-	if len(lines) == 0 {
-		t.Fatal("expected at least one line")
+	if got := SessionAuthDisplay(dir); got != "no" {
+		t.Fatalf("no token: got %q", got)
 	}
-	if !containsStr(lines[0], "disabled") {
-		t.Errorf("expected disabled status, got: %q", lines[0])
+	if err := os.WriteFile(filepath.Join(dir, "gsuite_token.json"), []byte(`{"access_token":"x"}`), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+	if got := SessionAuthDisplay(dir); got != "signed in" {
+		t.Fatalf("token without email: got %q", got)
 	}
 }
 
-// Verifies info output includes the cached account email when the source is enabled and authenticated.
-func TestInfoLines_WithEmail(t *testing.T) {
+// Verifies info output defaults to nil when the gsuite source has not been enabled.
+func TestInfoLines_NotLoggedIn_CLI(t *testing.T) {
+	dir := t.TempDir()
+	lines := InfoLines(dir)
+	if len(lines) != 0 {
+		t.Errorf("expected no lines when disabled, got: %v", lines)
+	}
+}
+
+// Verifies SessionAuthDisplay returns the cached account email when a token and email file exist.
+func TestSessionAuthDisplay_withEmail(t *testing.T) {
 	dir := t.TempDir()
 	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
 		t.Fatalf("SetSourceEnabled: %v", err)
@@ -48,18 +59,28 @@ func TestInfoLines_WithEmail(t *testing.T) {
 	os.WriteFile(dir+"/gsuite_token.json", []byte(`{"access_token":"x"}`), 0600)
 	os.WriteFile(dir+"/gsuite_email.txt", []byte("me@test.com"), 0600)
 
+	if got := SessionAuthDisplay(dir); got != "me@test.com" {
+		t.Fatalf("SessionAuthDisplay = %q", got)
+	}
 	lines := InfoLines(dir)
-	found := false
 	for _, l := range lines {
 		if containsStr(l, "me@test.com") {
-			found = true
+			t.Fatalf("email should not duplicate in InfoLines (status Auth line owns it), got line %q", l)
 		}
-	}
-	if !found {
-		t.Errorf("expected email in lines, got: %v", lines)
 	}
 }
 
+// Verifies info output shows a login hint when the source is enabled but no token exists.
+func TestInfoLines_EnabledNotAuthenticated(t *testing.T) {
+	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
+		t.Fatalf("SetSourceEnabled: %v", err)
+	}
+	lines := InfoLines(dir)
+	if len(lines) != 1 || !containsStr(lines[0], "Hint") || !containsStr(lines[0], "login") {
+		t.Errorf("expected login hint, got: %v", lines)
+	}
+}
 // Verifies info output marks every app disabled when the source is enabled but no apps are selected.
 func TestInfoLines_AllAppsDisabled(t *testing.T) {
 	dir := t.TempDir()
@@ -356,21 +377,12 @@ func TestRunApps_AllEnablesEverything(t *testing.T) {
 	}
 }
 
-// Verifies disabled-source info output shows disabled status for the source and each app without legacy wording.
+// Verifies disabled-source info output returns no lines (Config: line is owned by status renderer).
 func TestInfoLines_DisabledSourceDisablesApps(t *testing.T) {
 	dir := t.TempDir()
 	lines := InfoLines(dir)
-	disabledCount := 0
-	for _, l := range lines {
-		if containsStr(l, "disabled") {
-			disabledCount++
-		}
-		if containsStr(l, "source disabled") {
-			t.Fatalf("unexpected legacy disabled suffix in line %q", l)
-		}
-	}
-	if disabledCount < len(allApps)+1 {
-		t.Fatalf("expected disabled status plus disabled app lines, got %v", lines)
+	if len(lines) != 0 {
+		t.Fatalf("expected no lines when disabled, got %v", lines)
 	}
 }
 
@@ -393,3 +405,108 @@ func TestFormatSyncStatus_Variants(t *testing.T) {
 
 // zeroTimeVal is a zero-value time.Time for use in tests.
 var zeroTimeVal = time.Time{}
+
+// Verifies RunEnable with "all" enables every app and sets source enabled.
+func TestRunEnable_all(t *testing.T) {
+	dir := t.TempDir()
+	RunEnable(dir, []string{"all"})
+	cfg := core.LoadConfig(dir)
+	if !cfg.Sources["gsuite"].Enabled {
+		t.Fatal("expected gsuite source enabled")
+	}
+	src := NewSource(dir)
+	defer src.Close()
+	for _, app := range allApps {
+		if !src.apps.IsEnabled(app.name) {
+			t.Errorf("expected %s enabled", app.name)
+		}
+	}
+}
+
+// Verifies RunEnable with a specific app name enables only that app and sets source enabled.
+func TestRunEnable_singleApp(t *testing.T) {
+	dir := t.TempDir()
+	RunEnable(dir, []string{"docs"})
+	cfg := core.LoadConfig(dir)
+	if !cfg.Sources["gsuite"].Enabled {
+		t.Fatal("expected gsuite source enabled")
+	}
+	src := NewSource(dir)
+	defer src.Close()
+	if !src.apps.IsEnabled("docs") {
+		t.Fatal("expected docs enabled")
+	}
+	if src.apps.IsEnabled("gmail") {
+		t.Fatal("expected gmail still disabled")
+	}
+}
+
+// Verifies RunEnable with no args enables all apps and sets source enabled.
+func TestRunEnable_noArgs(t *testing.T) {
+	dir := t.TempDir()
+	RunEnable(dir, nil)
+	cfg := core.LoadConfig(dir)
+	if !cfg.Sources["gsuite"].Enabled {
+		t.Fatal("expected gsuite source enabled")
+	}
+}
+
+// Verifies RunDisable with "all" disables the source.
+func TestRunDisable_all(t *testing.T) {
+	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
+		t.Fatal(err)
+	}
+	RunDisable(dir, []string{"all"})
+	cfg := core.LoadConfig(dir)
+	if cfg.Sources["gsuite"].Enabled {
+		t.Fatal("expected gsuite source disabled")
+	}
+}
+
+// Verifies RunDisable with a specific app name disables only that app.
+func TestRunDisable_singleApp(t *testing.T) {
+	dir := t.TempDir()
+	src := NewSource(dir)
+	defer src.Close()
+	src.apps.SetEnabled("docs", true)
+	src.apps.SetEnabled("gmail", true)
+	if err := src.saveAppsConfig(src.apps); err != nil {
+		t.Fatal(err)
+	}
+
+	RunDisable(dir, []string{"docs"})
+
+	src2 := NewSource(dir)
+	defer src2.Close()
+	if src2.apps.IsEnabled("docs") {
+		t.Fatal("expected docs disabled")
+	}
+	if !src2.apps.IsEnabled("gmail") {
+		t.Fatal("expected gmail still enabled")
+	}
+}
+
+// Verifies RunDisable with no args disables the source without touching app config.
+func TestRunDisable_noArgs(t *testing.T) {
+	dir := t.TempDir()
+	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
+		t.Fatal(err)
+	}
+	RunDisable(dir, nil)
+	if core.LoadConfig(dir).Sources["gsuite"].Enabled {
+		t.Fatal("expected gsuite source disabled")
+	}
+}
+
+// Verifies isValidAppName accepts known app names and rejects unknowns.
+func TestIsValidAppName(t *testing.T) {
+	for _, app := range allApps {
+		if !isValidAppName(app.name) {
+			t.Errorf("expected %q to be valid", app.name)
+		}
+	}
+	if isValidAppName("bogus") {
+		t.Error("expected bogus to be invalid")
+	}
+}

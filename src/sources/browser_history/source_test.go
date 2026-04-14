@@ -263,24 +263,29 @@ func TestOpenSnapshotForRead_statError(t *testing.T) {
 	}
 }
 
-// Verifies info lines include disabled, enabled-unconfigured, and configured enabled states.
+// Verifies info lines reflect disabled, unconfigured, and configured enabled states.
 func TestInfoLines(t *testing.T) {
 	dataDir := t.TempDir()
 	lines := InfoLines(dataDir)
-	if len(lines) != 1 || lines[0] != "   Status:     disabled" {
-		t.Fatalf("disabled lines = %v", lines)
+	if len(lines) != 0 {
+		t.Fatalf("disabled: expected no lines, got %v", lines)
 	}
 
 	saveRawSourceConfig(t, dataDir, true, nil)
 	lines = InfoLines(dataDir)
-	if len(lines) != 2 || !strings.Contains(lines[0], "browser not configured") {
+	if len(lines) != 1 || !strings.Contains(lines[0], "Hint") {
 		t.Fatalf("unconfigured enabled lines = %v", lines)
 	}
 
 	saveTestConfig(t, dataDir, "brave", true)
 	lines = InfoLines(dataDir)
-	if len(lines) < 2 || lines[0] != "   Status:     enabled" {
+	if len(lines) < 1 || !strings.Contains(lines[0], "Browser:") {
 		t.Fatalf("enabled lines = %v", lines)
+	}
+	for _, l := range lines {
+		if strings.Contains(l, "Status:") {
+			t.Fatalf("Status line should not appear in InfoLines, got: %q", l)
+		}
 	}
 
 	snapshotPath := filepath.Join(dataDir, "browser_history.db")
@@ -288,8 +293,8 @@ func TestInfoLines(t *testing.T) {
 		t.Fatalf("write snapshot: %v", err)
 	}
 	lines = InfoLines(dataDir)
-	if len(lines) < 3 {
-		t.Fatalf("expected snapshot line, got %v", lines)
+	if len(lines) < 1 || !strings.Contains(lines[0], "Browser:") {
+		t.Fatalf("expected browser line after snapshot written, got %v", lines)
 	}
 }
 

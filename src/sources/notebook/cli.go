@@ -184,6 +184,26 @@ func daemonPID() int {
 	return parseLaunchctlPID(string(out))
 }
 
+// RunEnable sets notebook source enabled in config without affecting directory configuration.
+func RunEnable(dataDir string) {
+	if err := core.SetSourceEnabled(dataDir, "notebook", true); err != nil {
+		// nocov
+		fmt.Fprintf(os.Stderr, "Error: could not enable notebook: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("notebook: enabled")
+}
+
+// RunDisable sets notebook source disabled in config without affecting directory configuration.
+func RunDisable(dataDir string) {
+	if err := core.SetSourceEnabled(dataDir, "notebook", false); err != nil {
+		// nocov
+		fmt.Fprintf(os.Stderr, "Error: could not disable notebook: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("notebook: disabled")
+}
+
 // daemonPlistPath builds the LaunchAgent plist path used by the installed core daemon.
 func daemonPlistPath() string {
 	home, _ := daemonUserHomeDir()

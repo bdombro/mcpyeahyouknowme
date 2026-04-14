@@ -3,6 +3,7 @@ package notebook
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,35 +103,23 @@ func TestSource_Reset(t *testing.T) {
 	}
 }
 
-// Verifies InfoLines returns disabled message when source is not enabled.
+// Verifies InfoLines returns nil when source is not enabled.
 func TestInfoLines_disabled(t *testing.T) {
 	dataDir := t.TempDir()
 	lines := InfoLines(dataDir)
-	if len(lines) == 0 {
-		t.Fatal("expected at least one line")
-	}
-	if lines[0] != "   Status:     disabled" {
-		t.Fatalf("unexpected first line: %q", lines[0])
+	if len(lines) != 0 {
+		t.Fatalf("expected no lines when disabled, got %v", lines)
 	}
 }
 
-// Verifies InfoLines returns enabled-with-no-dirs hint when source is enabled but empty.
+// Verifies InfoLines returns just a hint line when source is enabled but no directories configured.
 func TestInfoLines_enabledNoDirs(t *testing.T) {
 	dataDir := t.TempDir()
 	core.SetSourceEnabled(dataDir, "notebook", true)
 
 	lines := InfoLines(dataDir)
-	if len(lines) == 0 {
-		t.Fatal("expected lines")
-	}
-	found := false
-	for _, l := range lines {
-		if l == "   Status:     enabled (no directories configured)" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected no-dirs hint, got %v", lines)
+	if len(lines) != 1 || !strings.Contains(lines[0], "Hint") {
+		t.Fatalf("expected hint line, got %v", lines)
 	}
 }
 
@@ -144,12 +133,11 @@ func TestInfoLines_enabled(t *testing.T) {
 	core.SetSourceEnabled(dataDir, "notebook", true)
 
 	lines := InfoLines(dataDir)
-	foundEnabled := false
 	foundDir := false
 	foundCounts := false
 	for _, l := range lines {
-		if l == "   Status:     enabled" {
-			foundEnabled = true
+		if strings.Contains(l, "Status:") {
+			t.Fatalf("Status line should not appear in InfoLines, got: %q", l)
 		}
 		if l == "   Dir:        "+dir {
 			foundDir = true
@@ -157,9 +145,6 @@ func TestInfoLines_enabled(t *testing.T) {
 		if l == "               (1 md, 0 pdf, 0 images)" {
 			foundCounts = true
 		}
-	}
-	if !foundEnabled {
-		t.Fatalf("expected enabled status, got %v", lines)
 	}
 	if !foundDir {
 		t.Fatalf("expected dir line, got %v", lines)
@@ -361,5 +346,22 @@ func TestSource_HasChangesSince(t *testing.T) {
 	}
 	if !src.HasChangesSince(time.Now().Add(-90 * time.Minute)) {
 		t.Fatal("expected recent WAL change to trigger notebook reindex")
+	}
+}
+
+// Verifies tildeHome shortens home-prefixed paths and leaves unrelated paths intact.
+func TestTildeHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home dir available")
+	}
+	if got := tildeHome(home + "/docs"); got != "~/docs" {
+		t.Fatalf("expected tilde path, got %q", got)
+	}
+	if got := tildeHome(home); got != "~" {
+		t.Fatalf("expected bare tilde, got %q", got)
+	}
+	if got := tildeHome("/unrelated/path"); got != "/unrelated/path" {
+		t.Fatalf("expected unchanged path, got %q", got)
 	}
 }

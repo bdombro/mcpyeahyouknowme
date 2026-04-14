@@ -37,6 +37,9 @@ func TestRunEnable_success(t *testing.T) {
 	if !sc.Enabled {
 		t.Fatal("expected source enabled")
 	}
+	if !strings.Contains(stdout, "browser_history: enabled (chrome)") {
+		t.Fatalf("expected enabled message, got %q", stdout)
+	}
 	if !strings.Contains(stdout, "Start the daemon") {
 		t.Fatalf("expected start-daemon message, got %q", stdout)
 	}
@@ -90,6 +93,48 @@ func TestRunEnable_runningDaemonSignalFailure(t *testing.T) {
 	})
 	if !strings.Contains(stdout, "next refresh cycle") {
 		t.Fatalf("expected next-refresh message, got %q", stdout)
+	}
+}
+
+// Verifies enable command with no args enables the source when browser is already configured.
+func TestRunEnable_noArgWithExistingBrowser(t *testing.T) {
+	dataDir := t.TempDir()
+	saveTestConfig(t, dataDir, "brave", false)
+	oldDaemonStatPath := daemonStatPath
+	daemonStatPath = func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
+	defer func() { daemonStatPath = oldDaemonStatPath }()
+
+	stdout, _ := captureOutput(t, func() {
+		RunEnable(dataDir, nil)
+	})
+
+	sc := core.LoadConfig(dataDir).Sources["browser_history"]
+	if !sc.Enabled {
+		t.Fatal("expected source enabled")
+	}
+	if !strings.Contains(stdout, "browser_history: enabled (brave)") {
+		t.Fatalf("expected enabled message, got %q", stdout)
+	}
+}
+
+// Verifies disable command sets the source disabled in config without clearing browser selection.
+func TestRunDisable(t *testing.T) {
+	dataDir := t.TempDir()
+	saveTestConfig(t, dataDir, "chrome", true)
+
+	stdout, _ := captureOutput(t, func() {
+		RunDisable(dataDir)
+	})
+
+	sc := core.LoadConfig(dataDir).Sources["browser_history"]
+	if sc.Enabled {
+		t.Fatal("expected source disabled")
+	}
+	if loadBrowserHistoryConfig(dataDir).Browser != "chrome" {
+		t.Fatal("expected browser selection preserved")
+	}
+	if !strings.Contains(stdout, "browser_history: disabled") {
+		t.Fatalf("expected disabled message, got %q", stdout)
 	}
 }
 

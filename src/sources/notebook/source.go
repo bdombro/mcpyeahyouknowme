@@ -121,25 +121,39 @@ func (s *Source) HasChangesSince(t time.Time) bool {
 func InfoLines(dataDir string) []string {
 	sc := core.LoadConfig(dataDir).Sources["notebook"]
 	if !sc.Enabled {
-		return []string{"   Status:     disabled"}
+		return nil
 	}
 	cfg := loadNotebookConfig(dataDir)
 	if len(cfg.Dirs) == 0 {
 		return []string{
-			"   Status:     enabled (no directories configured)",
 			"   Hint:       run 'mcpyeahyouknowme notebook add <path>'",
 		}
 	}
-	lines := []string{"   Status:     enabled"}
+	var lines []string
 	for _, dir := range cfg.Dirs {
 		counts := countFilesInDir(dir)
-		lines = append(lines, formatDirLines(dir, counts)...)
+		lines = append(lines, formatDirLines(tildeHome(dir), counts)...)
 	}
 	dbSize := core.FileGroupSizeBytes(filepath.Join(dataDir, "notebook.db"))
 	if dbSize > 0 {
-		lines = append(lines, "   Cache:      "+core.FormatSizeMB(dbSize))
+		lines = append(lines, "   DB:         "+core.FormatSizeMB(dbSize))
 	}
 	return lines
+}
+
+// tildeHome replaces the home directory prefix with ~ for shorter path display in status output.
+func tildeHome(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" { // nocov
+		return path
+	}
+	if strings.HasPrefix(path, home+"/") {
+		return "~" + path[len(home):]
+	}
+	if path == home {
+		return "~"
+	}
+	return path
 }
 
 // countFilesInDir walks a configured directory tree for display counts while matching notebook scan rules.
