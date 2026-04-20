@@ -151,7 +151,7 @@ func TestRunAdd_signalsDaemon(t *testing.T) {
 	}()
 
 	stdout := captureStdout(t, func() {
-		RunAdd(dataDir, []string{notesDir})
+		RunAdd(dataDir, notesDir)
 	})
 	if !signaled {
 		t.Fatal("expected daemon to be signaled")
@@ -172,7 +172,7 @@ func TestRunAdd_noDaemon(t *testing.T) {
 	defer func() { daemonStatPath = oldStat }()
 
 	stdout := captureStdout(t, func() {
-		RunAdd(dataDir, []string{notesDir})
+		RunAdd(dataDir, notesDir)
 	})
 	if !strings.Contains(stdout, "Start the daemon") {
 		t.Fatalf("expected start-daemon message, got %q", stdout)
@@ -198,7 +198,7 @@ func TestRunAdd_signalFailure(t *testing.T) {
 	}()
 
 	stdout := captureStdout(t, func() {
-		RunAdd(dataDir, []string{notesDir})
+		RunAdd(dataDir, notesDir)
 	})
 	if !strings.Contains(stdout, "next refresh cycle") {
 		t.Fatalf("expected next-refresh message, got %q", stdout)
@@ -237,7 +237,7 @@ func TestRunRemove_signalsDaemon(t *testing.T) {
 	}()
 
 	stdout := captureStdout(t, func() {
-		RunRemove(dataDir, []string{notesDir})
+		RunRemove(dataDir, notesDir)
 	})
 	if !signaled {
 		t.Fatal("expected daemon to be signaled on remove")

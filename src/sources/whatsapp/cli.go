@@ -76,14 +76,8 @@ func RunDisable(dataDir string) {
 }
 
 // RunLogin performs the WhatsApp QR login flow.
-// Pass --relogin in args to force a fresh session.
-func RunLogin(dataDir string, args []string) {
-	relogin := false
-	for _, arg := range args {
-		if arg == "--relogin" || arg == "-relogin" {
-			relogin = true
-		}
-	}
+// Pass relogin=true to force a fresh session.
+func RunLogin(dataDir string, relogin bool) {
 
 	if IsLoggedIn(dataDir) && !relogin {
 		fmt.Println("Already logged in.")

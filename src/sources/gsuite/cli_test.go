@@ -81,6 +81,7 @@ func TestInfoLines_EnabledNotAuthenticated(t *testing.T) {
 		t.Errorf("expected login hint, got: %v", lines)
 	}
 }
+
 // Verifies info output marks every app disabled when the source is enabled but no apps are selected.
 func TestInfoLines_AllAppsDisabled(t *testing.T) {
 	dir := t.TempDir()
@@ -335,8 +336,8 @@ func TestPromptAppSelection_AllOption(t *testing.T) {
 	}
 }
 
-// Verifies the interactive apps command persists an `all` selection back into the source config.
-func TestRunApps_AllEnablesEverything(t *testing.T) {
+// Verifies the interactive manage command persists an `all` selection back into the source config.
+func TestRunManage_AllEnablesEverything(t *testing.T) {
 	dir := t.TempDir()
 
 	oldStdin := os.Stdin
@@ -361,7 +362,7 @@ func TestRunApps_AllEnablesEverything(t *testing.T) {
 	}
 	inW.Close()
 
-	RunApps(dir)
+	RunManage(dir)
 
 	outW.Close()
 	if _, err := io.ReadAll(outR); err != nil {
@@ -409,7 +410,7 @@ var zeroTimeVal = time.Time{}
 // Verifies RunEnable with "all" enables every app and sets source enabled.
 func TestRunEnable_all(t *testing.T) {
 	dir := t.TempDir()
-	RunEnable(dir, []string{"all"})
+	RunEnable(dir, "all")
 	cfg := core.LoadConfig(dir)
 	if !cfg.Sources["gsuite"].Enabled {
 		t.Fatal("expected gsuite source enabled")
@@ -426,7 +427,7 @@ func TestRunEnable_all(t *testing.T) {
 // Verifies RunEnable with a specific app name enables only that app and sets source enabled.
 func TestRunEnable_singleApp(t *testing.T) {
 	dir := t.TempDir()
-	RunEnable(dir, []string{"docs"})
+	RunEnable(dir, "docs")
 	cfg := core.LoadConfig(dir)
 	if !cfg.Sources["gsuite"].Enabled {
 		t.Fatal("expected gsuite source enabled")
@@ -444,23 +445,31 @@ func TestRunEnable_singleApp(t *testing.T) {
 // Verifies RunEnable with no args enables all apps and sets source enabled.
 func TestRunEnable_noArgs(t *testing.T) {
 	dir := t.TempDir()
-	RunEnable(dir, nil)
+	RunEnable(dir, "")
 	cfg := core.LoadConfig(dir)
 	if !cfg.Sources["gsuite"].Enabled {
 		t.Fatal("expected gsuite source enabled")
 	}
 }
 
-// Verifies RunDisable with "all" disables the source.
+// Verifies RunDisable with "all" disables the source and clears per-app enablement.
 func TestRunDisable_all(t *testing.T) {
 	dir := t.TempDir()
+	RunEnable(dir, "all")
 	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
 		t.Fatal(err)
 	}
-	RunDisable(dir, []string{"all"})
+	RunDisable(dir, "all")
 	cfg := core.LoadConfig(dir)
 	if cfg.Sources["gsuite"].Enabled {
 		t.Fatal("expected gsuite source disabled")
+	}
+	src := NewSource(dir)
+	defer src.Close()
+	for _, app := range allApps {
+		if src.apps.IsEnabled(app.name) {
+			t.Fatalf("expected %s disabled", app.name)
+		}
 	}
 }
 
@@ -475,7 +484,7 @@ func TestRunDisable_singleApp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	RunDisable(dir, []string{"docs"})
+	RunDisable(dir, "docs")
 
 	src2 := NewSource(dir)
 	defer src2.Close()
@@ -487,15 +496,23 @@ func TestRunDisable_singleApp(t *testing.T) {
 	}
 }
 
-// Verifies RunDisable with no args disables the source without touching app config.
+// Verifies RunDisable with no args disables the source and clears app config.
 func TestRunDisable_noArgs(t *testing.T) {
 	dir := t.TempDir()
+	RunEnable(dir, "all")
 	if err := core.SetSourceEnabled(dir, "gsuite", true); err != nil {
 		t.Fatal(err)
 	}
-	RunDisable(dir, nil)
+	RunDisable(dir, "")
 	if core.LoadConfig(dir).Sources["gsuite"].Enabled {
 		t.Fatal("expected gsuite source disabled")
+	}
+	src := NewSource(dir)
+	defer src.Close()
+	for _, app := range allApps {
+		if src.apps.IsEnabled(app.name) {
+			t.Fatalf("expected %s disabled", app.name)
+		}
 	}
 }
 

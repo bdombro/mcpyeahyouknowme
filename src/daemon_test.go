@@ -1,13 +1,14 @@
 package main
 
 import (
-	"io"
-	"os"
+	"bytes"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"mcpyeahyouknowme/core"
+
+	"github.com/spf13/cobra"
 )
 
 // Verifies plistPath returns an absolute LaunchAgents plist path for the installed daemon.
@@ -47,24 +48,27 @@ func TestCommandsListCompleteness(t *testing.T) {
 		"reset":           true,
 	}
 
-	for _, cmd := range commandNames(topLevelCommands()) {
-		if !expected[cmd] {
-			t.Errorf("Unexpected command in list: %q", cmd)
+	root := newRootCmd()
+	for _, cmd := range root.Commands() {
+		if !cmd.IsAvailableCommand() {
+			continue
 		}
-		delete(expected, cmd)
+		name := cmd.Name()
+		if !expected[name] {
+			t.Errorf("unexpected command in list: %q", name)
+		}
+		delete(expected, name)
 	}
 
 	if len(expected) > 0 {
-		t.Errorf("Missing expected commands: %v", expected)
+		t.Errorf("missing expected commands: %v", expected)
 	}
 }
 
-// Verifies the top-level reset command is exposed under Maintenance and dispatches through the shared reset runner.
-func TestCommandTree_ResetCommandRunsMaintenanceReset(t *testing.T) {
+// Verifies the reset command exists at the root level and calls resetAllRunner when executed.
+func TestResetCommandCallsResetAllRunner(t *testing.T) {
 	oldRunner := resetAllRunner
-	defer func() {
-		resetAllRunner = oldRunner
-	}()
+	defer func() { resetAllRunner = oldRunner }()
 
 	called := false
 	gotDir := ""
@@ -73,15 +77,11 @@ func TestCommandTree_ResetCommandRunsMaintenanceReset(t *testing.T) {
 		gotDir = dataDir
 	}
 
-	cmd := findCommand(commandTree(), "reset")
-	if cmd == nil {
-		t.Fatal("reset command not found")
+	root := newRootCmd()
+	root.SetArgs([]string{"reset"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
 	}
-	if cmd.Section != "Maintenance" {
-		t.Fatalf("reset command section = %q, want %q", cmd.Section, "Maintenance")
-	}
-
-	cmd.Run(nil)
 
 	if !called {
 		t.Fatal("reset command did not call resetAllRunner")
@@ -99,69 +99,63 @@ func TestPlistName(t *testing.T) {
 	}
 }
 
-// Verifies generated bash completions stay aligned with dynamic command metadata and constrained arguments.
-func TestPrintBashCompletions_ContainsBrowserHistoryOptions(t *testing.T) {
-	out := captureStdout(t, printBashCompletions)
+// Verifies generated bash completions contain browser_history subcommands and chrome/brave choices.
+func TestCompletionBash_ContainsBrowserHistoryOptions(t *testing.T) {
+	root := newRootCmd()
+	var buf bytes.Buffer
+	if err := root.GenBashCompletion(&buf); err != nil {
+		t.Fatalf("GenBashCompletion: %v", err)
+	}
+	out := buf.String()
 	for _, want := range []string{
-		`completion)`,
-		`compgen -W "bash zsh"`,
-		`browser_history)`,
-		`compgen -W "enable disable reset"`,
-		`browser_history:enable)`,
-		`compgen -W "chrome brave"`,
+		"browser_history",
+		"chrome",
+		"brave",
 	} {
 		if !strings.Contains(out, want) {
-			t.Fatalf("printBashCompletions() missing %q in output:\n%s", want, out)
+			t.Errorf("bash completion missing %q", want)
 		}
 	}
 }
 
-// Verifies generated zsh completions stay aligned with dynamic command metadata and constrained arguments.
-func TestPrintZshCompletions_ContainsBrowserHistoryOptions(t *testing.T) {
-	out := captureStdout(t, printZshCompletions)
-	for _, want := range []string{
-		`browser_history)`,
-		`'enable:Enable browser history indexing'`,
-		`'disable:Disable browser history indexing'`,
-		`browser_history:enable)`,
-		`'chrome:Google Chrome history'`,
-		`'brave:Brave Browser history'`,
-		`'bash:Generate the autocompletion script for bash'`,
-		`'zsh:Generate the autocompletion script for zsh'`,
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("printZshCompletions() missing %q in output:\n%s", want, out)
+// Verifies the browser_history enable subcommand advertises chrome and brave as valid args.
+func TestCompletionZsh_ContainsBrowserHistoryOptions(t *testing.T) {
+	root := newRootCmd()
+
+	var bhCmd *cobra.Command
+	for _, c := range root.Commands() {
+		if c.Name() == "browser_history" {
+			bhCmd = c
+			break
+		}
+	}
+	if bhCmd == nil {
+		t.Fatal("browser_history command not found")
+	}
+
+	var enableCmd *cobra.Command
+	for _, c := range bhCmd.Commands() {
+		if c.Name() == "enable" {
+			enableCmd = c
+			break
+		}
+	}
+	if enableCmd == nil {
+		t.Fatal("browser_history enable command not found")
+	}
+
+	validSet := make(map[string]bool, len(enableCmd.ValidArgs))
+	for _, v := range enableCmd.ValidArgs {
+		validSet[v] = true
+	}
+	for _, want := range []string{"chrome", "brave"} {
+		if !validSet[want] {
+			t.Errorf("browser_history enable ValidArgs missing %q; got %v", want, enableCmd.ValidArgs)
 		}
 	}
 }
 
-// Returns stdout from fn so completion-rendering tests can assert on generated shell scripts.
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
-	os.Stdout = w
-	defer func() {
-		os.Stdout = oldStdout
-	}()
-
-	fn()
-
-	if err := w.Close(); err != nil {
-		t.Fatalf("close writer: %v", err)
-	}
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read stdout: %v", err)
-	}
-	return string(out)
-}
-
-// Returns whether path contains component so plist-path assertions can stay platform-safe.
+// pathContains reports whether path contains component so plist-path assertions stay platform-safe.
 func pathContains(path, component string) bool {
 	dir := path
 	for dir != "." && dir != "/" {

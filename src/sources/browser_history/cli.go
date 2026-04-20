@@ -31,17 +31,17 @@ var daemonSignalProcess = func(pid int, signal syscall.Signal) error {
 	return syscall.Kill(pid, signal)
 }
 
-// RunEnable enables browser_history. If a browser argument is provided (chrome or brave) it also stores that
-// browser choice. Without an argument, the previously configured browser is kept and the source is simply enabled.
-func RunEnable(dataDir string, args []string) {
-	if len(args) > 0 {
-		browser := normalizeBrowser(args[0])
-		if browser == "" {
+// RunEnable enables browser_history. If browser is non-empty it also stores that browser choice.
+// Without a browser argument, the previously configured browser is kept and the source is simply enabled.
+func RunEnable(dataDir string, browser string) {
+	if browser != "" {
+		norm := normalizeBrowser(browser)
+		if norm == "" {
 			// nocov
-			slog.Error("unsupported browser", "browser", args[0], "supported", "chrome, brave")
+			slog.Error("unsupported browser", "browser", browser, "supported", "chrome, brave")
 			os.Exit(1)
 		}
-		if err := saveBrowserHistoryConfig(dataDir, BrowserHistoryConfig{Browser: browser}); err != nil {
+		if err := saveBrowserHistoryConfig(dataDir, BrowserHistoryConfig{Browser: norm}); err != nil {
 			// nocov
 			slog.Error("could not save browser_history config", "err", err)
 			os.Exit(1)
@@ -61,8 +61,8 @@ func RunEnable(dataDir string, args []string) {
 		os.Exit(1)
 	}
 
-	browser := loadBrowserHistoryConfig(dataDir).Browser
-	fmt.Printf("browser_history: enabled (%s)\n", browser)
+	configuredBrowser := loadBrowserHistoryConfig(dataDir).Browser
+	fmt.Printf("browser_history: enabled (%s)\n", configuredBrowser)
 	pid := daemonPID()
 	switch {
 	case pid <= 0:

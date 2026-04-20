@@ -28,14 +28,14 @@ var daemonSignalProcess = func(pid int, signal syscall.Signal) error {
 }
 
 // RunAdd adds a directory to the notebook source configuration, enabling the source on first add.
-func RunAdd(dataDir string, args []string) {
-	if len(args) == 0 {
+func RunAdd(dataDir string, path string) {
+	if path == "" {
 		fmt.Fprintln(os.Stderr, "Error: path argument required")
 		fmt.Fprintln(os.Stderr, "Usage: mcpyeahyouknowme notebook add <path>")
 		os.Exit(1)
 	}
 
-	raw := args[0]
+	raw := path
 	abs, err := filepath.Abs(raw)
 	if err != nil {
 		slog.Error("could not resolve path", "path", raw, "err", err)
@@ -68,14 +68,14 @@ func RunAdd(dataDir string, args []string) {
 }
 
 // RunRemove removes a directory from the notebook source configuration, disabling the source when no dirs remain.
-func RunRemove(dataDir string, args []string) {
-	if len(args) == 0 {
+func RunRemove(dataDir string, path string) {
+	if path == "" {
 		fmt.Fprintln(os.Stderr, "Error: path argument required")
 		fmt.Fprintln(os.Stderr, "Usage: mcpyeahyouknowme notebook remove <path>")
 		os.Exit(1)
 	}
 
-	abs, _ := filepath.Abs(args[0])
+	abs, _ := filepath.Abs(path)
 	cfg := loadNotebookConfig(dataDir)
 
 	var remaining []string

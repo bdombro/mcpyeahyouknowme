@@ -31,7 +31,7 @@ mcpyeahyouknowme whatsapp login
 mcpyeahyouknowme whatsapp login --relogin
 ```
 
-Authenticates with WhatsApp by displaying a QR code. Scan it with your phone (Settings > Linked Devices). If already logged in, shows account info. Required before running `core` or `install-daemon`.
+Authenticates with WhatsApp by displaying a QR code. Scan it with your phone (Settings > Linked Devices). If already logged in, shows account info. Required before running `core` or `start`.
 
 During first login, the CLI captures WhatsApp's initial history sync and stores it in `messages.db`. This is the only time WhatsApp pushes the full chat history.
 
@@ -251,8 +251,7 @@ mcpyeahyouknowme restart
 
 | Command | Description |
 |---------|-------------|
-| `install-daemon` | Installs and starts the core daemon as a macOS LaunchAgent (`com.mcpyeahyouknowme.core`). Runs on login and auto-restarts on crash. Logs to `~/.local/share/mcpyeahyouknowme/core.log`; on daemon startup, oversized log files are trimmed in place to the newest newline-aligned tail so recent context is preserved without unbounded growth. |
-| `start` | Starts the core daemon. |
+| `start` | Installs and starts the core daemon as a macOS LaunchAgent (`com.mcpyeahyouknowme.core`). Runs on login and auto-restarts on crash. Logs to `~/.local/share/mcpyeahyouknowme/core.log`; on daemon startup, oversized log files are trimmed in place to the newest newline-aligned tail so recent context is preserved without unbounded growth. |
 | `stop` | Stops the core daemon. |
 | `restart` | Restarts the core daemon (stop + start). |
 
@@ -291,8 +290,8 @@ mcpyeahyouknowme notebook reset
 ### Shell Completions
 
 ```
-mcpyeahyouknowme completions bash
-mcpyeahyouknowme completions zsh
+mcpyeahyouknowme completion bash
+mcpyeahyouknowme completion zsh
 ```
 
 Generated completions are derived from the canonical CLI command tree, so top-level commands, subcommands, and explicit argument choices such as `browser_history enable <chrome|brave>` stay in sync with the implemented CLI.
@@ -300,7 +299,7 @@ Generated completions are derived from the canonical CLI command tree, so top-le
 Add to your shell profile:
 
 ```bash
-eval "$(mcpyeahyouknowme completions zsh)"
+eval "$(mcpyeahyouknowme completion zsh)"
 ```
 
 ---

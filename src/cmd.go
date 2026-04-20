@@ -3,453 +3,382 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"mcpyeahyouknowme/core"
 	"mcpyeahyouknowme/sources/browser_history"
 	"mcpyeahyouknowme/sources/gsuite"
 	"mcpyeahyouknowme/sources/notebook"
 	"mcpyeahyouknowme/sources/whatsapp"
+
+	"github.com/spf13/cobra"
 )
 
-type Choice struct {
-	Value   string
-	Summary string
-}
-
-type Command struct {
-	Name        string
-	Summary     string
-	Usage       string
-	Section     string
-	Subcommands []Command
-	ArgChoices  []Choice
-	Run         func(args []string)
-}
-
-// commandTree builds the canonical CLI graph so dispatch, usage, and shell completions stay in sync from one definition.
-func commandTree() []Command {
+// newRootCmd builds the canonical Cobra command tree for the CLI.
+func newRootCmd() *cobra.Command {
 	dataDir := core.DataDir()
-	return []Command{
-		{
-			Name:    "mcp",
-			Summary: "Start the MCP server (stdio transport)",
-			Usage:   "mcp",
-			Section: "General",
-			Run: func(_ []string) {
-				runMcp()
-			},
-		},
-		{
-			Name:    "status",
-			Summary: "Show install status and data locations",
-			Usage:   "status [--json] [--live]",
-			Section: "General",
-			Run: func(args []string) {
-				runStatus(args)
-			},
-		},
-		{
-			Name:    "completion",
-			Summary: "Generate the autocompletion script for shell",
-			Section: "General",
-			Subcommands: []Command{
-				{
-					Name:    "bash",
-					Summary: "Generate the autocompletion script for bash",
-					Usage:   "completions bash",
-					Run: func(_ []string) {
-						runCompletions("bash")
-					},
-				},
-				{
-					Name:    "zsh",
-					Summary: "Generate the autocompletion script for zsh",
-					Usage:   "completions zsh",
-					Run: func(_ []string) {
-						runCompletions("zsh")
-					},
-				},
-			},
-		},
-		{
-			Name:    "core",
-			Summary: "Run the daemon process directly (used by LaunchAgent)",
-			Usage:   "core",
-			Section: "Core Daemon",
-			Run: func(_ []string) {
-				runCore()
-			},
-		},
-		{
-			Name:    "start",
-			Summary: "Start the core daemon",
-			Usage:   "start",
-			Section: "Core Daemon",
-			Run: func(_ []string) {
-				runStart()
-			},
-		},
-		{
-			Name:    "stop",
-			Summary: "Stop the core daemon",
-			Usage:   "stop",
-			Section: "Core Daemon",
-			Run: func(_ []string) {
-				runStop()
-			},
-		},
-		{
-			Name:    "restart",
-			Summary: "Restart the core daemon",
-			Usage:   "restart",
-			Section: "Core Daemon",
-			Run: func(_ []string) {
-				runRestart()
-			},
-		},
-		{
-			Name:    "reindex",
-			Summary: "Rebuild the search index from scratch",
-			Usage:   "reindex",
-			Section: "Maintenance",
-			Run: func(args []string) {
-				runReindex(args)
-			},
-		},
-		{
-			Name:    "reset",
-			Summary: "Reset all source connections and data",
-			Usage:   "reset",
-			Section: "Maintenance",
-			Run: func(_ []string) {
-				resetAllRunner(dataDir)
-			},
-		},
-		{
-			Name:    "uninstall",
-			Summary: "Instructions for proper uninstall (use ./scripts/uninstall.sh)",
-			Usage:   "uninstall",
-			Section: "Maintenance",
-			Run: func(_ []string) {
-				runUninstall()
-			},
-		},
-		{
-			Name:    "whatsapp",
-			Summary: "WhatsApp commands",
-			Section: "WhatsApp",
-			Subcommands: []Command{
-				{
-					Name:    "enable",
-					Summary: "Enable WhatsApp syncing",
-					Usage:   "whatsapp enable",
-					Run: func(_ []string) {
-						whatsapp.RunEnable(dataDir)
-					},
-				},
-				{
-					Name:    "disable",
-					Summary: "Disable WhatsApp syncing",
-					Usage:   "whatsapp disable",
-					Run: func(_ []string) {
-						whatsapp.RunDisable(dataDir)
-					},
-				},
-				{
-					Name:    "login",
-					Summary: "Log in to WhatsApp (scan QR code)",
-					Usage:   "whatsapp login [--relogin]",
-					Run: func(args []string) {
-						whatsapp.RunLogin(dataDir, args)
-					},
-				},
-				{
-					Name:    "reset",
-					Summary: "Wipe WhatsApp data and session",
-					Usage:   "whatsapp reset",
-					Run: func(_ []string) {
-						whatsapp.RunReset(dataDir)
-					},
-				},
-			},
-		},
-		{
-			Name:    "gsuite",
-			Summary: "Google Suite commands",
-			Section: "Google Suite",
-			Subcommands: []Command{
-				{
-					Name:    "enable",
-					Summary: "Enable Google Suite or a specific app",
-					Usage:   "gsuite enable <all|app>",
-					ArgChoices: []Choice{
-						{Value: "all", Summary: "Enable all apps"},
-						{Value: "docs", Summary: "Google Docs"},
-						{Value: "sheets", Summary: "Google Sheets"},
-						{Value: "gmail", Summary: "Gmail"},
-						{Value: "calendar", Summary: "Google Calendar"},
-						{Value: "tasks", Summary: "Google Tasks"},
-						{Value: "contacts", Summary: "Google Contacts"},
-						{Value: "slides", Summary: "Google Slides"},
-					},
-					Run: func(args []string) {
-						gsuite.RunEnable(dataDir, args)
-					},
-				},
-				{
-					Name:    "disable",
-					Summary: "Disable Google Suite or a specific app",
-					Usage:   "gsuite disable <all|app>",
-					ArgChoices: []Choice{
-						{Value: "all", Summary: "Disable all apps and the source"},
-						{Value: "docs", Summary: "Google Docs"},
-						{Value: "sheets", Summary: "Google Sheets"},
-						{Value: "gmail", Summary: "Gmail"},
-						{Value: "calendar", Summary: "Google Calendar"},
-						{Value: "tasks", Summary: "Google Tasks"},
-						{Value: "contacts", Summary: "Google Contacts"},
-						{Value: "slides", Summary: "Google Slides"},
-					},
-					Run: func(args []string) {
-						gsuite.RunDisable(dataDir, args)
-					},
-				},
-				{
-					Name:    "login",
-					Summary: "Authenticate with Google and choose apps",
-					Usage:   "gsuite login",
-					Run: func(_ []string) {
-						gsuite.RunLogin(dataDir)
-					},
-				},
-				{
-					Name:    "apps",
-					Summary: "View/toggle enabled Google apps",
-					Usage:   "gsuite apps",
-					Run: func(_ []string) {
-						gsuite.RunApps(dataDir)
-					},
-				},
-				{
-					Name:    "reset",
-					Summary: "Clear all Google Suite data and token",
-					Usage:   "gsuite reset",
-					Run: func(_ []string) {
-						gsuite.RunReset(dataDir)
-					},
-				},
-			},
-		},
-		{
-			Name:    "browser_history",
-			Summary: "Browser history commands",
-			Section: "Browser History",
-			Subcommands: []Command{
-				{
-					Name:    "enable",
-					Summary: "Enable browser history indexing",
-					Usage:   "browser_history enable [chrome|brave]",
-					ArgChoices: []Choice{
-						{Value: "chrome", Summary: "Google Chrome history"},
-						{Value: "brave", Summary: "Brave Browser history"},
-					},
-					Run: func(args []string) {
-						browser_history.RunEnable(dataDir, args)
-					},
-				},
-				{
-					Name:    "disable",
-					Summary: "Disable browser history indexing",
-					Usage:   "browser_history disable",
-					Run: func(_ []string) {
-						browser_history.RunDisable(dataDir)
-					},
-				},
-				{
-					Name:    "reset",
-					Summary: "Clear browser history snapshot and config",
-					Usage:   "browser_history reset",
-					Run: func(_ []string) {
-						browser_history.RunReset(dataDir)
-					},
-				},
-			},
-		},
-		{
-			Name:    "notebook",
-			Summary: "Notebook commands",
-			Section: "Notebook",
-			Subcommands: []Command{
-				{
-					Name:    "enable",
-					Summary: "Enable notebook indexing",
-					Usage:   "notebook enable",
-					Run: func(_ []string) {
-						notebook.RunEnable(dataDir)
-					},
-				},
-				{
-					Name:    "disable",
-					Summary: "Disable notebook indexing",
-					Usage:   "notebook disable",
-					Run: func(_ []string) {
-						notebook.RunDisable(dataDir)
-					},
-				},
-				{
-					Name:    "add",
-					Summary: "Add a directory to the notebook index",
-					Usage:   "notebook add <path>",
-					Run: func(args []string) {
-						notebook.RunAdd(dataDir, args)
-					},
-				},
-				{
-					Name:    "remove",
-					Summary: "Remove a directory from the notebook index",
-					Usage:   "notebook remove <path>",
-					Run: func(args []string) {
-						notebook.RunRemove(dataDir, args)
-					},
-				},
-				{
-					Name:    "list",
-					Summary: "List configured notebook directories",
-					Usage:   "notebook list",
-					Run: func(_ []string) {
-						notebook.RunList(dataDir)
-					},
-				},
-				{
-					Name:    "reset",
-					Summary: "Clear all notebook configuration and cache",
-					Usage:   "notebook reset",
-					Run: func(_ []string) {
-						notebook.RunReset(dataDir)
-					},
-				},
-			},
-		},
+	root := &cobra.Command{
+		Use:           "mcpyeahyouknowme",
+		Short:         "Personal data MCP server",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
+	root.AddCommand(
+		newMcpCmd(),
+		newStatusCmd(),
+		newCompletionCmd(root),
+		newDeprecatedCompletionsCmd(root),
+		newCoreCmd(),
+		newStartCmd(),
+		newStopCmd(),
+		newRestartCmd(),
+		newReindexCmd(),
+		newResetCmd(dataDir),
+		newUninstallCmd(),
+		newWhatsappCmd(dataDir),
+		newGsuiteCmd(dataDir),
+		newBrowserHistoryCmd(dataDir),
+		newNotebookCmd(dataDir),
+	)
+	return root
 }
 
-// dispatchCLI resolves top-level args into a command run, printing usage to stderr and exiting non-zero when input is invalid.
+// dispatchCLI executes the Cobra CLI, printing errors to stderr and exiting non-zero on failure.
 func dispatchCLI(args []string) {
 	initLogger()
-	if len(args) == 0 {
-		printUsage()
-		os.Exit(1)
-	}
-
-	if msg := dispatchCommands(commandTree(), args); msg != "" {
-		fmt.Fprintln(os.Stderr, msg)
-		fmt.Fprintln(os.Stderr)
-		printUsage()
+	root := newRootCmd()
+	root.SetArgs(args)
+	if err := root.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-// dispatchCommands walks one command level, runs the matched handler with remaining args, and returns user-facing usage errors instead of exiting.
-func dispatchCommands(commands []Command, args []string) string {
-	cmd := findCommand(commands, args[0])
-	if cmd == nil {
-		return fmt.Sprintf("Unknown command: %s", args[0])
-	}
-	if len(cmd.Subcommands) == 0 {
-		cmd.Run(args[1:])
-		return ""
-	}
-	if len(args) < 2 {
-		return fmt.Sprintf("Error: %s subcommand required", cmd.Name)
-	}
-
-	subcmd := findCommand(cmd.Subcommands, args[1])
-	if subcmd == nil {
-		return fmt.Sprintf("Unknown %s subcommand: %s", cmd.Name, args[1])
-	}
-	subcmd.Run(args[2:])
-	return ""
-}
-
-// findCommand returns the command metadata for name so dispatch, usage, and completions can share the same lookup path.
-func findCommand(commands []Command, name string) *Command {
-	for i := range commands {
-		if commands[i].Name == name {
-			return &commands[i]
-		}
-	}
-	return nil
-}
-
-// printUsage renders grouped help to stderr from the command tree so manual use and bad-input paths show the same surface area.
-func printUsage() {
-	fmt.Fprintln(os.Stderr, "Usage: mcpyeahyouknowme <command> [flags]")
-	fmt.Fprintln(os.Stderr, "")
-
-	sections := []string{
-		"General",
-		"Core Daemon",
-		"WhatsApp",
-		"Google Suite",
-		"Browser History",
-		"Notebook",
-		"Maintenance",
-		"Legacy (deprecated)",
-	}
-	linesBySection := make(map[string][]string)
-	for _, cmd := range commandTree() {
-		if len(cmd.Subcommands) == 0 {
-			linesBySection[cmd.Section] = append(linesBySection[cmd.Section], usageLine(cmd.Usage, cmd.Summary))
-			continue
-		}
-		for _, subcmd := range cmd.Subcommands {
-			linesBySection[cmd.Section] = append(linesBySection[cmd.Section], usageLine(subcmd.Usage, subcmd.Summary))
-		}
-	}
-
-	for _, section := range sections {
-		lines := linesBySection[section]
-		if len(lines) == 0 {
-			continue
-		}
-		fmt.Fprintf(os.Stderr, "%s:\n", section)
-		for _, line := range lines {
-			fmt.Fprintln(os.Stderr, line)
-		}
-		fmt.Fprintln(os.Stderr, "")
+func newMcpCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mcp",
+		Short: "Start the MCP server (stdio transport)",
+		Args:  cobra.NoArgs,
+		Run:   func(cmd *cobra.Command, args []string) { runMcp() },
 	}
 }
 
-// usageLine formats one aligned help row from a usage string and summary for human-readable CLI output.
-func usageLine(usage, summary string) string {
-	return fmt.Sprintf("  %-28s %s", usage, summary)
-}
-
-// topLevelCommands exposes the root command list so completion generators do not rebuild their own command inventory.
-func topLevelCommands() []Command {
-	return commandTree()
-}
-
-// commandNames extracts command names so shell completion code can suggest only legal tokens.
-func commandNames(commands []Command) []string {
-	names := make([]string, 0, len(commands))
-	for _, cmd := range commands {
-		names = append(names, cmd.Name)
+func newStatusCmd() *cobra.Command {
+	var jsonFlag, liveFlag bool
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Show install status and data locations",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			var optArgs []string
+			if jsonFlag {
+				optArgs = append(optArgs, "--json")
+			}
+			if liveFlag {
+				optArgs = append(optArgs, "--live")
+			}
+			if err := writeStatus(statusStdout, optArgs); err != nil {
+				fmt.Fprintf(statusStderr, "Error: %v\n", err)
+				statusExit(1)
+			}
+		},
 	}
-	return names
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
+	cmd.Flags().BoolVar(&liveFlag, "live", false, "Refresh every 10 seconds (cannot combine with --json)")
+	cmd.MarkFlagsMutuallyExclusive("json", "live")
+	return cmd
 }
 
-// choiceValues extracts argument choice values so shell completion code can suggest constrained non-command inputs.
-func choiceValues(choices []Choice) []string {
-	values := make([]string, 0, len(choices))
-	for _, choice := range choices {
-		values = append(values, choice.Value)
+func newCompletionCmd(root *cobra.Command) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "completion",
+		Short: "Generate shell autocompletion script",
 	}
-	return values
+	cmd.AddCommand(&cobra.Command{
+		Use:   "bash",
+		Short: "Generate autocompletion script for bash",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return root.GenBashCompletion(cmd.OutOrStdout())
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "zsh",
+		Short: "Generate autocompletion script for zsh",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return root.GenZshCompletion(cmd.OutOrStdout())
+		},
+	})
+	return cmd
 }
 
-// shellCompletionWords returns the supported shell names in the space-delimited format bash completion generation expects.
-func shellCompletionWords() string {
-	return strings.Join(commandNames(findCommand(commandTree(), "completion").Subcommands), " ")
+// newDeprecatedCompletionsCmd registers "completions <shell>" as a hidden deprecated root command
+// so existing shell configs with `eval "$(mcpyeahyouknowme completions zsh 2>/dev/null)"` keep working.
+func newDeprecatedCompletionsCmd(root *cobra.Command) *cobra.Command {
+	return &cobra.Command{
+		Use:        "completions <bash|zsh>",
+		Short:      "Generate autocompletion script (deprecated: use 'completion bash|zsh')",
+		Deprecated: "use 'completion bash' or 'completion zsh' instead",
+		Args:       cobra.ExactArgs(1),
+		ValidArgs:  []string{"bash", "zsh"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch args[0] {
+			case "bash":
+				return root.GenBashCompletion(cmd.OutOrStdout())
+			case "zsh":
+				return root.GenZshCompletion(cmd.OutOrStdout())
+			default:
+				return fmt.Errorf("unsupported shell %q; use bash or zsh", args[0])
+			}
+		},
+	}
+}
+
+func newCoreCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "core",
+		Short: "Run the daemon process directly (used by LaunchAgent)",
+		Args:  cobra.NoArgs,
+		Run:   func(cmd *cobra.Command, args []string) { runCore() },
+	}
+}
+
+func newStartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "start",
+		Short: "Start the core daemon",
+		Args:  cobra.NoArgs,
+		Run:   func(cmd *cobra.Command, args []string) { runStart() },
+	}
+}
+
+func newStopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "stop",
+		Short: "Stop the core daemon",
+		Args:  cobra.NoArgs,
+		Run:   func(cmd *cobra.Command, args []string) { runStop() },
+	}
+}
+
+func newRestartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart",
+		Short: "Restart the core daemon",
+		Args:  cobra.NoArgs,
+		Run:   func(cmd *cobra.Command, args []string) { runRestart() },
+	}
+}
+
+func newReindexCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reindex",
+		Short: "Rebuild the search index from scratch",
+		Args:  cobra.NoArgs,
+		Run:   func(cmd *cobra.Command, args []string) { runReindex(nil) },
+	}
+}
+
+func newResetCmd(dataDir string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "reset",
+		Short: "Reset all source connections and data",
+		Args:  cobra.NoArgs,
+		Run:   func(cmd *cobra.Command, args []string) { resetAllRunner(dataDir) },
+	}
+}
+
+func newUninstallCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "uninstall",
+		Short: "Instructions for proper uninstall (use ./scripts/uninstall.sh)",
+		Args:  cobra.NoArgs,
+		Run:   func(cmd *cobra.Command, args []string) { runUninstall() },
+	}
+}
+
+func newWhatsappCmd(dataDir string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "whatsapp",
+		Short: "WhatsApp commands",
+	}
+	loginCmd := &cobra.Command{
+		Use:   "login",
+		Short: "Log in to WhatsApp (scan QR code)",
+		Args:  cobra.NoArgs,
+	}
+	var relogin bool
+	loginCmd.Flags().BoolVar(&relogin, "relogin", false, "Clear existing session and re-pair")
+	loginCmd.Run = func(cmd *cobra.Command, args []string) { whatsapp.RunLogin(dataDir, relogin) }
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "enable",
+			Short: "Enable WhatsApp syncing",
+			Args:  cobra.NoArgs,
+			Run:   func(cmd *cobra.Command, args []string) { whatsapp.RunEnable(dataDir) },
+		},
+		&cobra.Command{
+			Use:   "disable",
+			Short: "Disable WhatsApp syncing",
+			Args:  cobra.NoArgs,
+			Run:   func(cmd *cobra.Command, args []string) { whatsapp.RunDisable(dataDir) },
+		},
+		loginCmd,
+		&cobra.Command{
+			Use:   "reset",
+			Short: "Wipe WhatsApp data and session",
+			Args:  cobra.NoArgs,
+			Run:   func(cmd *cobra.Command, args []string) { whatsapp.RunReset(dataDir) },
+		},
+	)
+	return cmd
+}
+
+// gsuiteApps lists all valid app names accepted by gsuite enable and disable.
+var gsuiteApps = []string{"all", "docs", "sheets", "gmail", "calendar", "tasks", "contacts", "slides"}
+
+func newGsuiteCmd(dataDir string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "gsuite",
+		Short: "Google Suite commands",
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:       "enable [all|<app>]",
+			Short:     "Enable Google Suite or a specific app",
+			Args:      cobra.MaximumNArgs(1),
+			ValidArgs: gsuiteApps,
+			Run: func(cmd *cobra.Command, args []string) {
+				app := ""
+				if len(args) > 0 {
+					app = args[0]
+				}
+				gsuite.RunEnable(dataDir, app)
+			},
+		},
+		&cobra.Command{
+			Use:       "disable [all|<app>]",
+			Short:     "Disable Google Suite or a specific app",
+			Args:      cobra.MaximumNArgs(1),
+			ValidArgs: gsuiteApps,
+			Run: func(cmd *cobra.Command, args []string) {
+				app := ""
+				if len(args) > 0 {
+					app = args[0]
+				}
+				gsuite.RunDisable(dataDir, app)
+			},
+		},
+		&cobra.Command{
+			Use:   "login",
+			Short: "Authenticate with Google and choose apps",
+			Args:  cobra.NoArgs,
+			Run:   func(cmd *cobra.Command, args []string) { gsuite.RunLogin(dataDir) },
+		},
+		&cobra.Command{
+			Use:   "manage",
+			Short: "View/toggle enabled Google apps",
+			Args:  cobra.NoArgs,
+			Run:   func(cmd *cobra.Command, args []string) { gsuite.RunManage(dataDir) },
+		},
+		&cobra.Command{
+			Use:        "apps",
+			Short:      "Deprecated alias for manage",
+			Deprecated: "use 'manage' instead",
+			Args:       cobra.NoArgs,
+			Run:        func(cmd *cobra.Command, args []string) { gsuite.RunManage(dataDir) },
+		},
+		&cobra.Command{
+			Use:   "reset",
+			Short: "Clear all Google Suite data and token",
+			Args:  cobra.NoArgs,
+			Run:   func(cmd *cobra.Command, args []string) { gsuite.RunReset(dataDir) },
+		},
+	)
+	return cmd
+}
+
+func newBrowserHistoryCmd(dataDir string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "browser_history",
+		Short: "Browser history commands",
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:       "enable [chrome|brave]",
+			Short:     "Enable browser history indexing",
+			Args:      cobra.MaximumNArgs(1),
+			ValidArgs: []string{"chrome", "brave"},
+			Run: func(cmd *cobra.Command, args []string) {
+				browser := ""
+				if len(args) > 0 {
+					browser = args[0]
+				}
+				browser_history.RunEnable(dataDir, browser)
+			},
+		},
+		&cobra.Command{
+			Use:   "disable",
+			Short: "Disable browser history indexing",
+			Args:  cobra.NoArgs,
+			Run:   func(cmd *cobra.Command, args []string) { browser_history.RunDisable(dataDir) },
+		},
+		&cobra.Command{
+			Use:   "reset",
+			Short: "Clear browser history snapshot and config",
+			Args:  cobra.NoArgs,
+			Run:   func(cmd *cobra.Command, args []string) { browser_history.RunReset(dataDir) },
+		},
+	)
+	return cmd
+}
+
+func newNotebookCmd(dataDir string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "notebook",
+		Short: "Notebook commands",
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "enable",
+			Short: "Enable notebook indexing",
+			Args:  cobra.NoArgs,
+			Run:   func(cmd *cobra.Command, args []string) { notebook.RunEnable(dataDir) },
+		},
+		&cobra.Command{
+			Use:   "disable",
+			Short: "Disable notebook indexing",
+			Args:  cobra.NoArgs,
+			Run:   func(cmd *cobra.Command, args []string) { notebook.RunDisable(dataDir) },
+		},
+		&cobra.Command{
+			Use:   "add <path>",
+			Short: "Add a directory to the notebook index",
+			Args:  cobra.ExactArgs(1),
+			Run: func(cmd *cobra.Command, args []string) {
+				notebook.RunAdd(dataDir, args[0])
+			},
+		},
+		&cobra.Command{
+			Use:   "remove <path>",
+			Short: "Remove a directory from the notebook index",
+			Args:  cobra.ExactArgs(1),
+			Run: func(cmd *cobra.Command, args []string) {
+				notebook.RunRemove(dataDir, args[0])
+			},
+		},
+		&cobra.Command{
+			Use:   "list",
+			Short: "List configured notebook directories",
+			Args:  cobra.NoArgs,
+			Run:   func(cmd *cobra.Command, args []string) { notebook.RunList(dataDir) },
+		},
+		&cobra.Command{
+			Use:   "reset",
+			Short: "Clear all notebook configuration and cache",
+			Args:  cobra.NoArgs,
+			Run:   func(cmd *cobra.Command, args []string) { notebook.RunReset(dataDir) },
+		},
+	)
+	return cmd
 }

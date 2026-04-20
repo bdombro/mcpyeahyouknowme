@@ -26,7 +26,7 @@ func TestRunEnable_success(t *testing.T) {
 	}()
 
 	stdout, _ := captureOutput(t, func() {
-		RunEnable(dataDir, []string{"chrome"})
+		RunEnable(dataDir, "chrome")
 	})
 
 	cfg := loadBrowserHistoryConfig(dataDir)
@@ -66,7 +66,7 @@ func TestRunEnable_runningDaemon(t *testing.T) {
 	}()
 
 	stdout, _ := captureOutput(t, func() {
-		RunEnable(dataDir, []string{"chrome"})
+		RunEnable(dataDir, "chrome")
 	})
 	if !strings.Contains(stdout, "Indexing will begin shortly.") {
 		t.Fatalf("expected immediate-index message, got %q", stdout)
@@ -89,7 +89,7 @@ func TestRunEnable_runningDaemonSignalFailure(t *testing.T) {
 	}()
 
 	stdout, _ := captureOutput(t, func() {
-		RunEnable(dataDir, []string{"chrome"})
+		RunEnable(dataDir, "chrome")
 	})
 	if !strings.Contains(stdout, "next refresh cycle") {
 		t.Fatalf("expected next-refresh message, got %q", stdout)
@@ -105,7 +105,7 @@ func TestRunEnable_noArgWithExistingBrowser(t *testing.T) {
 	defer func() { daemonStatPath = oldDaemonStatPath }()
 
 	stdout, _ := captureOutput(t, func() {
-		RunEnable(dataDir, nil)
+		RunEnable(dataDir, "")
 	})
 
 	sc := core.LoadConfig(dataDir).Sources["browser_history"]

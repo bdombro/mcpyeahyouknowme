@@ -87,7 +87,7 @@ step_2_path() {
 
 step_3_completions() {
 	echo "=== Step 3: Configuring shell completions ==="
-	local comp_line='eval "$(mcpyeahyouknowme completions zsh 2>/dev/null)"'
+	local comp_line='eval "$(mcpyeahyouknowme completion zsh 2>/dev/null)"'
 	if ! grep -qF "$comp_line" ~/.zshrc 2>/dev/null; then
 		echo "" >> ~/.zshrc
 		echo "$comp_line" >> ~/.zshrc

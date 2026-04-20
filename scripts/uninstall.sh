@@ -86,7 +86,7 @@ step_4_remove_data() {
 
 step_5_remove_completions() {
 	echo "=== Step 5: Removing shell completions ==="
-	if [ -f ~/.zshrc ] && grep -qF "mcpyeahyouknowme completions" ~/.zshrc 2>/dev/null; then
+	if [ -f ~/.zshrc ] && grep -qF "mcpyeahyouknowme completion" ~/.zshrc 2>/dev/null; then
 		sed -i.bak '/mcpyeahyouknowme.*completions/d' ~/.zshrc
 		echo "✓ Removed shell completions from ~/.zshrc"
 	else

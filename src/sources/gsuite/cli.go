@@ -137,7 +137,7 @@ func RunLogin(dataDir string) {
 		fmt.Println("You can now:")
 		fmt.Println("  • See the status: mcpyeahyouknowme status")
 		fmt.Println("  • Use MCP server: mcpyeahyouknowme mcp")
-		fmt.Println("  • Toggle apps:    mcpyeahyouknowme gsuite apps")
+		fmt.Println("  • Manage apps:    mcpyeahyouknowme gsuite manage")
 
 	case err := <-errChan:
 		slog.Error("authentication error", "err", err)
@@ -156,14 +156,13 @@ func RunLogin(dataDir string) {
 }
 
 // RunEnable enables the Google Suite source or a specific app without requiring re-login.
-// args[0] may be an app name (docs, sheets, gmail, calendar, tasks, contacts, slides) or "all".
-// With "all", every app is enabled and the source is set enabled. With a specific app, only that app is enabled
-// and the source is set enabled. With no args, the source is set enabled (app states unchanged).
-func RunEnable(dataDir string, args []string) {
+// app may be an app name (docs, sheets, gmail, calendar, tasks, contacts, slides), "all", or empty.
+// With "all" or empty, every app is enabled and the source is set enabled. With a specific app, only that app is enabled.
+func RunEnable(dataDir string, app string) {
 	src := NewSource(dataDir)
 	defer src.Close()
 
-	if len(args) == 0 || strings.EqualFold(args[0], "all") {
+	if app == "" || strings.EqualFold(app, "all") {
 		for _, app := range allApps {
 			src.apps.SetEnabled(app.name, true)
 		}
@@ -181,9 +180,9 @@ func RunEnable(dataDir string, args []string) {
 		return
 	}
 
-	appName := strings.ToLower(args[0])
+	appName := strings.ToLower(app)
 	if !isValidAppName(appName) {
-		fmt.Fprintf(os.Stderr, "Error: unknown app %q; valid: all, docs, sheets, gmail, calendar, tasks, contacts, slides\n", args[0])
+		fmt.Fprintf(os.Stderr, "Error: unknown app %q; valid: all, docs, sheets, gmail, calendar, tasks, contacts, slides\n", appName)
 		os.Exit(1)
 	}
 	src.apps.SetEnabled(appName, true)
@@ -201,24 +200,32 @@ func RunEnable(dataDir string, args []string) {
 }
 
 // RunDisable disables the Google Suite source or a specific app.
-// With "all" or no args, the source is fully disabled. With a specific app name, only that app is disabled.
-func RunDisable(dataDir string, args []string) {
+// With "all" or empty app, the source is fully disabled. With a specific app name, only that app is disabled.
+func RunDisable(dataDir string, app string) {
 	src := NewSource(dataDir)
 	defer src.Close()
 
-	if len(args) == 0 || strings.EqualFold(args[0], "all") {
+	if app == "" || strings.EqualFold(app, "all") {
+		for _, app := range allApps {
+			src.apps.SetEnabled(app.name, false)
+		}
+		if err := src.saveAppsConfig(src.apps); err != nil {
+			// nocov
+			fmt.Fprintf(os.Stderr, "Error: could not save gsuite apps config: %v\n", err)
+			os.Exit(1)
+		}
 		if err := core.SetSourceEnabled(dataDir, "gsuite", false); err != nil {
 			// nocov
 			fmt.Fprintf(os.Stderr, "Error: could not disable gsuite: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("gsuite: disabled")
+		fmt.Println("gsuite: disabled (all apps)")
 		return
 	}
 
-	appName := strings.ToLower(args[0])
+	appName := strings.ToLower(app)
 	if !isValidAppName(appName) {
-		fmt.Fprintf(os.Stderr, "Error: unknown app %q; valid: all, docs, sheets, gmail, calendar, tasks, contacts, slides\n", args[0])
+		fmt.Fprintf(os.Stderr, "Error: unknown app %q; valid: all, docs, sheets, gmail, calendar, tasks, contacts, slides\n", appName)
 		os.Exit(1)
 	}
 	src.apps.SetEnabled(appName, false)
@@ -287,8 +294,8 @@ func enableAllApps(apps *AppsConfig) {
 	}
 }
 
-// RunApps shows current per-app status and persists interactive toggles back into config.json, clearing disabled app data on the way down.
-func RunApps(dataDir string) {
+// RunManage shows current per-app status and persists interactive toggles back into config.json, clearing disabled app data on the way down.
+func RunManage(dataDir string) {
 	src := NewSource(dataDir)
 	defer src.Close()
 
@@ -337,6 +344,11 @@ func RunApps(dataDir string) {
 			slog.Warn("could not save config", "err", err)
 		}
 	}
+}
+
+// RunApps is a compatibility wrapper for older call sites; use RunManage for new code.
+func RunApps(dataDir string) {
+	RunManage(dataDir)
 }
 
 // RunReset removes Google Suite data after prompting for confirmation.

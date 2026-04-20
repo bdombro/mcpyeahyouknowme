@@ -142,7 +142,7 @@ Google Suite uses a desktop OAuth client with PKCE. Google still expects both `G
 7. **Manage enabled apps**
 
    ```bash
-   mcpyeahyouknowme gsuite apps
+  mcpyeahyouknowme gsuite manage
    ```
 
 8. **Reset Google Suite data** (optional)
@@ -243,7 +243,7 @@ The daemon normalizes this file over time: every **registered source** gets a `s
     "browser_history": {
       "enabled": false,
       // "auth" selects which Chromium profile DB to snapshot (macOS).
-      // Typical values: "chrome", "brave". Use: mcpyeahyouknowme browser_history set <browser>
+      // Typical values: "chrome", "brave". Use: mcpyeahyouknowme browser_history enable <browser>
       "auth": {
         "browser": "chrome"
       }
